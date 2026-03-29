@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+ENV/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDEs
+.vscode/
+.idea/
+
+# Environment / Secrets
+.env
+*.json
+!fly.toml
+
+# Data / Temporary
+*.log
+*.txt
+!README.md
+!requirements.txt
