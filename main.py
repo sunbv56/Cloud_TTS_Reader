@@ -1,4 +1,7 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()  # Load variables from .env if it exists
+
 import re
 import json
 import asyncio
