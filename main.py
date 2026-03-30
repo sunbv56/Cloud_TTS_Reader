@@ -188,20 +188,25 @@ async def websocket_endpoint(websocket: WebSocket):
                     
                     # Final check before sending over the socket
                     if state["active_session"] <= sid:
-                        await websocket.send_json({
-                            "type": "METADATA",
-                            "index": msg["index"],
-                            "chapterIndex": msg.get("chapterIndex", 0),
-                            "sessionId": sid,
-                            "metadata": metadata
-                        })
-                        await websocket.send_bytes(audio_data)
-                        await websocket.send_json({
-                            "type": "PREFETCH_DONE",
-                            "index": msg["index"],
-                            "chapterIndex": msg.get("chapterIndex", 0),
-                            "sessionId": sid
-                        })
+                        try:
+                            await websocket.send_json({
+                                "type": "METADATA",
+                                "index": msg["index"],
+                                "chapterIndex": msg.get("chapterIndex", 0),
+                                "sessionId": sid,
+                                "metadata": metadata
+                            })
+                            await websocket.send_bytes(audio_data)
+                            await websocket.send_json({
+                                "type": "PREFETCH_DONE",
+                                "index": msg["index"],
+                                "chapterIndex": msg.get("chapterIndex", 0),
+                                "sessionId": sid
+                            })
+                        except (WebSocketDisconnect, RuntimeError):
+                            # Usually happens if receiver loop exits but worker is mid-cycle
+                            print(f"Skipping send for session {sid}: WebSocket disconnected.")
+                            break
                 except Exception as e:
                     print(f"Generation Error: {e}")
                 finally:
@@ -209,8 +214,18 @@ async def websocket_endpoint(websocket: WebSocket):
         except Exception as e:
             print(f"WS Worker Error: {e}")
 
-    # Run tasks concurrently. If one fails, the other will likely follow due to socket state.
-    await asyncio.gather(receiver(), worker())
+    receiver_task = asyncio.create_task(receiver())
+    worker_task = asyncio.create_task(worker())
+
+    # Wait for either task to finish. Usually receiver finishes first on disconnect.
+    done, pending = await asyncio.wait(
+        [receiver_task, worker_task],
+        return_when=asyncio.FIRST_COMPLETED,
+    )
+
+    # Cancel whatever is left (usually the worker)
+    for task in pending:
+        task.cancel()
 
 # Supress specific 404s for common devtools/noise paths
 @app.get("/.well-known/appspecific/com.chrome.devtools.json")

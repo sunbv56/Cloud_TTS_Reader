@@ -67,7 +67,7 @@ let STATE = {
     metadata: [],
     fetchingSet: new Set(), // indices being fetched
     ws: null,
-    lastMetadataReceived: null, // Temporary store for metadata before binary arrive
+    metadataQueue: [], // Temporary store for metadata before binary arrive
     settings: {
         voice: "vi-VN-HoaiMyNeural",
         speed: 1.0,
@@ -119,38 +119,39 @@ function initWebSocket() {
         if (typeof event.data === "string") {
             const data = JSON.parse(event.data);
             if (data.type === "METADATA") {
-                // If it's from an old session, ignore it
+                // Bỏ qua nếu là session cũ
                 if (data.sessionId && data.sessionId !== STATE.sessionId) {
                     console.log(`Ignoring old METADATA (Session ${data.sessionId}, Current ${STATE.sessionId})`);
-                    STATE.lastMetadataReceived = null;
                     return;
                 }
-                STATE.lastMetadataReceived = data;
+                // Đưa vào hàng đợi thay vì gán đè biến
+                STATE.metadataQueue.push(data);
             } else if (data.type === "PREFETCH_DONE") {
                 if (data.sessionId && data.sessionId !== STATE.sessionId) return;
                 STATE.fetchingSet.delete(`${data.chapterIndex}_${data.index}`);
                 document.getElementById('status-indicator').innerText = "Ready";
             }
         } else {
-            // Binary Audio Data (MP3 Chunks)
-            if (!STATE.lastMetadataReceived || (STATE.lastMetadataReceived.sessionId && STATE.lastMetadataReceived.sessionId !== STATE.sessionId)) {
-                console.log("Ignoring old binary data (mismatched Session ID)");
-                STATE.lastMetadataReceived = null;
+            // Binary Audio Data (MP3 Chunks) đến
+            // Lấy Metadata tương ứng (cũ nhất trong Queue) ra để ghép cặp
+            const currentMetadata = STATE.metadataQueue.shift();
+
+            if (!currentMetadata || (currentMetadata.sessionId && currentMetadata.sessionId !== STATE.sessionId)) {
+                console.log("Ignoring old/orphaned binary data (mismatched Session ID)");
                 return;
             }
 
             const arrayBuffer = await event.data.arrayBuffer();
 
-            // Push to append queue
+            // Đẩy vào hàng đợi nối audio (Append Queue)
             STATE.appendQueue.push({
-                index: STATE.lastMetadataReceived.index,
-                chapterIndex: STATE.lastMetadataReceived.chapterIndex,
-                sessionId: STATE.lastMetadataReceived.sessionId,
+                index: currentMetadata.index,
+                chapterIndex: currentMetadata.chapterIndex,
+                sessionId: currentMetadata.sessionId,
                 data: arrayBuffer,
-                metadata: STATE.lastMetadataReceived.metadata
+                metadata: currentMetadata.metadata
             });
 
-            STATE.lastMetadataReceived = null;
             processAppendQueue();
         }
     };
@@ -695,6 +696,7 @@ async function playFromSentence(index) {
     STATE.appendQueue = [];
     STATE.chunkTimings = [];
     STATE.fetchingSet.clear();
+    STATE.metadataQueue = [];
 
     if (STATE.sourceBuffer) {
         try {
