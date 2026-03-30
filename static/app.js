@@ -32,14 +32,14 @@ async function startFirebase() {
             const authBtn = document.getElementById('auth-btn');
             if (user) {
                 authInfo.innerHTML = `<img src="${user.photoURL}" class="w-6 h-6 rounded-full"> ${user.displayName}`;
-                authBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i> Logout';
+                authBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i>';
                 authBtn.onclick = () => signOut(auth);
 
                 // Fetch recent books from Firestore
                 await refreshLibrary();
             } else {
                 authInfo.innerHTML = `<span class="text-slate-500">Guest Mode</span>`;
-                authBtn.innerHTML = '<i class="fab fa-google"></i> Login';
+                authBtn.innerHTML = '<i class="fab fa-google"></i>';
                 authBtn.onclick = () => signInWithPopup(auth, provider);
                 document.getElementById('book-list').innerHTML = '<div class="text-center p-8 text-slate-500 italic text-sm">Login to see your library.</div>';
             }
@@ -90,7 +90,7 @@ let STATE = {
 };
 
 // Constants
-const PREFETCH_STEPS = [10, 20, 50, 100, 200];
+const PREFETCH_STEPS = [10, 20, 50, 100, 200, 500, 1000];
 
 // DOM Elements
 const audio = document.getElementById('main-audio');
@@ -413,6 +413,9 @@ async function refreshLibrary() {
 }
 
 async function loadBookFromStorage(bookId, bookData) {
+    // Close sidebar immediately on selection (don't wait for loading to finish)
+    toggleSidebar(false);
+
     document.getElementById('status-indicator').innerText = "Loading from Storage...";
     document.getElementById('current-title').innerText = "Fetching " + bookData.title + "...";
 
@@ -472,6 +475,15 @@ fileInput.onchange = async (e) => {
 };
 
 async function loadBook(bookData, bookId, filename) {
+    // Auto-close sidebar on mobile after selection
+    toggleSidebar(false);
+
+    // Save progress of the current book before switching to the new one
+    if (STATE.currentBookId) {
+        console.log(`Saving progress for ${STATE.currentBookId} before switching...`);
+        await saveProgress(true);
+    }
+
     STATE.currentBook = bookData;
     STATE.currentBookId = bookId || ("book_" + bookData.title.replace(/[^a-zA-Z0-9]/g, "_"));
     STATE.currentFilename = filename || (STATE.currentBook.title + ".txt");
@@ -506,6 +518,10 @@ async function loadBook(bookData, bookId, filename) {
 
     // Immediately sync to register the book and filename in the library (Forced)
     saveProgress(true);
+
+    // Auto-play from current position
+    playFromSentence(STATE.currentSentenceIndex);
+
 }
 
 function renderChapter(index) {
@@ -762,11 +778,11 @@ function highlightSentence(index) {
     if (cur) {
         cur.classList.add('chunk-active');
 
-        // Calculate offset to position sentence approx 30% from top instead of dead center
+        // Calculate offset to position sentence approx 10% from top instead of 25% (scrolling further down)
         const container = document.getElementById('text-container');
         const offsetTop = cur.offsetTop;
         const containerHeight = container.offsetHeight;
-        const targetScroll = offsetTop - (containerHeight * 0.25);
+        const targetScroll = offsetTop - (containerHeight * 0.1);
 
         container.scrollTo({
             top: targetScroll,
@@ -879,8 +895,14 @@ audio.ontimeupdate = () => {
             if (currentChunk.chapterIndex !== STATE.currentChapterIndex) {
                 console.log(`Transitioning to Chapter ${currentChunk.chapterIndex}`);
                 renderChapter(currentChunk.chapterIndex);
-                renderTOC();
-                scrollTOCCurrentChapter();
+
+                // [FIX]: Chỉ cập nhật Mục lục nếu nó đang mở, tránh lỗi tự động trượt ra trên di động do hàm scrollIntoView
+                const tocOverlay = document.getElementById('toc-overlay');
+                if (tocOverlay && !tocOverlay.classList.contains('translate-x-full')) {
+                    renderTOC();
+                    scrollTOCCurrentChapter();
+                }
+
                 if ('mediaSession' in navigator) {
                     updateMediaSession();
                 }

@@ -25,17 +25,21 @@
     <style type="text/tailwindcss">
         @theme {
             --font-inter: "Inter", sans-serif;
-            --color-primary: #00E5FF;
-            --color-primary-dim: #008fa0;
-            --color-bg-dark: #0b1326;
-            --color-surface-low: #131b2e;
-            --color-surface-high: #222a3d;
-            --color-glass: rgba(23, 31, 51, 0.6);
-            --color-glass-border: rgba(0, 229, 255, 0.1);
+            --color-primary: var(--theme-primary, #00E5FF);
+            --color-primary-dim: var(--theme-primary-dim, #008fa0);
+            --color-bg-dark: var(--theme-bg, #0b1326);
+            --color-surface-low: var(--theme-surface, #131b2e);
+            --color-surface-high: var(--theme-surface-high, #222a3d);
+            --color-glass: var(--theme-glass, rgba(23, 31, 51, 0.6));
+            --color-glass-border: var(--theme-glass-border, rgba(0, 229, 255, 0.1));
+            --color-text-main: var(--theme-text, #dae2fd);
+            --color-text-reading: var(--theme-text-reading, #bac9cc);
         }
         @layer base {
             body { 
-                @apply font-inter bg-bg-dark text-[#dae2fd] antialiased selection:bg-primary/30 selection:text-white; 
+                @apply font-inter bg-bg-dark antialiased selection:bg-primary/30 selection:text-white;
+                color: var(--theme-text, #dae2fd);
+                transition: background-color 0.5s ease, color 0.5s ease;
             }
         }
         @layer components {
@@ -66,10 +70,351 @@
 
         /* Animations */
         @keyframes subtle-glow {
-            0%, 100% { filter: drop-shadow(0 0 5px rgba(0, 229, 255, 0.2)); }
-            50% { filter: drop-shadow(0 0 15px rgba(0, 229, 255, 0.5)); }
+            0%, 100% { filter: drop-shadow(0 0 5px color-mix(in srgb, var(--theme-primary, #00E5FF) 20%, transparent)); }
+            50% { filter: drop-shadow(0 0 15px color-mix(in srgb, var(--theme-primary, #00E5FF) 50%, transparent)); }
         }
         .glow-pulse { animation: subtle-glow 3s infinite ease-in-out; }
+
+        /* ===== THEME SYSTEM ===== */
+        :root {
+            --theme-primary: #00E5FF;
+            --theme-primary-dim: #008fa0;
+            --theme-bg: #0b1326;
+            --theme-surface: #131b2e;
+            --theme-surface-high: #222a3d;
+            --theme-glass: rgba(23, 31, 51, 0.6);
+            --theme-glass-border: rgba(0, 229, 255, 0.1);
+            --theme-text: #dae2fd;
+            --theme-text-reading: #bac9cc;
+            --theme-is-light: 0;
+        }
+
+        /* Theme: Warm Night */
+        [data-theme="warm-night"] {
+            --theme-primary: #FFB347;
+            --theme-primary-dim: #cc8a28;
+            --theme-bg: #1a1410;
+            --theme-surface: #251e17;
+            --theme-surface-high: #342b22;
+            --theme-glass: rgba(37, 30, 23, 0.7);
+            --theme-glass-border: rgba(255, 179, 71, 0.12);
+            --theme-text: #e8ddd0;
+            --theme-text-reading: #c9b99f;
+            --theme-is-light: 0;
+        }
+
+        /* Theme: Sepia Classic */
+        [data-theme="sepia"] {
+            --theme-primary: #8B6914;
+            --theme-primary-dim: #6b5010;
+            --theme-bg: #f5f0e8;
+            --theme-surface: #ebe5d8;
+            --theme-surface-high: #ddd5c5;
+            --theme-glass: rgba(235, 229, 216, 0.85);
+            --theme-glass-border: rgba(139, 105, 20, 0.15);
+            --theme-text: #3d3229;
+            --theme-text-reading: #5a4d3e;
+            --theme-is-light: 1;
+        }
+
+        /* Theme: Forest Deep */
+        [data-theme="forest"] {
+            --theme-primary: #4ADE80;
+            --theme-primary-dim: #22c55e;
+            --theme-bg: #0d1a12;
+            --theme-surface: #142219;
+            --theme-surface-high: #1e3326;
+            --theme-glass: rgba(20, 34, 25, 0.7);
+            --theme-glass-border: rgba(74, 222, 128, 0.12);
+            --theme-text: #c8e0d0;
+            --theme-text-reading: #9cc4a8;
+            --theme-is-light: 0;
+        }
+
+        /* Theme: Rose Dusk */
+        [data-theme="rose"] {
+            --theme-primary: #F472B6;
+            --theme-primary-dim: #db2777;
+            --theme-bg: #1a0f14;
+            --theme-surface: #251720;
+            --theme-surface-high: #36222e;
+            --theme-glass: rgba(37, 23, 32, 0.7);
+            --theme-glass-border: rgba(244, 114, 182, 0.12);
+            --theme-text: #e8d0de;
+            --theme-text-reading: #c9a3b8;
+            --theme-is-light: 0;
+        }
+
+        /* Theme: Paper White */
+        [data-theme="paper"] {
+            --theme-primary: #2563EB;
+            --theme-primary-dim: #1d4ed8;
+            --theme-bg: #fafaf9;
+            --theme-surface: #f0efeb;
+            --theme-surface-high: #e2e0da;
+            --theme-glass: rgba(240, 239, 235, 0.85);
+            --theme-glass-border: rgba(37, 99, 235, 0.12);
+            --theme-text: #1c1917;
+            --theme-text-reading: #3d3835;
+            --theme-is-light: 1;
+        }
+
+        /* Theme: Mocha */
+        [data-theme="mocha"] {
+            --theme-primary: #D4A574;
+            --theme-primary-dim: #b8895a;
+            --theme-bg: #1e1714;
+            --theme-surface: #2a211c;
+            --theme-surface-high: #3a302a;
+            --theme-glass: rgba(42, 33, 28, 0.7);
+            --theme-glass-border: rgba(212, 165, 116, 0.12);
+            --theme-text: #e0d0c0;
+            --theme-text-reading: #c4ad96;
+            --theme-is-light: 0;
+        }
+
+        /* Theme: Ocean Depth */
+        [data-theme="ocean"] {
+            --theme-primary: #38BDF8;
+            --theme-primary-dim: #0ea5e9;
+            --theme-bg: #0a1628;
+            --theme-surface: #0f1f35;
+            --theme-surface-high: #1a2e4a;
+            --theme-glass: rgba(15, 31, 53, 0.7);
+            --theme-glass-border: rgba(56, 189, 248, 0.12);
+            --theme-text: #c8dae8;
+            --theme-text-reading: #98b8d4;
+            --theme-is-light: 0;
+        }
+
+        /* ===== UNIVERSAL THEME OVERRIDES (all non-default themes) ===== */
+        
+        /* Headings & prominent text: use theme text instead of hardcoded white */
+        [data-theme] .text-white {
+            color: var(--theme-text) !important;
+        }
+
+        /* Secondary/muted text: derive from theme text at reduced opacity */
+        [data-theme] .text-slate-400 {
+            color: color-mix(in srgb, var(--theme-text) 50%, transparent) !important;
+        }
+        [data-theme] .text-slate-500 {
+            color: color-mix(in srgb, var(--theme-text) 40%, transparent) !important;
+        }
+        [data-theme] .text-slate-600 {
+            color: color-mix(in srgb, var(--theme-text) 30%, transparent) !important;
+        }
+        [data-theme] .text-slate-700 {
+            color: color-mix(in srgb, var(--theme-text) 20%, transparent) !important;
+        }
+
+        /* Hardcoded body text color class */
+        [data-theme] .text-\[#dae2fd\] {
+            color: var(--theme-text) !important;
+        }
+        [data-theme] .text-\[#bac9cc\] {
+            color: var(--theme-text-reading) !important;
+        }
+
+        /* Chunk active highlight: follow theme primary */
+        [data-theme] .chunk-active {
+            background: color-mix(in srgb, var(--theme-primary) 20%, transparent) !important;
+            border-left-color: var(--theme-primary) !important;
+            color: var(--theme-text) !important;
+            box-shadow: 0 0 20px color-mix(in srgb, var(--theme-primary) 15%, transparent) !important;
+        }
+        [data-theme] .chunk-text:hover {
+            color: var(--theme-text) !important;
+        }
+
+        /* Primary button gradient: adapt to theme accent */
+        [data-theme] .btn-primary {
+            background: linear-gradient(to bottom right, color-mix(in srgb, var(--theme-primary) 70%, white), var(--theme-primary)) !important;
+            color: #000 !important;
+            box-shadow: none;
+        }
+        [data-theme] .btn-primary:hover {
+            box-shadow: 0 8px 20px color-mix(in srgb, var(--theme-primary) 30%, transparent) !important;
+        }
+
+        /* Glass surfaces: use theme glass */
+        [data-theme] .glass {
+            background: var(--theme-glass) !important;
+            border-color: var(--theme-glass-border) !important;
+        }
+
+        /* Semi-transparent surface layers */
+        [data-theme] .bg-white\/5 {
+            background: color-mix(in srgb, var(--theme-text) 5%, transparent) !important;
+        }
+        [data-theme] .bg-white\/\[0\.02\] {
+            background: color-mix(in srgb, var(--theme-text) 2%, transparent) !important;
+        }
+        [data-theme] .border-white\/10 {
+            border-color: color-mix(in srgb, var(--theme-text) 10%, transparent) !important;
+        }
+        [data-theme] .border-white\/5 {
+            border-color: color-mix(in srgb, var(--theme-text) 5%, transparent) !important;
+        }
+
+        /* Sidebar mobile background */
+        [data-theme] #sidebar-container {
+            background-color: color-mix(in srgb, var(--theme-bg) 95%, transparent) !important;
+        }
+
+        /* TOC overlay */
+        [data-theme] #toc-overlay {
+            background-color: color-mix(in srgb, var(--theme-bg) 95%, transparent) !important;
+        }
+
+        /* Sidebar backdrop */
+        [data-theme] #sidebar-overlay {
+            background: color-mix(in srgb, var(--theme-bg) 60%, transparent) !important;
+        }
+
+        /* Player play button */
+        [data-theme] #play-btn {
+            background: var(--theme-text) !important;
+            color: var(--theme-bg) !important;
+            box-shadow: 0 0 30px color-mix(in srgb, var(--theme-text) 20%, transparent);
+        }
+        [data-theme] #media-player.minimized-player #play-btn {
+            box-shadow: 0 0 40px color-mix(in srgb, var(--theme-primary) 40%, transparent) !important;
+        }
+
+        /* Status indicator */
+        [data-theme] #status-indicator {
+            background: color-mix(in srgb, var(--theme-primary) 10%, transparent);
+            border-color: color-mix(in srgb, var(--theme-primary) 20%, transparent);
+        }
+
+        /* Progress bar gradient */
+        [data-theme] #progress-bar {
+            background: linear-gradient(to right, color-mix(in srgb, var(--theme-primary) 50%, transparent), var(--theme-primary)) !important;
+        }
+
+        /* Logo title gradient */
+        [data-theme] .bg-gradient-to-r.from-primary {
+            background: linear-gradient(to right, var(--theme-primary), color-mix(in srgb, var(--theme-primary) 60%, #a78bfa), color-mix(in srgb, var(--theme-primary) 80%, transparent)) !important;
+            -webkit-background-clip: text !important;
+            background-clip: text !important;
+            -webkit-text-fill-color: transparent !important;
+        }
+
+        /* ===== LIGHT THEME SPECIFIC OVERRIDES (sepia + paper) ===== */
+        [data-theme="sepia"] .glass,
+        [data-theme="paper"] .glass {
+            box-shadow: 0 1px 8px rgba(0,0,0,0.06);
+            backdrop-filter: blur(20px) saturate(1.2);
+        }
+        [data-theme="sepia"] .bg-white\/5,
+        [data-theme="paper"] .bg-white\/5 {
+            background: rgba(0,0,0,0.04) !important;
+        }
+        [data-theme="sepia"] .border-white\/10,
+        [data-theme="paper"] .border-white\/10,
+        [data-theme="sepia"] .border-white\/5,
+        [data-theme="paper"] .border-white\/5 {
+            border-color: rgba(0,0,0,0.08) !important;
+        }
+        [data-theme="sepia"] #play-btn,
+        [data-theme="paper"] #play-btn {
+            background: var(--theme-primary) !important;
+            color: white !important;
+            box-shadow: 0 0 30px color-mix(in srgb, var(--theme-primary) 25%, transparent);
+        }
+        [data-theme="sepia"] .btn-primary,
+        [data-theme="paper"] .btn-primary {
+            color: white !important;
+        }
+        [data-theme="sepia"] #sidebar-overlay,
+        [data-theme="paper"] #sidebar-overlay {
+            background: rgba(0,0,0,0.3) !important;
+        }
+        [data-theme="sepia"] select,
+        [data-theme="paper"] select {
+            background-color: var(--theme-surface) !important;
+            border-color: rgba(0,0,0,0.1) !important;
+        }
+        /* Scrollbar for light themes */
+        [data-theme="sepia"] ::-webkit-scrollbar-thumb,
+        [data-theme="paper"] ::-webkit-scrollbar-thumb {
+            background: rgba(0,0,0,0.1) !important;
+        }
+        [data-theme="sepia"] ::-webkit-scrollbar-thumb:hover,
+        [data-theme="paper"] ::-webkit-scrollbar-thumb:hover {
+            background: rgba(0,0,0,0.2) !important;
+        }
+
+        /* Theme transition on all dynamically-colored elements */
+        .glass, .btn-primary, .chunk-text, .chunk-active, .sidebar-item,
+        nav, header, footer, section, aside, select, input[type="range"] {
+            transition: background-color 0.5s ease, border-color 0.5s ease, color 0.5s ease, box-shadow 0.5s ease;
+        }
+
+        /* Theme Picker Panel Styles */
+        #theme-picker-panel {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, padding 0.3s ease;
+            opacity: 0;
+            padding-top: 0;
+            padding-bottom: 0;
+        }
+        #theme-picker-panel.open {
+            max-height: 300px;
+            opacity: 1;
+            padding-top: 1rem;
+            padding-bottom: 1rem;
+        }
+
+        .theme-swatch {
+            width: 42px;
+            height: 42px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2.5px solid transparent;
+            position: relative;
+            transition: all 0.25s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--swatch-bg) !important;
+            box-shadow: inset 0 0 0 1px rgba(128,128,128,0.15);
+        }
+        .theme-swatch:hover {
+            transform: scale(1.18);
+            box-shadow: inset 0 0 0 1px rgba(128,128,128,0.15), 0 0 16px color-mix(in srgb, var(--swatch-color) 40%, transparent);
+        }
+        .theme-swatch.active {
+            border-color: var(--swatch-color);
+            box-shadow: inset 0 0 0 1px rgba(128,128,128,0.15), 0 0 20px color-mix(in srgb, var(--swatch-color) 35%, transparent);
+        }
+        .theme-swatch.active::after {
+            content: '✓';
+            position: absolute;
+            font-size: 11px;
+            font-weight: 900;
+            z-index: 2;
+            color: var(--swatch-check, white);
+            text-shadow: 0 1px 3px rgba(0,0,0,0.4);
+        }
+        .theme-swatch-inner {
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--swatch-color) !important;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+        }
+
+        /* Ring animation for active swatch */
+        @keyframes theme-ring {
+            0%, 100% { box-shadow: inset 0 0 0 1px rgba(128,128,128,0.15), 0 0 12px color-mix(in srgb, var(--swatch-color) 30%, transparent); }
+            50% { box-shadow: inset 0 0 0 1px rgba(128,128,128,0.15), 0 0 24px color-mix(in srgb, var(--swatch-color) 50%, transparent); }
+        }
+        .theme-swatch.active {
+            animation: theme-ring 2.5s infinite ease-in-out;
+        }
 
         /* Responsive Sidebar Drawer for Mobile */
         @media (max-width: 1024px) {
@@ -102,11 +447,11 @@
             cursor: pointer;
         }
         .minimap-node:hover {
-            background: rgba(0,229,255,0.3);
+            background: color-mix(in srgb, var(--theme-primary, #00E5FF) 30%, transparent);
         }
         .minimap-active {
-            background: var(--color-primary) !important;
-            box-shadow: 0 0 10px var(--color-primary);
+            background: var(--theme-primary, #00E5FF) !important;
+            box-shadow: 0 0 10px var(--theme-primary, #00E5FF);
             height: 3px;
         }
         #minimap-viewport {
@@ -159,7 +504,7 @@
         #media-player.minimized-player #play-btn {
             width: 4.5rem; /* Slightly larger for better touch in stealth mode */
             height: 4.5rem;
-            box-shadow: 0 0 40px rgba(0, 229, 255, 0.4);
+            box-shadow: 0 0 40px color-mix(in srgb, var(--theme-primary, #00E5FF) 40%, transparent);
             transform: scale(1);
             margin-bottom: -1rem;
         }
@@ -252,14 +597,20 @@
             </div>
 
             <!-- Settings Card -->
-            <div class="glass p-5 flex flex-col gap-4 rounded-3xl bg-surface-low/40">
-                <h2 class="font-bold text-xs text-slate-500 uppercase tracking-widest flex items-center gap-2">
+            <div class="glass p-5 flex flex-col gap-0 rounded-3xl bg-surface-low/40">
+                <button id="voice-settings-toggle"
+                    class="font-bold text-xs text-slate-500 uppercase tracking-widest flex items-center gap-2 w-full cursor-pointer hover:text-slate-300 transition-colors">
                     <i class="fas fa-sliders-h text-primary"></i> Voice Intelligence
-                </h2>
-                <div class="space-y-4">
-                    <div class="relative">
+                    <i id="voice-settings-chevron"
+                        class="fas fa-chevron-down ml-auto text-[10px] text-slate-600 transition-transform duration-300"
+                        style="transform: rotate(-90deg);"></i>
+                </button>
+                <div id="voice-settings-body" class="space-y-4 overflow-hidden transition-all duration-400 ease-in-out"
+                    style="max-height: 0; opacity: 0; margin-top: 0;">
+                    <div class="relative" style="margin-top: 1rem;">
                         <select id="voice-select"
-                            class="w-full bg-[#060e20] border border-white/10 rounded-xl p-3 text-sm appearance-none focus:border-primary/50 transition-colors">
+                            class="w-full bg-[#060e20] border border-white/10 rounded-xl p-3 text-sm appearance-none focus:border-primary/50 transition-colors"
+                            style="background-color: var(--theme-surface); color: var(--theme-text);">
                             <option value="vi-VN-HoaiMyNeural">Hoài My (Việt Nam)</option>
                             <option value="vi-VN-NamMinhNeural">Nam Minh (Việt Nam)</option>
                             <option value="en-US-AriaNeural">Aria (USA)</option>
@@ -289,8 +640,71 @@
                             <span class="text-slate-400">PREFETCH BATCH</span>
                             <span id="prefetch-val" class="text-primary font-mono text-sm">10 Chunks</span>
                         </div>
-                        <input type="range" id="prefetch-range" min="0" max="4" step="1" value="0"
+                        <input type="range" id="prefetch-range" min="0" max="6" step="1" value="0"
                             class="w-full accent-primary h-1.5 cursor-pointer">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Theme Picker -->
+            <div class="flex flex-col gap-0">
+                <button id="theme-toggle-btn"
+                    class="glass flex items-center gap-3 p-4 rounded-3xl hover:bg-white/5 transition-all group cursor-pointer w-full"
+                    title="Change Theme">
+                    <div
+                        class="w-9 h-9 rounded-xl flex items-center justify-center bg-primary/10 group-hover:bg-primary group-hover:text-black transition-all">
+                        <i class="fas fa-palette text-primary group-hover:text-black text-sm transition-colors"></i>
+                    </div>
+                    <div class="flex flex-col items-start">
+                        <span class="text-xs font-bold uppercase tracking-widest text-slate-500">Reading Theme</span>
+                        <span id="current-theme-name" class="text-sm font-bold text-primary">Midnight Cyan</span>
+                    </div>
+                    <i id="theme-chevron"
+                        class="fas fa-chevron-up ml-auto text-xs text-slate-600 transition-transform duration-300"></i>
+                </button>
+
+                <div id="theme-picker-panel" class="glass rounded-3xl mx-0 mt-2 px-5">
+                    <div class="grid grid-cols-4 gap-4 justify-items-center">
+                        <div class="theme-swatch active" data-theme="default"
+                            style="--swatch-bg: #0b1326; --swatch-color: #00E5FF; --swatch-check: white;"
+                            title="Midnight Cyan">
+                            <div class="theme-swatch-inner"></div>
+                        </div>
+                        <div class="theme-swatch" data-theme="warm-night"
+                            style="--swatch-bg: #1a1410; --swatch-color: #FFB347; --swatch-check: white;"
+                            title="Warm Night">
+                            <div class="theme-swatch-inner"></div>
+                        </div>
+                        <div class="theme-swatch" data-theme="sepia"
+                            style="--swatch-bg: #f5f0e8; --swatch-color: #8B6914; --swatch-check: #3d3229;"
+                            title="Sepia Classic">
+                            <div class="theme-swatch-inner"></div>
+                        </div>
+                        <div class="theme-swatch" data-theme="forest"
+                            style="--swatch-bg: #0d1a12; --swatch-color: #4ADE80; --swatch-check: white;"
+                            title="Forest Deep">
+                            <div class="theme-swatch-inner"></div>
+                        </div>
+                        <div class="theme-swatch" data-theme="rose"
+                            style="--swatch-bg: #1a0f14; --swatch-color: #F472B6; --swatch-check: white;"
+                            title="Rose Dusk">
+                            <div class="theme-swatch-inner"></div>
+                        </div>
+                        <div class="theme-swatch" data-theme="paper"
+                            style="--swatch-bg: #fafaf9; --swatch-color: #2563EB; --swatch-check: #1c1917;"
+                            title="Paper White">
+                            <div class="theme-swatch-inner"></div>
+                        </div>
+                        <div class="theme-swatch" data-theme="mocha"
+                            style="--swatch-bg: #1e1714; --swatch-color: #D4A574; --swatch-check: white;"
+                            title="Mocha">
+                            <div class="theme-swatch-inner"></div>
+                        </div>
+                        <div class="theme-swatch" data-theme="ocean"
+                            style="--swatch-bg: #0a1628; --swatch-color: #38BDF8; --swatch-check: white;"
+                            title="Ocean Depth">
+                            <div class="theme-swatch-inner"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -333,7 +747,8 @@
             <!-- Reading Content with Editorial Typography -->
             <div class="flex-1 flex overflow-hidden relative">
                 <div id="text-container"
-                    class="flex-1 overflow-y-auto p-6 lg:p-14 lg:pr-24 leading-[1.8] text-lg lg:text-xl text-[#bac9cc] scroll-smooth font-inter">
+                    class="flex-1 overflow-y-auto p-6 lg:p-14 lg:pr-24 leading-[1.8] text-lg lg:text-xl scroll-smooth font-inter"
+                    style="color: var(--theme-text-reading, #bac9cc);">
                     <div class="flex flex-col items-center justify-center h-full text-center max-w-md mx-auto">
                         <div class="w-24 h-24 mb-8 relative">
                             <div class="absolute inset-0 bg-primary/20 blur-3xl rounded-full"></div>
@@ -501,6 +916,114 @@
         window.addEventListener('resize', () => {
             if (window.innerWidth >= 1024) toggleSidebar(false);
         });
+
+        // ===== THEME SYSTEM =====
+        const THEME_NAMES = {
+            'default': 'Midnight Cyan',
+            'warm-night': 'Warm Night',
+            'sepia': 'Sepia Classic',
+            'forest': 'Forest Deep',
+            'rose': 'Rose Dusk',
+            'paper': 'Paper White',
+            'mocha': 'Mocha',
+            'ocean': 'Ocean Depth'
+        };
+
+        const THEME_META_COLORS = {
+            'default': '#0b1326',
+            'warm-night': '#1a1410',
+            'sepia': '#f5f0e8',
+            'forest': '#0d1a12',
+            'rose': '#1a0f14',
+            'paper': '#fafaf9',
+            'mocha': '#1e1714',
+            'ocean': '#0a1628'
+        };
+
+        function applyTheme(themeId) {
+            const root = document.documentElement;
+
+            // Apply or remove data-theme attribute
+            if (themeId === 'default') {
+                root.removeAttribute('data-theme');
+            } else {
+                root.setAttribute('data-theme', themeId);
+            }
+
+            // Update meta theme-color for mobile browser chrome
+            const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+            if (metaThemeColor) {
+                metaThemeColor.content = THEME_META_COLORS[themeId] || '#0b1326';
+            }
+
+            // Update active swatch visual
+            document.querySelectorAll('.theme-swatch').forEach(sw => {
+                sw.classList.toggle('active', sw.dataset.theme === themeId);
+            });
+
+            // Update displayed theme name
+            const nameEl = document.getElementById('current-theme-name');
+            if (nameEl) nameEl.textContent = THEME_NAMES[themeId] || 'Midnight Cyan';
+
+            // Persist to localStorage
+            localStorage.setItem('reader-theme', themeId);
+        }
+
+        // Theme toggle button
+        const themeToggleBtn = document.getElementById('theme-toggle-btn');
+        const themePickerPanel = document.getElementById('theme-picker-panel');
+        const themeChevron = document.getElementById('theme-chevron');
+
+        themeToggleBtn?.addEventListener('click', () => {
+            const isOpen = themePickerPanel.classList.contains('open');
+            themePickerPanel.classList.toggle('open', !isOpen);
+            themeChevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+        });
+
+        // Swatch click handlers
+        document.querySelectorAll('.theme-swatch').forEach(swatch => {
+            swatch.addEventListener('click', (e) => {
+                e.stopPropagation();
+                applyTheme(swatch.dataset.theme);
+            });
+        });
+
+        // Restore saved theme on page load
+        const savedTheme = localStorage.getItem('reader-theme');
+        if (savedTheme && THEME_NAMES[savedTheme]) {
+            applyTheme(savedTheme);
+        }
+
+        // ===== VOICE SETTINGS COLLAPSE =====
+        const voiceToggle = document.getElementById('voice-settings-toggle');
+        const voiceBody = document.getElementById('voice-settings-body');
+        const voiceChevron = document.getElementById('voice-settings-chevron');
+
+        function toggleVoiceSettings(expand) {
+            if (expand) {
+                voiceBody.style.maxHeight = voiceBody.scrollHeight + 'px';
+                voiceBody.style.opacity = '1';
+                voiceBody.style.marginTop = '0';
+                voiceChevron.style.transform = 'rotate(0deg)';
+            } else {
+                voiceBody.style.maxHeight = '0';
+                voiceBody.style.opacity = '0';
+                voiceBody.style.marginTop = '0';
+                voiceChevron.style.transform = 'rotate(-90deg)';
+            }
+            localStorage.setItem('voice-settings-open', expand);
+        }
+
+        voiceToggle?.addEventListener('click', () => {
+            const isCollapsed = voiceBody.style.maxHeight === '0px' || voiceBody.style.maxHeight === '0';
+            toggleVoiceSettings(isCollapsed);
+        });
+
+        // Restore saved state (default: collapsed)
+        const voiceSettingsOpen = localStorage.getItem('voice-settings-open');
+        if (voiceSettingsOpen === 'true') {
+            toggleVoiceSettings(true);
+        }
     </script>
 </body>
 
