@@ -134,6 +134,7 @@ async def websocket_endpoint(websocket: WebSocket):
     queue = asyncio.Queue()
     state = {"active_session": -1, "current_workers": 0}
     worker_pool = {} # worker_id -> Task
+    ws_lock = asyncio.Lock()
 
     async def receiver():
         try:
@@ -163,7 +164,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         
                     await queue.put(msg)
                 elif msg["type"] == "PING":
-                    await websocket.send_json({"type": "PONG"})
+                    async with ws_lock:
+                        await websocket.send_json({"type": "PONG"})
         except WebSocketDisconnect:
             pass
         except Exception as e:
@@ -212,20 +214,21 @@ async def websocket_endpoint(websocket: WebSocket):
                     # Final check before sending (might have been aborted mid-stream)
                     if state["active_session"] <= sid:
                         try:
-                            await websocket.send_json({
-                                "type": "METADATA",
-                                "index": msg["index"],
-                                "chapterIndex": msg.get("chapterIndex", 0),
-                                "sessionId": sid,
-                                "metadata": metadata
-                            })
-                            await websocket.send_bytes(audio_data)
-                            await websocket.send_json({
-                                "type": "PREFETCH_DONE",
-                                "index": msg["index"],
-                                "chapterIndex": msg.get("chapterIndex", 0),
-                                "sessionId": sid
-                            })
+                            async with ws_lock:
+                                await websocket.send_json({
+                                    "type": "METADATA",
+                                    "index": msg["index"],
+                                    "chapterIndex": msg.get("chapterIndex", 0),
+                                    "sessionId": sid,
+                                    "metadata": metadata
+                                })
+                                await websocket.send_bytes(audio_data)
+                                await websocket.send_json({
+                                    "type": "PREFETCH_DONE",
+                                    "index": msg["index"],
+                                    "chapterIndex": msg.get("chapterIndex", 0),
+                                    "sessionId": sid
+                                })
                         except (WebSocketDisconnect, RuntimeError):
                             print(f"[Worker {worker_id}] Send failed: Socket closed.")
                             break
