@@ -73,7 +73,7 @@ let STATE = {
         speed: 1.0,
         pitch: "+0Hz",
         volume: "+0%",
-        prefetchCount: 10
+        numWorkers: 5
     },
     isTransitioning: false,
     // MSE State
@@ -94,7 +94,7 @@ let STATE = {
 };
 
 // Constants
-const PREFETCH_STEPS = [10, 20, 50, 100, 200, 500, 1000];
+const WORKER_STEPS = [1, 2, 3, 5, 10, 20, 50];
 
 // DOM Elements
 const audio = document.getElementById('main-audio');
@@ -642,9 +642,10 @@ function scrollTOCCurrentChapter() {
 function updatePrefetchUI() {
     if (!STATE.currentBook) return;
 
-    const target = STATE.settings.prefetchCount;
+    // Target buffer size: keep at least 100 chunks ahead, or 10x the workers
+    const target = Math.max(100, STATE.settings.numWorkers * 10);
     const currentGlobal = getGlobalIndex(STATE.currentChapterIndex, STATE.currentSentenceIndex);
-    
+
     // Count ready chunks (in queue or already in MSE) that are AHEAD of current sentence
     const readyInQueue = STATE.appendQueue.filter(c => {
         const idx = getGlobalIndex(c.chapterIndex, c.index);
@@ -657,13 +658,13 @@ function updatePrefetchUI() {
     }).length;
 
     const readyCount = readyInQueue + readyInMSE;
-    
+
     const progressEl = document.getElementById('prefetch-progress');
     const statusEl = document.getElementById('prefetch-status');
-    
+
     if (progressEl && statusEl) {
-        progressEl.innerText = `${readyCount}/${target}`;
-        
+        progressEl.innerText = `${readyCount}`;
+
         const isFetching = STATE.fetchingSet.size > 0;
         if (isFetching || (readyCount > 0 && readyCount < target)) {
             statusEl.classList.remove('hidden');
@@ -684,7 +685,7 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
     if (STATE.prefetchTimeout) clearTimeout(STATE.prefetchTimeout);
 
     const runPrefetch = async () => {
-        if (count === null) count = STATE.settings.prefetchCount;
+        if (count === null) count = Math.max(200, STATE.settings.numWorkers * 20);
         if (!STATE.ws || STATE.ws.readyState !== WebSocket.OPEN) {
             console.warn("WebSocket is dead. Reconnecting...");
             initWebSocket();
@@ -732,6 +733,7 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
                 rate: rate,
                 pitch: pitch,
                 volume: volume,
+                numWorkers: STATE.settings.numWorkers,
                 sessionId: STATE.sessionId
             }));
 
@@ -816,6 +818,7 @@ async function playFromSentence(index) {
         rate: rate,
         pitch: pitch,
         volume: volume,
+        numWorkers: STATE.settings.numWorkers,
         sessionId: currentSessionId
     }));
 
@@ -942,7 +945,7 @@ audio.onwaiting = () => {
 
     if (bufferEnd > 0 && Math.abs(curTime - bufferEnd) < 0.3) {
         console.log("Stall detected at buffer end. Nudging and recovery...");
-        
+
         // Gap Nudge: if we have next chunks in queue but stuck at end, tiny jump
         if (STATE.appendQueue.length > 0 || STATE.fetchingSet.size > 0) {
             audio.currentTime += 0.1;
@@ -1055,9 +1058,9 @@ document.getElementById('pitch-range').oninput = (e) => {
 
 document.getElementById('prefetch-range').oninput = (e) => {
     const stepIndex = parseInt(e.target.value);
-    const count = PREFETCH_STEPS[stepIndex];
-    STATE.settings.prefetchCount = count;
-    document.getElementById('prefetch-val').innerText = `${count} Chunks`;
+    const count = WORKER_STEPS[stepIndex];
+    STATE.settings.numWorkers = count;
+    document.getElementById('prefetch-val').innerText = `${count} Workers`;
     // Trigger immediate prefetch to fill the new buffer size if needed
     prefetchNext(STATE.currentChapterIndex, STATE.currentSentenceIndex);
 };
@@ -1148,10 +1151,10 @@ function applySettingsToUI() {
     }
 
     if (document.getElementById('prefetch-range')) {
-        const idx = PREFETCH_STEPS.indexOf(s.prefetchCount);
+        const idx = WORKER_STEPS.indexOf(s.numWorkers);
         if (idx !== -1) {
             document.getElementById('prefetch-range').value = idx;
-            document.getElementById('prefetch-val').innerText = `${s.prefetchCount} Chunks`;
+            document.getElementById('prefetch-val').innerText = `${s.numWorkers} Workers`;
         }
     }
 }

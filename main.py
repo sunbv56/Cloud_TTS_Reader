@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 app = FastAPI()
-MAX_WORKERS = 5  # Tăng số lượng worker nếu muốn nạp song song nhanh hơn
+NUM_WORKERS = 3  # Tăng số lượng worker nếu muốn nạp song song nhanh hơn
 
 # Mount static files
 static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -132,7 +132,8 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     queue = asyncio.Queue()
-    state = {"active_session": -1}
+    state = {"active_session": -1, "current_workers": 0}
+    worker_pool = {} # worker_id -> Task
 
     async def receiver():
         try:
@@ -143,6 +144,23 @@ async def websocket_endpoint(websocket: WebSocket):
                     if sid > state["active_session"]:
                         state["active_session"] = sid
                         print(f"New Active Session: {sid}")
+                        # Immediately purge the queue of stale pending tasks
+                        while not queue.empty():
+                            queue.get_nowait()
+                        
+                        requested_workers = msg.get("numWorkers", NUM_WORKERS)
+                        print(f"Aggressive Reset: Killing old workers, spawning {requested_workers} new workers.")
+                        
+                        # Aggressively kill ALL current workers to abort any stuck network requests
+                        for task in worker_pool.values():
+                            task.cancel()
+                        worker_pool.clear()
+                        
+                        # Respawn the exact number of requested workers fresh
+                        state["current_workers"] = requested_workers
+                        for i in range(requested_workers):
+                            worker_pool[i] = asyncio.create_task(worker(i))
+                        
                     await queue.put(msg)
                 elif msg["type"] == "PING":
                     await websocket.send_json({"type": "PONG"})
@@ -221,14 +239,19 @@ async def websocket_endpoint(websocket: WebSocket):
             print(f"[Worker {worker_id}] Worker Fatal Error: {e}")
 
     receiver_task = asyncio.create_task(receiver())
-    # Create a pool of workers from global config
-    worker_pool = [asyncio.create_task(worker(i)) for i in range(MAX_WORKERS)]
-
+    # Initial workers will be spawned by the first PREFETCH message in receiver()
+    
     # Wait for either the receiver (disconnect/ping) or any task to finish
+    # We now check worker_pool values for the wait
     done, pending = await asyncio.wait(
-        [receiver_task, *worker_pool],
+        [receiver_task],
         return_when=asyncio.FIRST_COMPLETED,
     )
+
+    # Cleanup: cancel receiver and all workers in pool
+    receiver_task.cancel()
+    for w_task in worker_pool.values():
+        w_task.cancel()
 
     # Cancel whatever is left (usually the worker)
     for task in pending:

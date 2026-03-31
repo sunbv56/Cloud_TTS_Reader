@@ -637,10 +637,10 @@
                     </div>
                     <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
                         <div class="flex items-center justify-between text-xs font-bold px-1 mb-3">
-                            <span class="text-slate-400">PREFETCH BATCH</span>
-                            <span id="prefetch-val" class="text-primary font-mono text-sm">10 Chunks</span>
+                            <span class="text-slate-400">AI PARALLEL WORKERS</span>
+                            <span id="prefetch-val" class="text-primary font-mono text-sm">3 Workers</span>
                         </div>
-                        <input type="range" id="prefetch-range" min="0" max="6" step="1" value="0"
+                        <input type="range" id="prefetch-range" min="0" max="6" step="1" value="2"
                             class="w-full accent-primary h-1.5 cursor-pointer">
                     </div>
                 </div>
@@ -696,8 +696,7 @@
                             <div class="theme-swatch-inner"></div>
                         </div>
                         <div class="theme-swatch" data-theme="mocha"
-                            style="--swatch-bg: #1e1714; --swatch-color: #D4A574; --swatch-check: white;"
-                            title="Mocha">
+                            style="--swatch-bg: #1e1714; --swatch-color: #D4A574; --swatch-check: white;" title="Mocha">
                             <div class="theme-swatch-inner"></div>
                         </div>
                         <div class="theme-swatch" data-theme="ocean"
@@ -858,9 +857,10 @@
                                 <span class="text-[9px] uppercase font-black text-primary tracking-widest">IDLE</span>
                             </div>
                             <!-- Prefetch Progress Indicator -->
-                            <div id="prefetch-status" class="hidden items-center gap-2 px-2 py-0.5 rounded-md bg-white/5 border border-white/5 text-[9px] font-bold text-slate-500 whitespace-nowrap">
+                            <div id="prefetch-status"
+                                class="hidden items-center gap-2 px-2 py-0.5 rounded-md bg-white/5 border border-white/5 text-[9px] font-bold text-slate-500 whitespace-nowrap">
                                 <i class="fas fa-microchip text-[8px] animate-pulse"></i>
-                                <span id="prefetch-progress">0/0</span>
+                                <span id="prefetch-progress">0</span>
                             </div>
                         </div>
                         <button id="speak-speed-chip"
