@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 app = FastAPI()
+MAX_WORKERS = 5  # Tăng số lượng worker nếu muốn nạp song song nhanh hơn
 
 # Mount static files
 static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -37,7 +38,7 @@ def parse_chapters(text: str):
         chapters.append({'title': "Mở đầu", 'content': text.strip()})
     return chapters
 
-def split_text_into_chunks(text: str, max_chars: int = 1200):
+def split_text_into_chunks(text: str, max_chars: int = 800):
     chunks = []
     lines = text.replace('\r\n', '\n').split('\n')
     for line in lines:
@@ -150,14 +151,15 @@ async def websocket_endpoint(websocket: WebSocket):
         except Exception as e:
             print(f"WS Receiver Error: {e}")
 
-    async def worker():
+    async def worker(worker_id: int):
         try:
             while True:
                 msg = await queue.get()
                 sid = msg.get("sessionId", -1)
                 
-                # Check session validity before starting
+                # Immediate check: if task is from a stale session, skip
                 if sid < state["active_session"]:
+                    print(f"[Worker {worker_id}] Skipping stale task: session {sid} < active {state['active_session']}")
                     queue.task_done()
                     continue
                 
@@ -167,14 +169,17 @@ async def websocket_endpoint(websocket: WebSocket):
                 pitch = msg.get("pitch", "+0Hz")
                 volume = msg.get("volume", "+0%")
                 
+                print(f"[Worker {worker_id}] Generating audio for index {msg['index']} (Session {sid})")
+                
                 try:
                     communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume=volume)
                     metadata = []
                     audio_data = b""
 
                     async for chunk in communicate.stream():
-                        # CANCEL MID-STREAM if a new session starts
+                        # CANCEL MID-STREAM instantly if a new session starts
                         if state["active_session"] > sid:
+                            print(f"[Worker {worker_id}] Aborting mid-stream: new session detected ({state['active_session']} > {sid})")
                             break
                         
                         if chunk["type"] == "audio":
@@ -186,7 +191,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "text": chunk["text"]
                             })
                     
-                    # Final check before sending over the socket
+                    # Final check before sending (might have been aborted mid-stream)
                     if state["active_session"] <= sid:
                         try:
                             await websocket.send_json({
@@ -204,22 +209,24 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "sessionId": sid
                             })
                         except (WebSocketDisconnect, RuntimeError):
-                            # Usually happens if receiver loop exits but worker is mid-cycle
-                            print(f"Skipping send for session {sid}: WebSocket disconnected.")
+                            print(f"[Worker {worker_id}] Send failed: Socket closed.")
                             break
                 except Exception as e:
-                    print(f"Generation Error: {e}")
+                    print(f"[Worker {worker_id}] Generation Error: {e}")
                 finally:
                     queue.task_done()
+        except asyncio.CancelledError:
+            print(f"[Worker {worker_id}] Worker task cancelled.")
         except Exception as e:
-            print(f"WS Worker Error: {e}")
+            print(f"[Worker {worker_id}] Worker Fatal Error: {e}")
 
     receiver_task = asyncio.create_task(receiver())
-    worker_task = asyncio.create_task(worker())
+    # Create a pool of workers from global config
+    worker_pool = [asyncio.create_task(worker(i)) for i in range(MAX_WORKERS)]
 
-    # Wait for either task to finish. Usually receiver finishes first on disconnect.
+    # Wait for either the receiver (disconnect/ping) or any task to finish
     done, pending = await asyncio.wait(
-        [receiver_task, worker_task],
+        [receiver_task, *worker_pool],
         return_when=asyncio.FIRST_COMPLETED,
     )
 

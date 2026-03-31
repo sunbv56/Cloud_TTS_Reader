@@ -86,7 +86,11 @@ let STATE = {
     lastAppendedIndex: -1,
     lastAppendedChapter: 0,
     isFirstChunkOfSession: false,
-    prefetchTimeout: null
+    prefetchTimeout: null,
+    prefetchBatchStatus: {
+        completed: 0,
+        total: 0
+    }
 };
 
 // Constants
@@ -130,6 +134,9 @@ function initWebSocket() {
                 if (data.sessionId && data.sessionId !== STATE.sessionId) return;
                 STATE.fetchingSet.delete(`${data.chapterIndex}_${data.index}`);
                 document.getElementById('status-indicator').innerText = "Ready";
+
+                // Update UI using buffer health logic
+                updatePrefetchUI();
             }
         } else {
             // Binary Audio Data (MP3 Chunks) đến
@@ -629,10 +636,54 @@ function scrollTOCCurrentChapter() {
 }
 
 // --- Audio Logic ---
-async function prefetchNext(startChapter, startSentence, count = null) {
+/**
+ * Updates the Prefetch Progress UI to show buffer health (Ready Chunks / Target)
+ */
+function updatePrefetchUI() {
+    if (!STATE.currentBook) return;
+
+    const target = STATE.settings.prefetchCount;
+    const currentGlobal = getGlobalIndex(STATE.currentChapterIndex, STATE.currentSentenceIndex);
+    
+    // Count ready chunks (in queue or already in MSE) that are AHEAD of current sentence
+    const readyInQueue = STATE.appendQueue.filter(c => {
+        const idx = getGlobalIndex(c.chapterIndex, c.index);
+        return idx > currentGlobal;
+    }).length;
+
+    const readyInMSE = STATE.chunkTimings.filter(t => {
+        const idx = getGlobalIndex(t.chapterIndex, t.index);
+        return idx > currentGlobal;
+    }).length;
+
+    const readyCount = readyInQueue + readyInMSE;
+    
+    const progressEl = document.getElementById('prefetch-progress');
+    const statusEl = document.getElementById('prefetch-status');
+    
+    if (progressEl && statusEl) {
+        progressEl.innerText = `${readyCount}/${target}`;
+        
+        const isFetching = STATE.fetchingSet.size > 0;
+        if (isFetching || (readyCount > 0 && readyCount < target)) {
+            statusEl.classList.remove('hidden');
+            statusEl.classList.add('flex');
+        } else if (readyCount >= target && !isFetching) {
+            // Buffer full, hide after 3s
+            setTimeout(() => {
+                if (STATE.fetchingSet.size === 0) {
+                    statusEl.classList.add('hidden');
+                    statusEl.classList.remove('flex');
+                }
+            }, 3000);
+        }
+    }
+}
+
+async function prefetchNext(startChapter, startSentence, count = null, immediate = false) {
     if (STATE.prefetchTimeout) clearTimeout(STATE.prefetchTimeout);
 
-    STATE.prefetchTimeout = setTimeout(async () => {
+    const runPrefetch = async () => {
         if (count === null) count = STATE.settings.prefetchCount;
         if (!STATE.ws || STATE.ws.readyState !== WebSocket.OPEN) {
             console.warn("WebSocket is dead. Reconnecting...");
@@ -641,6 +692,14 @@ async function prefetchNext(startChapter, startSentence, count = null) {
             return;
         }
         if (!STATE.currentBook) return;
+
+        // HIGH PERFORMANCE LOOKUP: Create a Set of all indices currently being handled
+        const busyIndices = new Set();
+        STATE.appendQueue.forEach(c => busyIndices.add(`${c.chapterIndex}_${c.index}`));
+        STATE.chunkTimings.forEach(t => busyIndices.add(`${t.chapterIndex}_${t.index}`));
+        STATE.fetchingSet.forEach(s => busyIndices.add(s));
+
+        updatePrefetchUI();
 
         let currentChapIdx = startChapter;
         let currentSentIdx = startSentence + 1;
@@ -653,16 +712,13 @@ async function prefetchNext(startChapter, startSentence, count = null) {
                 if (currentChapIdx >= STATE.currentBook.chapters.length) break;
             }
 
-            const isQueued = STATE.appendQueue.some(c => c.index === currentSentIdx && c.chapterIndex === currentChapIdx);
-            const isAppended = STATE.chunkTimings.some(t => t.index === currentSentIdx && t.chapterIndex === currentChapIdx);
-            const isFetching = STATE.fetchingSet.has(`${currentChapIdx}_${currentSentIdx}`);
-
-            if (isQueued || isAppended || isFetching) {
+            const key = `${currentChapIdx}_${currentSentIdx}`;
+            if (busyIndices.has(key)) {
                 currentSentIdx++;
                 continue;
             }
 
-            STATE.fetchingSet.add(`${currentChapIdx}_${currentSentIdx}`);
+            STATE.fetchingSet.add(key);
             const text = STATE.currentBook.chapters[currentChapIdx].sentences[currentSentIdx];
             const { voice, speed, pitch, volume } = STATE.settings;
             const rate = `${Math.round((speed - 1) * 100) >= 0 ? '+' : ''}${Math.round((speed - 1) * 100)}%`;
@@ -680,11 +736,14 @@ async function prefetchNext(startChapter, startSentence, count = null) {
             }));
 
             currentSentIdx++;
-
-            // Subtle breathe between sends to prevent socket flooding
-            if (i % 5 === 0) await new Promise(r => setTimeout(r, 10));
         }
-    }, 40);
+    };
+
+    if (immediate) {
+        runPrefetch();
+    } else {
+        STATE.prefetchTimeout = setTimeout(runPrefetch, 15);
+    }
 }
 
 async function playFromSentence(index) {
@@ -707,6 +766,7 @@ async function playFromSentence(index) {
     STATE.chunkTimings = [];
     STATE.fetchingSet.clear();
     STATE.metadataQueue = [];
+    updatePrefetchUI();
 
     if (STATE.sourceBuffer) {
         try {
@@ -881,12 +941,17 @@ audio.onwaiting = () => {
         : 0;
 
     if (bufferEnd > 0 && Math.abs(curTime - bufferEnd) < 0.3) {
-        console.log("Android Stalled detected at buffer end. Forcing next step...");
-        // BỎ VIỆC CLICK NÚT NEXT.
-        // Ép tải thêm chunk liền kề tiếp theo từ vị trí cuối cùng đã có trong buffer
+        console.log("Stall detected at buffer end. Nudging and recovery...");
+        
+        // Gap Nudge: if we have next chunks in queue but stuck at end, tiny jump
+        if (STATE.appendQueue.length > 0 || STATE.fetchingSet.size > 0) {
+            audio.currentTime += 0.1;
+        }
+
+        // Forced recovery from last known position
         let lastChap = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].chapterIndex : STATE.currentChapterIndex;
         let lastIdx = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].index : STATE.currentSentenceIndex;
-        prefetchNext(lastChap, lastIdx);
+        prefetchNext(lastChap, lastIdx, null, true); // Immediate fetch
     }
 };
 
@@ -924,10 +989,24 @@ audio.ontimeupdate = () => {
 
             STATE.currentSentenceIndex = currentChunk.index;
             highlightSentence(STATE.currentSentenceIndex);
+            updatePrefetchUI();
             prefetchNext(currentChunk.chapterIndex, STATE.currentSentenceIndex);
             saveProgress(false);
             updateUI(); // Keep player display in sync
         }
+    }
+
+    // --- Proactive Buffer Health Monitor ---
+    const bufferEnd = (STATE.sourceBuffer && STATE.sourceBuffer.buffered.length > 0)
+        ? STATE.sourceBuffer.buffered.end(STATE.sourceBuffer.buffered.length - 1)
+        : 0;
+
+    const timeRemaining = bufferEnd - curTime;
+    // If buffer < 5 seconds and not currently fetching, top up from the last known buffered chunk
+    if (timeRemaining > 0 && timeRemaining < 5.0 && STATE.fetchingSet.size === 0) {
+        let lastChap = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].chapterIndex : STATE.currentChapterIndex;
+        let lastIdx = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].index : STATE.currentSentenceIndex;
+        prefetchNext(lastChap, lastIdx);
     }
 
     // --- Memory Management (Buffer Cleanup) ---
