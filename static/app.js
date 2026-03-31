@@ -90,7 +90,9 @@ let STATE = {
     prefetchBatchStatus: {
         completed: 0,
         total: 0
-    }
+    },
+    wakeLockEnabled: localStorage.getItem('wakeLockEnabled') === 'true',
+    wakeLockSentinel: null
 };
 
 // Constants
@@ -1201,5 +1203,78 @@ window.addEventListener('pagehide', () => {
         saveProgress(true);
     }
 });
+
+// --- Screen Wake Lock API ---
+async function requestWakeLock() {
+    if ('wakeLock' in navigator) {
+        try {
+            STATE.wakeLockSentinel = await navigator.wakeLock.request('screen');
+            STATE.wakeLockSentinel.addEventListener('release', () => {
+                console.log('Screen Wake Lock was released');
+            });
+            console.log('Screen Wake Lock is active');
+            updateWakeLockUI(true);
+        } catch (err) {
+            console.error(`Wake Lock error: ${err.name}, ${err.message}`);
+            updateWakeLockUI(false);
+            STATE.wakeLockEnabled = false;
+            localStorage.setItem('wakeLockEnabled', 'false');
+        }
+    } else {
+        console.warn("Screen Wake Lock API not supported.");
+        updateWakeLockUI(false);
+    }
+}
+
+function releaseWakeLock() {
+    if (STATE.wakeLockSentinel !== null) {
+        STATE.wakeLockSentinel.release()
+            .then(() => {
+                STATE.wakeLockSentinel = null;
+                updateWakeLockUI(false);
+            });
+    }
+}
+
+function toggleWakeLock() {
+    STATE.wakeLockEnabled = !STATE.wakeLockEnabled;
+    localStorage.setItem('wakeLockEnabled', STATE.wakeLockEnabled);
+    if (STATE.wakeLockEnabled) {
+        requestWakeLock();
+    } else {
+        releaseWakeLock();
+    }
+}
+
+function updateWakeLockUI(isActive) {
+    const btn = document.getElementById('wake-lock-btn');
+    const icon = document.getElementById('wake-lock-icon');
+    if (!btn || !icon) return;
+    
+    if (isActive) {
+        btn.title = "Keep Screen Awake (On)";
+        icon.className = "fas fa-sun text-lg text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.6)] transition-all duration-300 transform scale-110";
+    } else {
+        btn.title = "Keep Screen Awake (Off)";
+        icon.className = "far fa-sun text-lg transition-all duration-300";
+    }
+}
+
+document.getElementById('wake-lock-btn').onclick = () => toggleWakeLock();
+
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && STATE.wakeLockEnabled) {
+        requestWakeLock();
+    }
+});
+
+// Initialize Wake Lock UI on load if previously enabled
+// Note: Some browsers require user interaction first, so it might fail on auto-load.
+// It will be recovered when visibility changes or clicked.
+if (STATE.wakeLockEnabled) {
+    requestWakeLock().catch(e => console.warn("Auto-wake lock failed on load:", e));
+} else {
+    updateWakeLockUI(false);
+}
 
 console.log("Cloud TTS Reader Pro Initialized.");
