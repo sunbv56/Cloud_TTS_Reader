@@ -1196,7 +1196,7 @@ function updateMediaSession() {
     }
 }
 
-window.addEventListener('beforeunload', () => {
+window.addEventListener('pagehide', () => {
     if (STATE.currentBookId) {
         saveProgress(true);
     }
