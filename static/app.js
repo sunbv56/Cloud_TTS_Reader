@@ -322,6 +322,7 @@ async function saveProgress(force = false) {
             filename: STATE.currentFilename,
             last_read_chunk: currentGlobalIndex,
             total_chunks: getTotalChunks(),
+            settings: STATE.settings, // Save current settings
             updated_at: serverTimestamp()
         }, { merge: true });
 
@@ -492,13 +493,22 @@ async function loadBook(bookData, bookId, filename) {
     // Check for existing progress
     const progress = await loadProgress(STATE.currentBookId);
     if (progress && progress.last_read_chunk !== undefined) {
-        // Correct filename if missing or different
+        // Restore user-edited title and correct filename
+        if (progress.title) STATE.currentBook.title = progress.title;
         if (progress.filename) STATE.currentFilename = progress.filename;
 
         const indices = getLocalIndices(progress.last_read_chunk);
         STATE.currentChapterIndex = indices.chapterIndex;
         STATE.currentSentenceIndex = indices.sentenceIndex;
         STATE.lastSavedChunkIndex = progress.last_read_chunk;
+
+        // Restore book-specific voice settings
+        if (progress.settings) {
+            STATE.settings = { ...STATE.settings, ...progress.settings };
+            applySettingsToUI();
+            console.log("Restored saved voice settings from Firestore.");
+        }
+
         console.log(`Resuming from global chunk ${progress.last_read_chunk}`);
     } else {
         STATE.currentChapterIndex = 0;
@@ -842,9 +852,11 @@ async function editTitle() {
     if (newTitle && newTitle.trim() !== "" && newTitle !== STATE.currentBook.title) {
         STATE.currentBook.title = newTitle.trim();
         document.getElementById('current-title').innerText = STATE.currentBook.title;
+        updateUI(); // Keep player and author tokens in sync
+
         // Force save with new title
         await saveProgress(true);
-        refreshLibrary(); // Refresh sidebar to show new title
+        await refreshLibrary(); // Wait for library update to reflect new title
     }
 }
 
@@ -1038,6 +1050,30 @@ function updateUI() {
     if (STATE.currentBook) {
         document.getElementById('player-title').innerText = STATE.currentBook.chapters[STATE.currentChapterIndex].title;
         document.getElementById('player-author').innerText = STATE.currentBook.title;
+    }
+}
+
+function applySettingsToUI() {
+    const s = STATE.settings;
+    if (document.getElementById('voice-select')) document.getElementById('voice-select').value = s.voice;
+
+    if (document.getElementById('speed-range')) {
+        document.getElementById('speed-range').value = s.speed;
+        document.getElementById('speed-val').innerText = `${s.speed}x`;
+    }
+
+    if (document.getElementById('pitch-range')) {
+        const val = parseInt(s.pitch) || 0;
+        document.getElementById('pitch-range').value = val;
+        document.getElementById('pitch-val').innerText = s.pitch;
+    }
+
+    if (document.getElementById('prefetch-range')) {
+        const idx = PREFETCH_STEPS.indexOf(s.prefetchCount);
+        if (idx !== -1) {
+            document.getElementById('prefetch-range').value = idx;
+            document.getElementById('prefetch-val').innerText = `${s.prefetchCount} Chunks`;
+        }
     }
 }
 
