@@ -92,7 +92,14 @@ let STATE = {
         total: 0
     },
     wakeLockEnabled: localStorage.getItem('wakeLockEnabled') === 'true',
-    wakeLockSentinel: null
+    wakeLockSentinel: null,
+    // Sleep Timer & Stall Detection
+    sleepTimer: null,
+    sleepTimerEnd: 0,
+    lastPlaybackTime: 0,
+    lastPlaybackTick: 0,
+    stallCount: 0,
+    pauseCount: 0
 };
 
 // Constants
@@ -107,12 +114,16 @@ const bookList = document.getElementById('book-list');
 
 // --- Initialization ---
 function initWebSocket() {
+    if (STATE.ws && (STATE.ws.readyState === WebSocket.OPEN || STATE.ws.readyState === WebSocket.CONNECTING)) {
+        return; // Don't create multiple connections
+    }
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
     STATE.ws = new WebSocket(wsUrl);
 
     STATE.ws.onopen = () => {
         console.log("Connected to WebSocket");
+        document.getElementById('status-indicator').innerText = "Ready";
         // Start Heartbeat
         setInterval(() => {
             if (STATE.ws.readyState === WebSocket.OPEN) {
@@ -166,9 +177,44 @@ function initWebSocket() {
     };
 
     STATE.ws.onclose = () => {
-        console.log("WebSocket Disconnected. Reconnecting...");
-        setTimeout(initWebSocket, 3000);
+        console.log("WebSocket Disconnected.");
+        if (STATE.isPlaying && !STATE.isStalled) {
+            console.log("Unexpected disconnect, reconnecting in 3s...");
+            setTimeout(initWebSocket, 3000);
+        } else {
+            document.getElementById('status-indicator').innerText = "Disconnected";
+        }
     };
+}
+
+/**
+ * Ensures the WebSocket is connected before proceeding.
+ * If not connected, initiates connection and waits for the OPEN state.
+ */
+async function waitForWebSocket() {
+    if (STATE.ws && STATE.ws.readyState === WebSocket.OPEN) return;
+
+    if (!STATE.ws || STATE.ws.readyState === WebSocket.CLOSED || STATE.ws.readyState === WebSocket.CLOSING) {
+        console.warn("WebSocket not connected. Connecting...");
+        document.getElementById('status-indicator').innerText = "Connecting...";
+        initWebSocket();
+    }
+
+    return new Promise((resolve) => {
+        const startTime = Date.now();
+        const check = () => {
+            if (STATE.ws && STATE.ws.readyState === WebSocket.OPEN) {
+                resolve();
+            } else if (Date.now() - startTime > 10000) {
+                // Timeout after 10s
+                console.error("WebSocket connection timeout.");
+                resolve(); // Resolve anyway to avoid hanging, or handle error
+            } else {
+                setTimeout(check, 100);
+            }
+        };
+        check();
+    });
 }
 
 function initMSE() {
@@ -689,10 +735,7 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
     const runPrefetch = async () => {
         if (count === null) count = Math.max(200, STATE.settings.numWorkers * 20);
         if (!STATE.ws || STATE.ws.readyState !== WebSocket.OPEN) {
-            console.warn("WebSocket is dead. Reconnecting...");
-            initWebSocket();
-            setTimeout(() => prefetchNext(startChapter, startSentence, count), 1000);
-            return;
+            await waitForWebSocket();
         }
         if (!STATE.currentBook) return;
 
@@ -751,7 +794,8 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
 }
 
 async function playFromSentence(index) {
-    if (!STATE.currentBook || !STATE.ws) return;
+    if (!STATE.currentBook) return;
+    await waitForWebSocket();
     STATE.currentSentenceIndex = index;
     const sentences = STATE.currentBook.chapters[STATE.currentChapterIndex].sentences;
 
@@ -876,14 +920,18 @@ function highlightSentence(index) {
     }
 }
 
-playBtn.onclick = () => {
+playBtn.onclick = async () => {
     if (document.getElementById('media-player').classList.contains('minimized-player')) {
         toggleMinimize(false);
         return;
     }
     if (audio.paused) {
-        if (STATE.chunkTimings.length === 0) playFromSentence(STATE.currentSentenceIndex);
-        else audio.play();
+        await waitForWebSocket();
+        if (STATE.chunkTimings.length === 0) {
+            await playFromSentence(STATE.currentSentenceIndex);
+        } else {
+            audio.play();
+        }
     } else {
         audio.pause();
     }
@@ -1250,7 +1298,7 @@ function updateWakeLockUI(isActive) {
     const btn = document.getElementById('wake-lock-btn');
     const icon = document.getElementById('wake-lock-icon');
     if (!btn || !icon) return;
-    
+
     if (isActive) {
         btn.title = "Keep Screen Awake (On)";
         icon.className = "fas fa-sun text-lg text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.6)] transition-all duration-300 transform scale-110";
@@ -1259,6 +1307,264 @@ function updateWakeLockUI(isActive) {
         icon.className = "far fa-sun text-lg transition-all duration-300";
     }
 }
+
+// --- Sleep Timer & Manual Save Logic ---
+function toggleSleepTimerDropdown() {
+    const dropdown = document.getElementById('sleep-timer-dropdown');
+    dropdown.classList.toggle('hidden');
+    
+    // Close dropdown when clicking outside
+    if (!dropdown.classList.contains('hidden')) {
+        const closeDropdown = (e) => {
+            if (!dropdown.contains(e.target) && !document.getElementById('sleep-timer-btn').contains(e.target)) {
+                dropdown.classList.add('hidden');
+                document.removeEventListener('click', closeDropdown);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', closeDropdown), 10);
+    }
+}
+
+function setSleepTimerPreset(minutes) {
+    const seconds = Math.round(minutes * 60);
+    startSleepTimer(seconds);
+}
+
+function startSleepTimerFromCustom() {
+    const h = parseInt(document.getElementById('sleep-h').value) || 0;
+    const m = parseInt(document.getElementById('sleep-m').value) || 0;
+    const s = parseInt(document.getElementById('sleep-s').value) || 0;
+    
+    const seconds = h * 3600 + m * 60 + s;
+    if (seconds <= 0) {
+        alert("Please set a valid duration.");
+        return;
+    }
+    startSleepTimer(seconds);
+}
+
+function startSleepTimer(seconds) {
+    if (STATE.sleepTimer) clearInterval(STATE.sleepTimer);
+    
+    STATE.sleepTimerEnd = Date.now() + seconds * 1000;
+    updateSleepTimerUI(true, seconds);
+    document.getElementById('sleep-timer-dropdown').classList.add('hidden');
+
+    STATE.sleepTimer = setInterval(() => {
+        const remaining = Math.max(0, Math.round((STATE.sleepTimerEnd - Date.now()) / 1000));
+        updateSleepTimerUI(true, remaining);
+
+        if (remaining <= 0) {
+            clearInterval(STATE.sleepTimer);
+            STATE.sleepTimer = null;
+            console.log("Sleep Timer Expired: Stopping Playback and Disconnecting");
+            
+            // Action: Stop playback
+            audio.pause();
+            STATE.isPlaying = false;
+
+            // Action: Disconnect WebSocket to stop backend workers
+            if (STATE.ws) {
+                STATE.ws.close();
+            }
+
+            // Action: Increment Session ID to invalidate any pending work
+            STATE.sessionId++;
+            
+            // Action: Clear RAM/ROM
+            STATE.appendQueue = [];
+            STATE.chunkTimings = [];
+            STATE.fetchingSet.clear();
+            STATE.metadataQueue = [];
+
+            if (STATE.sourceBuffer && !STATE.sourceBuffer.updating) {
+                try {
+                    if (STATE.sourceBuffer.buffered.length > 0) {
+                        const end = STATE.sourceBuffer.buffered.end(STATE.sourceBuffer.buffered.length - 1);
+                        STATE.sourceBuffer.remove(0, end + 10);
+                    }
+                } catch (e) {}
+            }
+            
+            // Action: Disable Wake Lock
+            if (STATE.wakeLockEnabled) {
+                releaseWakeLock();
+                STATE.wakeLockEnabled = false;
+                localStorage.setItem('wakeLockEnabled', 'false');
+            }
+            
+            updateSleepTimerUI(false);
+            updateUI();
+            document.getElementById('status-indicator').innerText = "Sleep Timer - Disconnected";
+        }
+    }, 1000);
+}
+
+function cancelSleepTimer() {
+    if (STATE.sleepTimer) {
+        clearInterval(STATE.sleepTimer);
+        STATE.sleepTimer = null;
+    }
+    updateSleepTimerUI(false);
+    document.getElementById('sleep-timer-dropdown').classList.add('hidden');
+}
+
+function formatTime(seconds) {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return [h, m, s].map(v => v < 10 ? "0" + v : v).join(":");
+}
+
+function updateSleepTimerUI(isActive, seconds = 0) {
+    const btn = document.getElementById('sleep-timer-btn');
+    const icon = document.getElementById('sleep-timer-icon');
+    const badge = document.getElementById('sleep-timer-badge');
+    const controls = document.getElementById('sleep-timer-active-controls');
+    const remainingText = document.getElementById('sleep-timer-remaining');
+    
+    if (isActive) {
+        icon.className = "fas fa-moon text-lg text-primary scale-110";
+        badge.innerText = seconds > 60 ? Math.ceil(seconds / 60) + "m" : seconds;
+        badge.classList.remove('opacity-0');
+        btn.classList.add('bg-primary/10');
+        
+        if (controls) controls.classList.remove('hidden');
+        if (remainingText) remainingText.innerText = formatTime(seconds);
+    } else {
+        icon.className = "fas fa-moon text-lg";
+        badge.classList.add('opacity-0');
+        btn.classList.remove('bg-primary/10');
+        
+        if (controls) controls.classList.add('hidden');
+    }
+}
+
+async function triggerManualSave() {
+    const btn = document.getElementById('manual-save-btn');
+    const icon = document.getElementById('manual-save-icon');
+
+    btn.classList.add('pointer-events-none');
+    icon.className = "fas fa-sync-alt fa-spin text-primary";
+
+    try {
+        await saveProgress(true);
+        icon.className = "fas fa-check text-green-400";
+        setTimeout(() => {
+            icon.className = "fas fa-cloud-upload-alt text-lg";
+            btn.classList.remove('pointer-events-none');
+        }, 2000);
+    } catch (e) {
+        console.error("Manual save failed:", e);
+        icon.className = "fas fa-times text-red-500";
+        setTimeout(() => {
+            icon.className = "fas fa-cloud-upload-alt text-lg";
+            btn.classList.remove('pointer-events-none');
+        }, 2000);
+    }
+}
+
+// --- Stall Detection Logic (Poll every 1s) ---
+setInterval(() => {
+    if (!STATE.isPlaying || STATE.isTransitioning || !audio.currentTime) {
+        if (!STATE.isPlaying && STATE.currentBook && !STATE.isTransitioning) {
+            STATE.pauseCount++;
+            if (STATE.pauseCount % 10 === 0) console.log(`Inactivity: ${STATE.pauseCount}s / 60s`);
+            
+            if (STATE.pauseCount >= 60) {
+                handlePauseTimeout();
+            }
+        }
+        
+        STATE.stallCount = 0;
+        STATE.lastPlaybackTime = audio.currentTime;
+        return;
+    }
+
+    // Reset pause count if playing
+    STATE.pauseCount = 0;
+
+    if (audio.currentTime === STATE.lastPlaybackTime) {
+        STATE.stallCount++;
+        console.warn(`Stall Warning: ${STATE.stallCount}s at ${audio.currentTime}`);
+    } else {
+        STATE.stallCount = 0;
+    }
+
+    STATE.lastPlaybackTime = audio.currentTime;
+
+    if (STATE.stallCount >= 5) {
+        handlePlaybackStall();
+    }
+}, 1000);
+
+async function handlePauseTimeout() {
+    console.warn("Pause Timeout: 1 minute reached. Saving and Disconnecting...");
+    STATE.pauseCount = 0; // Reset to avoid double trigger
+    
+    // 1. Save Progress
+    if (STATE.user && STATE.currentBookId) {
+        document.getElementById('status-indicator').innerText = "Auto-Saving...";
+        await saveProgress(true);
+    }
+
+    // 2. Cleanup (Disconnect & Clear RAM/ROM)
+    await handlePlaybackStall();
+    
+    document.getElementById('status-indicator').innerText = "Session Expired (1m Inactivity)";
+    document.getElementById('status-indicator').style.color = "#FFB347";
+}
+
+async function handlePlaybackStall() {
+    console.error("Playback Stalled/Inactivity triggered Emergency Cleanup...");
+    STATE.isStalled = true;
+    STATE.isPlaying = false;
+    audio.pause();
+
+    // 1. Disconnect WebSocket
+    if (STATE.ws) {
+        STATE.ws.close();
+    }
+
+    // 2. Clear RAM (Queues)
+    STATE.appendQueue = [];
+    STATE.chunkTimings = [];
+    STATE.fetchingSet.clear();
+    STATE.metadataQueue = [];
+
+    // 3. Clear ROM (MSE Buffer)
+    if (STATE.sourceBuffer && !STATE.sourceBuffer.updating) {
+        try {
+            if (STATE.sourceBuffer.buffered.length > 0) {
+                const end = STATE.sourceBuffer.buffered.end(STATE.sourceBuffer.buffered.length - 1);
+                STATE.sourceBuffer.remove(0, end + 10);
+            }
+        } catch (e) {
+            console.error("Error clearing stalled buffer:", e);
+        }
+    }
+
+    if (!document.getElementById('status-indicator').innerText.startsWith("Session Expired")) {
+        document.getElementById('status-indicator').innerText = "Stalled - Clear RAM/ROM";
+        document.getElementById('status-indicator').style.color = "#FF5252";
+    }
+    
+    // reset counters
+    STATE.stallCount = 0;
+    STATE.pauseCount = 0;
+    
+    // Inform user via UI
+    const playBtn = document.getElementById('play-btn');
+    if (playBtn) playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
+}
+
+// Expose functions to window for HTML onclick attributes
+window.setSleepTimerPreset = setSleepTimerPreset;
+window.startSleepTimerFromCustom = startSleepTimerFromCustom;
+window.cancelSleepTimer = cancelSleepTimer;
+
+document.getElementById('sleep-timer-btn').onclick = () => toggleSleepTimerDropdown();
+document.getElementById('manual-save-btn').onclick = () => triggerManualSave();
 
 document.getElementById('wake-lock-btn').onclick = () => toggleWakeLock();
 

@@ -744,6 +744,61 @@
                         title="Chapters">
                         <i class="fas fa-list-ul text-lg"></i>
                     </button>
+                    <button id="manual-save-btn"
+                        class="w-11 h-11 flex items-center justify-center rounded-2xl hover:bg-white/5 hover:text-primary transition-all group"
+                        title="Save Progress to Cloud">
+                        <i id="manual-save-icon" class="fas fa-cloud-upload-alt text-lg"></i>
+                    </button>
+                    <div class="relative group/sleep">
+                        <button id="sleep-timer-btn"
+                            class="w-11 h-11 flex items-center justify-center rounded-2xl hover:bg-white/5 hover:text-primary transition-all group relative"
+                            title="Sleep Timer">
+                            <i id="sleep-timer-icon" class="fas fa-moon text-lg transition-all"></i>
+                            <span id="sleep-timer-badge" class="absolute -top-1 -right-1 bg-primary text-black text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center opacity-0 transition-opacity">0</span>
+                        </button>
+                        
+                        <!-- Sleep Timer Dropdown -->
+                        <div id="sleep-timer-dropdown" 
+                             class="absolute right-0 top-full mt-2 w-64 bg-surface/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-4 hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                            <h3 class="text-sm font-bold mb-3 flex items-center gap-2">
+                                <i class="fas fa-clock text-primary"></i> Sleep Timer
+                            </h3>
+                            
+                            <div class="grid grid-cols-2 gap-2 mb-4">
+                                <button onclick="setSleepTimerPreset(15)" class="text-xs py-2 bg-white/5 hover:bg-primary/20 rounded-xl transition-colors">15 Min</button>
+                                <button onclick="setSleepTimerPreset(30)" class="text-xs py-2 bg-white/5 hover:bg-primary/20 rounded-xl transition-colors">30 Min</button>
+                                <button onclick="setSleepTimerPreset(45)" class="text-xs py-2 bg-white/5 hover:bg-primary/20 rounded-xl transition-colors">45 Min</button>
+                                <button onclick="setSleepTimerPreset(60)" class="text-xs py-2 bg-white/5 hover:bg-primary/20 rounded-xl transition-colors">60 Min</button>
+                                <button onclick="setSleepTimerPreset(0.0833)" class="text-xs py-2 bg-white/5 hover:bg-primary/20 rounded-xl transition-colors col-span-2 border border-primary/30">Test (5s)</button>
+                            </div>
+                            
+                            <div class="mb-4">
+                                <label class="text-[10px] uppercase tracking-wider text-white/40 mb-1 block">Custom Duration (HH:MM:SS)</label>
+                                <div class="flex items-center gap-1 justify-between bg-black/40 border border-white/10 rounded-xl px-2 py-1.5 transition-all focus-within:border-primary/50">
+                                    <input type="number" id="sleep-h" value="0" min="0" max="23" placeholder="HH"
+                                           class="w-10 bg-transparent text-center text-xs text-white focus:outline-none" onfocus="this.select()">
+                                    <span class="text-white/20 text-[10px]">:</span>
+                                    <input type="number" id="sleep-m" value="30" min="0" max="59" placeholder="MM"
+                                           class="w-10 bg-transparent text-center text-xs text-white focus:outline-none" onfocus="this.select()">
+                                    <span class="text-white/20 text-[10px]">:</span>
+                                    <input type="number" id="sleep-s" value="0" min="0" max="59" placeholder="SS"
+                                           class="w-10 bg-transparent text-center text-xs text-white focus:outline-none" onfocus="this.select()">
+                                    <button onclick="startSleepTimerFromCustom()" 
+                                            class="ml-2 bg-primary text-black px-3 py-1 rounded-lg text-[10px] font-black hover:scale-105 active:scale-95 transition-all">SET</button>
+                                </div>
+                            </div>
+                            
+                            <div id="sleep-timer-active-controls" class="hidden border-t border-white/5 pt-3 mt-1">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-[10px] text-white/40">Active Countdown</span>
+                                    <span id="sleep-timer-remaining" class="text-xs font-mono text-primary">00:00:00</span>
+                                </div>
+                                <button onclick="cancelSleepTimer()" class="w-full py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs rounded-xl transition-colors">
+                                    Cancel Timer
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                     <button id="wake-lock-btn"
                         class="w-11 h-11 flex items-center justify-center rounded-2xl hover:bg-white/5 hover:text-primary transition-all group"
                         title="Keep Screen Awake (Off)">
