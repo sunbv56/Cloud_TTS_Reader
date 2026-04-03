@@ -38,7 +38,7 @@ def parse_chapters(text: str):
         chapters.append({'title': "Mở đầu", 'content': text.strip()})
     return chapters
 
-def split_text_into_chunks(text: str, max_chars: int = 800):
+def split_text_into_chunks(text: str, max_chars: int = 500):
     chunks = []
     lines = text.replace('\r\n', '\n').split('\n')
     for line in lines:
@@ -119,6 +119,53 @@ async def get_firebase_config():
         "appId": os.getenv("FIREBASE_APP_ID", ""),
         "measurementId": os.getenv("FIREBASE_MEASUREMENT_ID", "")
     }
+
+class ChapterDownloadItem(BaseModel):
+    chapterIndex: int
+    title: str
+    sentences: List[str]
+
+class ChapterDownloadRequest(BaseModel):
+    bookTitle: str
+    chapters: List[ChapterDownloadItem]
+    voice: str = "vi-VN-HoaiMyNeural"
+    rate: str = "+0%"
+    pitch: str = "+0Hz"
+    volume: str = "+0%"
+
+@app.post("/api/download-chapters")
+async def download_chapters(req: ChapterDownloadRequest):
+    """Generate a single MP3 file from selected chapters and stream as download."""
+    indices = [c.chapterIndex for c in req.chapters]
+    xx = min(indices) + 1  # 1-indexed for display
+    yy = max(indices) + 1
+    
+    # Sanitize book title for filename
+    safe_title = re.sub(r'[^\w\s-]', '', req.bookTitle).strip().replace(' ', '_')
+    filename = f"{safe_title}_{xx:02d}_{yy:02d}.mp3"
+    
+    async def generate_audio():
+        for chapter in req.chapters:
+            # Join all sentences into full chapter text for a single TTS call
+            full_text = "\n".join(chapter.sentences)
+            print(f"[Download] Generating chapter: {chapter.title} ({len(full_text)} chars)")
+            try:
+                communicate = edge_tts.Communicate(
+                    full_text, req.voice,
+                    rate=req.rate, pitch=req.pitch, volume=req.volume
+                )
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        yield chunk["data"]
+            except Exception as e:
+                print(f"[Download] TTS Error for chapter {chapter.title}: {e}")
+                continue
+    
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"'
+    }
+    
+    return StreamingResponse(generate_audio(), media_type="audio/mpeg", headers=headers)
 
 # Main route for index.html
 @app.get("/")

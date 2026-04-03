@@ -54,6 +54,13 @@ async function startFirebase() {
 
 startFirebase();
 
+// --- Utility Functions ---
+function removeVietnameseTones(str) {
+    str = str.normalize('NFD').replace(/[\u0300-\u036f]/g, "");
+    str = str.replace(/[đĐ]/g, m => m === 'đ' ? 'd' : 'D');
+    return str;
+}
+
 // App State
 let STATE = {
     user: null,
@@ -99,7 +106,13 @@ let STATE = {
     lastPlaybackTime: 0,
     lastPlaybackTick: 0,
     stallCount: 0,
-    pauseCount: 0
+    pauseCount: 0,
+    // Offline Download
+    isDownloading: false,
+    downloadBuffer: new Map(),
+    downloadExpected: 0,
+    downloadResolve: null,
+    downloadReject: null
 };
 
 // Constants
@@ -153,7 +166,6 @@ function initWebSocket() {
             }
         } else {
             // Binary Audio Data (MP3 Chunks) đến
-            // Lấy Metadata tương ứng (cũ nhất trong Queue) ra để ghép cặp
             const currentMetadata = STATE.metadataQueue.shift();
 
             if (!currentMetadata || (currentMetadata.sessionId && currentMetadata.sessionId !== STATE.sessionId)) {
@@ -163,7 +175,35 @@ function initWebSocket() {
 
             const arrayBuffer = await event.data.arrayBuffer();
 
-            // Đẩy vào hàng đợi nối audio (Append Queue)
+            // --- Download Mode: route to download buffer ---
+            if (STATE.isDownloading) {
+                const key = `${currentMetadata.chapterIndex}_${currentMetadata.index}`;
+                STATE.downloadBuffer.set(key, arrayBuffer);
+
+                // Update download progress UI
+                const received = STATE.downloadBuffer.size;
+                const total = STATE.downloadExpected;
+                const progress = total > 0 ? Math.round((received / total) * 100) : 0;
+
+                const progressBar = document.getElementById('toc-download-progress-bar');
+                const percentEl = document.getElementById('toc-download-percent');
+                const chapterInfo = document.getElementById('toc-download-chapter-info');
+                const statusEl = document.getElementById('toc-download-status');
+
+                if (progressBar) progressBar.style.width = `${progress}%`;
+                if (percentEl) percentEl.innerText = `${progress}%`;
+                if (chapterInfo) chapterInfo.innerText = `${received} / ${total} chunks`;
+                if (statusEl) statusEl.innerText = `Workers processing... (${received}/${total})`;
+
+                // Check if all chunks received
+                if (received >= total && STATE.downloadResolve) {
+                    STATE.downloadResolve();
+                    STATE.downloadResolve = null;
+                }
+                return;
+            }
+
+            // --- Normal Streaming Mode: append to MSE ---
             STATE.appendQueue.push({
                 index: currentMetadata.index,
                 chapterIndex: currentMetadata.chapterIndex,
@@ -659,15 +699,41 @@ document.getElementById('text-container').addEventListener('scroll', syncMinimap
 function renderTOC() {
     const tocList = document.getElementById('toc-list');
     tocList.innerHTML = '';
+    const isSelectMode = document.getElementById('toc-select-mode-btn')?.classList.contains('active');
+
     STATE.currentBook.chapters.forEach((chap, i) => {
         const div = document.createElement('div');
         const isActive = i === STATE.currentChapterIndex;
         div.id = `toc-item-${i}`;
-        div.className = `p-4 glass hover:bg-primary/10 cursor-pointer transition-colors ${isActive ? 'border-l-4 border-primary bg-primary/10 font-bold text-white' : ''}`;
-        div.innerHTML = `<span class="text-primary font-bold mr-4">${i + 1}</span> ${chap.title}`;
+        div.className = `p-4 glass hover:bg-primary/10 cursor-pointer transition-colors flex items-center gap-3 ${isActive ? 'border-l-4 border-primary bg-primary/10 font-bold text-white' : ''}`;
+
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = `toc-chapter-checkbox accent-primary w-4 h-4 rounded cursor-pointer shrink-0 ${isSelectMode ? '' : 'hidden'}`;
+        checkbox.dataset.chapterIndex = i;
+        checkbox.onclick = (e) => e.stopPropagation();
+        checkbox.onchange = () => updateDownloadBar();
+
+        const numSpan = document.createElement('span');
+        numSpan.className = 'text-primary font-bold shrink-0';
+        numSpan.innerText = i + 1;
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = 'truncate';
+        titleSpan.innerText = chap.title;
+
+        div.appendChild(checkbox);
+        div.appendChild(numSpan);
+        div.appendChild(titleSpan);
+
         div.onclick = () => {
+            const selectMode = document.getElementById('toc-select-mode-btn')?.classList.contains('active');
+            if (selectMode) {
+                checkbox.checked = !checkbox.checked;
+                updateDownloadBar();
+                return;
+            }
             renderChapter(i);
-            // Properly revoke all old blobs before clearing
             playFromSentence(0);
             document.getElementById('toc-overlay').classList.add('translate-x-full');
         };
@@ -680,6 +746,230 @@ function scrollTOCCurrentChapter() {
     const tocList = document.getElementById('toc-list');
     if (activeItem && tocList) {
         activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+}
+
+// --- Offline Download Logic ---
+function toggleSelectMode() {
+    const btn = document.getElementById('toc-select-mode-btn');
+    const isActive = btn.classList.contains('active');
+    btn.classList.toggle('active', !isActive);
+
+    if (!isActive) {
+        btn.classList.add('bg-primary/20', 'text-primary');
+        btn.innerHTML = '<i class="fas fa-times text-xs"></i><span>Cancel</span>';
+    } else {
+        btn.classList.remove('bg-primary/20', 'text-primary');
+        btn.innerHTML = '<i class="fas fa-check-double text-xs"></i><span>Select</span>';
+    }
+
+    document.querySelectorAll('.toc-chapter-checkbox').forEach(cb => {
+        cb.classList.toggle('hidden', isActive);
+        if (isActive) cb.checked = false;
+    });
+
+    updateDownloadBar();
+}
+
+function updateDownloadBar() {
+    const checkboxes = document.querySelectorAll('.toc-chapter-checkbox:checked');
+    const bar = document.getElementById('toc-download-bar');
+    const countEl = document.getElementById('toc-selected-count');
+    const isSelectMode = document.getElementById('toc-select-mode-btn')?.classList.contains('active');
+
+    if (isSelectMode) {
+        bar.classList.remove('hidden');
+        countEl.innerText = `${checkboxes.length} chapter${checkboxes.length !== 1 ? 's' : ''} selected`;
+    } else {
+        bar.classList.add('hidden');
+    }
+}
+
+function selectAllChapters() {
+    document.querySelectorAll('.toc-chapter-checkbox').forEach(cb => cb.checked = true);
+    updateDownloadBar();
+}
+
+function deselectAllChapters() {
+    document.querySelectorAll('.toc-chapter-checkbox').forEach(cb => cb.checked = false);
+    updateDownloadBar();
+}
+
+async function downloadSelectedChapters() {
+    const checkboxes = document.querySelectorAll('.toc-chapter-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert('Please select at least one chapter.');
+        return;
+    }
+
+    const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.chapterIndex));
+
+    const chapters = selectedIndices.map(idx => ({
+        chapterIndex: idx,
+        title: STATE.currentBook.chapters[idx].title,
+        sentences: STATE.currentBook.chapters[idx].sentences
+    }));
+
+    const { voice, speed, pitch, volume } = STATE.settings;
+    const rate = `${Math.round((speed - 1) * 100) >= 0 ? '+' : ''}${Math.round((speed - 1) * 100)}%`;
+
+    // UI elements
+    const downloadBtn = document.getElementById('toc-download-btn');
+    const statusEl = document.getElementById('toc-download-status');
+    const progressContainer = document.getElementById('toc-download-progress');
+    const progressBar = document.getElementById('toc-download-progress-bar');
+    const chapterInfo = document.getElementById('toc-download-chapter-info');
+    const percentEl = document.getElementById('toc-download-percent');
+
+    downloadBtn.innerHTML = '<i class="fas fa-stop"></i><span>Stop Download</span>';
+    downloadBtn.classList.add('!bg-red-500/20', '!text-red-400', '!border-red-500/30');
+
+    // --- Prepare download state ---
+    // 1. Pause audio
+    audio.pause();
+    STATE.isPlaying = false;
+
+    // 2. New session → kill old workers, clear queues
+    STATE.sessionId++;
+    STATE.appendQueue = [];
+    STATE.chunkTimings = [];
+    STATE.fetchingSet.clear();
+    STATE.metadataQueue = [];
+
+    // 3. Initialize download buffer
+    STATE.isDownloading = true;
+    STATE.downloadBuffer = new Map();
+    STATE.downloadExpected = chapters.reduce((sum, ch) => sum + ch.sentences.length, 0);
+
+    document.getElementById('status-indicator').innerText = "Downloading Offline...";
+    statusEl.classList.remove('hidden');
+    progressContainer.classList.remove('hidden');
+    progressBar.style.width = '0%';
+    percentEl.innerText = '0%';
+    chapterInfo.innerText = `0 / ${STATE.downloadExpected} chunks`;
+    statusEl.innerText = `Dispatching ${STATE.downloadExpected} chunks to ${STATE.settings.numWorkers} workers...`;
+
+    console.log(`[Download] Starting parallel download: ${STATE.downloadExpected} chunks across ${chapters.length} chapters`);
+
+    try {
+        // 4. Ensure WebSocket is connected (workers are needed!)
+        await waitForWebSocket();
+
+        // 5. Send ALL sentences as PREFETCH tasks — workers process in parallel!
+        for (const chapter of chapters) {
+            for (let s = 0; s < chapter.sentences.length; s++) {
+                const key = `${chapter.chapterIndex}_${s}`;
+                STATE.fetchingSet.add(key);
+
+                STATE.ws.send(JSON.stringify({
+                    type: "PREFETCH",
+                    index: s,
+                    chapterIndex: chapter.chapterIndex,
+                    text: chapter.sentences[s],
+                    voice: voice,
+                    rate: rate,
+                    pitch: pitch,
+                    volume: volume,
+                    numWorkers: STATE.settings.numWorkers,
+                    sessionId: STATE.sessionId
+                }));
+            }
+        }
+
+        // 6. Wait for ALL chunks to be received by the WS binary handler
+        await new Promise((resolve, reject) => {
+            STATE.downloadResolve = resolve;
+            STATE.downloadReject = reject;
+
+            // Safety timeout: 10 minutes max
+            setTimeout(() => {
+                if (STATE.downloadResolve) {
+                    STATE.downloadResolve = null;
+                    STATE.downloadReject = null;
+                    reject(new Error(`Download timed out (${STATE.downloadBuffer.size}/${STATE.downloadExpected} received)`));
+                }
+            }, 10 * 60 * 1000);
+        });
+
+        // 7. All chunks received! Sort by chapter then sentence index and concatenate
+        progressBar.style.width = '100%';
+        percentEl.innerText = '100%';
+        chapterInfo.innerText = 'Merging audio...';
+        statusEl.innerText = 'All chunks received. Building MP3...';
+
+        const sortedKeys = [...STATE.downloadBuffer.keys()].sort((a, b) => {
+            const [ac, as_] = a.split('_').map(Number);
+            const [bc, bs] = b.split('_').map(Number);
+            if (ac !== bc) return ac - bc;
+            return as_ - bs;
+        });
+
+        const orderedBuffers = sortedKeys.map(k => STATE.downloadBuffer.get(k));
+        const finalBlob = new Blob(orderedBuffers, { type: 'audio/mpeg' });
+
+        // Generate filename
+        const chapterNumbers = chapters.map(ch => {
+            const match = ch.title.match(/\d+/);
+            return match ? parseInt(match[0]) : null;
+        }).filter(n => n !== null);
+
+        const xx = chapterNumbers.length > 0 ? Math.min(...chapterNumbers) : (Math.min(...selectedIndices) + 1);
+        const yy = chapterNumbers.length > 0 ? Math.max(...chapterNumbers) : (Math.max(...selectedIndices) + 1);
+        const normalizedTitle = removeVietnameseTones(STATE.currentBook.title);
+        const safeTitle = normalizedTitle.replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '_');
+        const filename = `${safeTitle}_${String(xx).padStart(2, '0')}_${String(yy).padStart(2, '0')}.mp3`;
+
+        // Trigger browser download
+        const url = URL.createObjectURL(finalBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        statusEl.innerText = '✓ Download complete!';
+        setTimeout(() => {
+            statusEl.classList.add('hidden');
+            progressContainer.classList.add('hidden');
+            progressBar.style.width = '0%';
+        }, 4000);
+    } catch (err) {
+        console.error('Download Error:', err);
+        statusEl.innerText = `✗ ${err.message || 'Download failed.'}`;
+        progressBar.style.width = '0%';
+    } finally {
+        STATE.isDownloading = false;
+        STATE.downloadBuffer = new Map();
+        STATE.downloadExpected = 0;
+        STATE.downloadResolve = null;
+        STATE.downloadReject = null;
+        downloadBtn.innerHTML = '<i class="fas fa-download"></i><span>Download Offline MP3</span>';
+        downloadBtn.classList.remove('!bg-red-500/20', '!text-red-400', '!border-red-500/30');
+
+        // Close WebSocket after download (free backend resources)
+        if (STATE.ws) {
+            STATE.ws.close();
+            STATE.ws = null;
+        }
+        document.getElementById('status-indicator').innerText = "Disconnected";
+        const playBtn = document.getElementById('play-btn');
+        if (playBtn) playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
+    }
+}
+
+function stopDownload() {
+    console.log('[Download] User stopped download.');
+
+    // Increment session to invalidate all in-flight WS responses
+    STATE.sessionId++;
+
+    // Reject the download promise to exit the await
+    if (STATE.downloadReject) {
+        STATE.downloadReject(new Error('Download cancelled by user.'));
+        STATE.downloadReject = null;
+        STATE.downloadResolve = null;
     }
 }
 
@@ -1137,9 +1427,28 @@ document.getElementById('toc-btn').onclick = () => {
     renderTOC(); // Re-render to ensure active state is correct
     setTimeout(scrollTOCCurrentChapter, 300);
 };
-document.getElementById('close-toc').onclick = () => document.getElementById('toc-overlay').classList.add('translate-x-full');
+document.getElementById('close-toc').onclick = () => {
+    // Reset select mode when closing TOC
+    const selectBtn = document.getElementById('toc-select-mode-btn');
+    if (selectBtn?.classList.contains('active')) {
+        toggleSelectMode();
+    }
+    document.getElementById('toc-overlay').classList.add('translate-x-full');
+};
 document.getElementById('sync-btn').onclick = () => refreshLibrary();
 document.getElementById('edit-title-btn').onclick = () => editTitle();
+
+// TOC Select Mode & Download
+document.getElementById('toc-select-mode-btn').onclick = () => toggleSelectMode();
+document.getElementById('toc-select-all-btn').onclick = () => selectAllChapters();
+document.getElementById('toc-deselect-all-btn').onclick = () => deselectAllChapters();
+document.getElementById('toc-download-btn').onclick = () => {
+    if (STATE.isDownloading) {
+        stopDownload();
+    } else {
+        downloadSelectedChapters();
+    }
+};
 
 // // Player Minimize Logic
 function toggleMinimize(isMinimized) {
@@ -1312,7 +1621,7 @@ function updateWakeLockUI(isActive) {
 function toggleSleepTimerDropdown() {
     const dropdown = document.getElementById('sleep-timer-dropdown');
     dropdown.classList.toggle('hidden');
-    
+
     // Close dropdown when clicking outside
     if (!dropdown.classList.contains('hidden')) {
         const closeDropdown = (e) => {
@@ -1334,7 +1643,7 @@ function startSleepTimerFromCustom() {
     const h = parseInt(document.getElementById('sleep-h').value) || 0;
     const m = parseInt(document.getElementById('sleep-m').value) || 0;
     const s = parseInt(document.getElementById('sleep-s').value) || 0;
-    
+
     const seconds = h * 3600 + m * 60 + s;
     if (seconds <= 0) {
         alert("Please set a valid duration.");
@@ -1345,7 +1654,7 @@ function startSleepTimerFromCustom() {
 
 function startSleepTimer(seconds) {
     if (STATE.sleepTimer) clearInterval(STATE.sleepTimer);
-    
+
     STATE.sleepTimerEnd = Date.now() + seconds * 1000;
     updateSleepTimerUI(true, seconds);
     document.getElementById('sleep-timer-dropdown').classList.add('hidden');
@@ -1358,7 +1667,7 @@ function startSleepTimer(seconds) {
             clearInterval(STATE.sleepTimer);
             STATE.sleepTimer = null;
             console.log("Sleep Timer Expired: Stopping Playback and Disconnecting");
-            
+
             // Action: Stop playback
             audio.pause();
             STATE.isPlaying = false;
@@ -1370,7 +1679,7 @@ function startSleepTimer(seconds) {
 
             // Action: Increment Session ID to invalidate any pending work
             STATE.sessionId++;
-            
+
             // Action: Clear RAM/ROM
             STATE.appendQueue = [];
             STATE.chunkTimings = [];
@@ -1383,16 +1692,16 @@ function startSleepTimer(seconds) {
                         const end = STATE.sourceBuffer.buffered.end(STATE.sourceBuffer.buffered.length - 1);
                         STATE.sourceBuffer.remove(0, end + 10);
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
-            
+
             // Action: Disable Wake Lock
             if (STATE.wakeLockEnabled) {
                 releaseWakeLock();
                 STATE.wakeLockEnabled = false;
                 localStorage.setItem('wakeLockEnabled', 'false');
             }
-            
+
             updateSleepTimerUI(false);
             updateUI();
             document.getElementById('status-indicator').innerText = "Sleep Timer - Disconnected";
@@ -1422,20 +1731,20 @@ function updateSleepTimerUI(isActive, seconds = 0) {
     const badge = document.getElementById('sleep-timer-badge');
     const controls = document.getElementById('sleep-timer-active-controls');
     const remainingText = document.getElementById('sleep-timer-remaining');
-    
+
     if (isActive) {
         icon.className = "fas fa-moon text-lg text-primary scale-110";
         badge.innerText = seconds > 60 ? Math.ceil(seconds / 60) + "m" : seconds;
         badge.classList.remove('opacity-0');
         btn.classList.add('bg-primary/10');
-        
+
         if (controls) controls.classList.remove('hidden');
         if (remainingText) remainingText.innerText = formatTime(seconds);
     } else {
         icon.className = "fas fa-moon text-lg";
         badge.classList.add('opacity-0');
         btn.classList.remove('bg-primary/10');
-        
+
         if (controls) controls.classList.add('hidden');
     }
 }
@@ -1467,15 +1776,15 @@ async function triggerManualSave() {
 // --- Stall Detection Logic (Poll every 1s) ---
 setInterval(() => {
     if (!STATE.isPlaying || STATE.isTransitioning || !audio.currentTime) {
-        if (!STATE.isPlaying && STATE.currentBook && !STATE.isTransitioning) {
+        if (!STATE.isPlaying && STATE.currentBook && !STATE.isTransitioning && !STATE.isDownloading) {
             STATE.pauseCount++;
             if (STATE.pauseCount % 10 === 0) console.log(`Inactivity: ${STATE.pauseCount}s / 60s`);
-            
+
             if (STATE.pauseCount >= 60) {
                 handlePauseTimeout();
             }
         }
-        
+
         STATE.stallCount = 0;
         STATE.lastPlaybackTime = audio.currentTime;
         return;
@@ -1501,7 +1810,7 @@ setInterval(() => {
 async function handlePauseTimeout() {
     console.warn("Pause Timeout: 1 minute reached. Saving and Disconnecting...");
     STATE.pauseCount = 0; // Reset to avoid double trigger
-    
+
     // 1. Save Progress
     if (STATE.user && STATE.currentBookId) {
         document.getElementById('status-indicator').innerText = "Auto-Saving...";
@@ -1510,7 +1819,7 @@ async function handlePauseTimeout() {
 
     // 2. Cleanup (Disconnect & Clear RAM/ROM)
     await handlePlaybackStall();
-    
+
     document.getElementById('status-indicator').innerText = "Session Expired (1m Inactivity)";
     document.getElementById('status-indicator').style.color = "#FFB347";
 }
@@ -1548,11 +1857,11 @@ async function handlePlaybackStall() {
         document.getElementById('status-indicator').innerText = "Stalled - Clear RAM/ROM";
         document.getElementById('status-indicator').style.color = "#FF5252";
     }
-    
+
     // reset counters
     STATE.stallCount = 0;
     STATE.pauseCount = 0;
-    
+
     // Inform user via UI
     const playBtn = document.getElementById('play-btn');
     if (playBtn) playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
