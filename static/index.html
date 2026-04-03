@@ -575,21 +575,22 @@
             <!-- Library Card -->
             <div class="glass flex-1 flex flex-col overflow-hidden rounded-3xl">
                 <div class="p-5 border-b border-glass-border flex items-center justify-between bg-white/5">
-                    <h2 class="font-bold flex items-center gap-3 text-[#dae2fd]">
+                    <h2 class="font-bold flex items-center gap-3 text-[#dae2fd] flex-1 min-w-0 mr-2">
                         <i class="fas fa-layer-group text-primary"></i>
-                        <span>Library</span>
+                        <span class="truncate">Library</span>
                     </h2>
-                    <div class="flex items-center gap-2">
+                    <div class="flex items-center gap-2 shrink-0">
                         <button id="sync-btn"
                             class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary hover:bg-primary hover:text-black transition-all"
                             title="Sync Cloud">
                             <i class="fas fa-sync-alt text-sm"></i>
                         </button>
                         <label class="group cursor-pointer">
-                            <div
-                                class="w-8 h-8 rounded-lg bg-primary text-black flex items-center justify-center shadow-[0_0_12px_rgba(0,229,255,0.4)] group-hover:scale-110 group-hover:shadow-[0_0_20px_rgba(0,229,255,0.6)] transition-all duration-300 relative overflow-hidden"
+                            <div class="w-8 h-8 rounded-lg bg-primary text-black flex items-center justify-center shadow-[0_0_12px_rgba(0,229,255,0.4)] group-hover:scale-110 group-hover:shadow-[0_0_20px_rgba(0,229,255,0.6)] transition-all duration-300 relative overflow-hidden"
                                 title="Upload File">
-                                <div class="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                                <div
+                                    class="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity">
+                                </div>
                                 <i class="fas fa-plus text-sm font-black relative z-10"></i>
                             </div>
                             <input type="file" id="file-input" class="hidden" accept=".txt">
@@ -724,21 +725,22 @@
             <!-- Glass Header -->
             <header id="reader-header"
                 class="p-6 lg:p-8 border-b border-glass-border flex justify-between items-center bg-white/[0.02]">
-                <div class="max-w-[70%]">
+                <div class="flex-1 min-w-0 mr-4">
                     <div class="flex items-center gap-3">
                         <h2 id="current-title"
                             class="text-xl lg:text-3xl font-black text-white tracking-tight truncate">Select a
                             Masterpiece</h2>
                         <button id="edit-title-btn"
-                            class="w-8 h-8 rounded-full flex items-center justify-center bg-white/5 hover:bg-primary/20 hover:text-primary transition-all hidden">
+                            class="w-8 h-8 rounded-full flex items-center justify-center bg-white/5 hover:bg-primary/20 hover:text-primary transition-all hidden shrink-0">
                             <i class="fas fa-pen text-xs"></i>
                         </button>
                     </div>
                     <p id="current-chapter"
-                        class="text-primary/70 text-xs lg:text-sm font-bold tracking-widest uppercase mt-1">Standby Mode
+                        class="text-primary/70 text-xs lg:text-sm font-bold tracking-widest uppercase mt-1 truncate">
+                        Standby Mode
                     </p>
                 </div>
-                <div class="flex items-center gap-1 lg:gap-3">
+                <div class="flex items-center gap-1 lg:gap-3 shrink-0">
                     <button id="toc-btn"
                         class="w-11 h-11 flex items-center justify-center rounded-2xl hover:bg-white/5 hover:text-primary transition-all"
                         title="Chapters">
@@ -754,46 +756,64 @@
                             class="w-11 h-11 flex items-center justify-center rounded-2xl hover:bg-white/5 hover:text-primary transition-all group relative"
                             title="Sleep Timer">
                             <i id="sleep-timer-icon" class="fas fa-moon text-lg transition-all"></i>
-                            <span id="sleep-timer-badge" class="absolute -top-1 -right-1 bg-primary text-black text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center opacity-0 transition-opacity">0</span>
+                            <span id="sleep-timer-badge"
+                                class="absolute -top-1 -right-1 bg-primary text-black text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center opacity-0 transition-opacity">0</span>
                         </button>
-                        
+
                         <!-- Sleep Timer Dropdown -->
-                        <div id="sleep-timer-dropdown" 
-                             class="absolute right-0 top-full mt-2 w-64 bg-surface/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-4 hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div id="sleep-timer-dropdown"
+                            class="absolute right-0 top-full mt-2 w-64 bg-surface/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-4 hidden z-50 animate-in fade-in slide-in-from-top-2 duration-200">
                             <h3 class="text-sm font-bold mb-3 flex items-center gap-2">
                                 <i class="fas fa-clock text-primary"></i> Sleep Timer
                             </h3>
-                            
+
                             <div class="grid grid-cols-2 gap-2 mb-4">
-                                <button onclick="setSleepTimerPreset(15)" class="text-xs py-2 bg-white/5 hover:bg-primary/20 rounded-xl transition-colors">15 Min</button>
-                                <button onclick="setSleepTimerPreset(30)" class="text-xs py-2 bg-white/5 hover:bg-primary/20 rounded-xl transition-colors">30 Min</button>
-                                <button onclick="setSleepTimerPreset(45)" class="text-xs py-2 bg-white/5 hover:bg-primary/20 rounded-xl transition-colors">45 Min</button>
-                                <button onclick="setSleepTimerPreset(60)" class="text-xs py-2 bg-white/5 hover:bg-primary/20 rounded-xl transition-colors">60 Min</button>
-                                <button onclick="setSleepTimerPreset(0.0833)" class="text-xs py-2 bg-white/5 hover:bg-primary/20 rounded-xl transition-colors col-span-2 border border-primary/30">Test (5s)</button>
+                                <button onclick="setSleepTimerPreset(15)"
+                                    class="text-xs py-2 bg-white/5 hover:bg-primary/20 rounded-xl transition-colors">15
+                                    Min</button>
+                                <button onclick="setSleepTimerPreset(30)"
+                                    class="text-xs py-2 bg-white/5 hover:bg-primary/20 rounded-xl transition-colors">30
+                                    Min</button>
+                                <button onclick="setSleepTimerPreset(45)"
+                                    class="text-xs py-2 bg-white/5 hover:bg-primary/20 rounded-xl transition-colors">45
+                                    Min</button>
+                                <button onclick="setSleepTimerPreset(60)"
+                                    class="text-xs py-2 bg-white/5 hover:bg-primary/20 rounded-xl transition-colors">60
+                                    Min</button>
+                                <button onclick="setSleepTimerPreset(0.0833)"
+                                    class="text-xs py-2 bg-white/5 hover:bg-primary/20 rounded-xl transition-colors col-span-2 border border-primary/30">Test
+                                    (5s)</button>
                             </div>
-                            
+
                             <div class="mb-4">
-                                <label class="text-[10px] uppercase tracking-wider text-white/40 mb-1 block">Custom Duration (HH:MM:SS)</label>
-                                <div class="flex items-center gap-1 justify-between bg-black/40 border border-white/10 rounded-xl px-2 py-1.5 transition-all focus-within:border-primary/50">
+                                <label class="text-[10px] uppercase tracking-wider text-white/40 mb-1 block">Custom
+                                    Duration (HH:MM:SS)</label>
+                                <div
+                                    class="flex items-center gap-1 justify-between bg-black/40 border border-white/10 rounded-xl px-2 py-1.5 transition-all focus-within:border-primary/50">
                                     <input type="number" id="sleep-h" value="0" min="0" max="23" placeholder="HH"
-                                           class="w-10 bg-transparent text-center text-xs text-white focus:outline-none" onfocus="this.select()">
+                                        class="w-10 bg-transparent text-center text-xs text-white focus:outline-none"
+                                        onfocus="this.select()">
                                     <span class="text-white/20 text-[10px]">:</span>
                                     <input type="number" id="sleep-m" value="30" min="0" max="59" placeholder="MM"
-                                           class="w-10 bg-transparent text-center text-xs text-white focus:outline-none" onfocus="this.select()">
+                                        class="w-10 bg-transparent text-center text-xs text-white focus:outline-none"
+                                        onfocus="this.select()">
                                     <span class="text-white/20 text-[10px]">:</span>
                                     <input type="number" id="sleep-s" value="0" min="0" max="59" placeholder="SS"
-                                           class="w-10 bg-transparent text-center text-xs text-white focus:outline-none" onfocus="this.select()">
-                                    <button onclick="startSleepTimerFromCustom()" 
-                                            class="ml-2 bg-primary text-black px-3 py-1 rounded-lg text-[10px] font-black hover:scale-105 active:scale-95 transition-all">SET</button>
+                                        class="w-10 bg-transparent text-center text-xs text-white focus:outline-none"
+                                        onfocus="this.select()">
+                                    <button onclick="startSleepTimerFromCustom()"
+                                        class="ml-2 bg-primary text-black px-3 py-1 rounded-lg text-[10px] font-black hover:scale-105 active:scale-95 transition-all">SET</button>
                                 </div>
                             </div>
-                            
+
                             <div id="sleep-timer-active-controls" class="hidden border-t border-white/5 pt-3 mt-1">
                                 <div class="flex items-center justify-between mb-2">
                                     <span class="text-[10px] text-white/40">Active Countdown</span>
-                                    <span id="sleep-timer-remaining" class="text-xs font-mono text-primary">00:00:00</span>
+                                    <span id="sleep-timer-remaining"
+                                        class="text-xs font-mono text-primary">00:00:00</span>
                                 </div>
-                                <button onclick="cancelSleepTimer()" class="w-full py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs rounded-xl transition-colors">
+                                <button onclick="cancelSleepTimer()"
+                                    class="w-full py-2 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs rounded-xl transition-colors">
                                     Cancel Timer
                                 </button>
                             </div>
@@ -858,26 +878,36 @@
                     <!-- Chapters injected here -->
                 </div>
                 <!-- Floating Download Action Bar -->
-                <div id="toc-download-bar" class="hidden border-t border-white/10 p-4 bg-surface-low/80 backdrop-blur-xl">
+                <div id="toc-download-bar"
+                    class="hidden border-t border-white/10 p-4 bg-surface-low/80 backdrop-blur-xl">
                     <div class="flex items-center justify-between mb-3">
-                        <span id="toc-selected-count" class="text-xs font-bold text-slate-400">0 chapters selected</span>
+                        <span id="toc-selected-count" class="text-xs font-bold text-slate-400">0 chapters
+                            selected</span>
                         <div class="flex items-center gap-2">
-                            <button id="toc-select-all-btn" class="text-[10px] font-bold text-primary hover:underline cursor-pointer">Select All</button>
+                            <button id="toc-select-all-btn"
+                                class="text-[10px] font-bold text-primary hover:underline cursor-pointer">Select
+                                All</button>
                             <span class="text-slate-600">|</span>
-                            <button id="toc-deselect-all-btn" class="text-[10px] font-bold text-slate-400 hover:text-white cursor-pointer">Deselect</button>
+                            <button id="toc-deselect-all-btn"
+                                class="text-[10px] font-bold text-slate-400 hover:text-white cursor-pointer">Deselect</button>
                         </div>
                     </div>
-                    <button id="toc-download-btn" class="w-full btn-primary flex items-center justify-center gap-3 py-3 rounded-2xl">
+                    <button id="toc-download-btn"
+                        class="w-full btn-primary flex items-center justify-center gap-3 py-3 rounded-2xl">
                         <i class="fas fa-download"></i>
                         <span>Download Offline MP3</span>
                     </button>
                     <div id="toc-download-progress" class="hidden mt-3">
                         <div class="flex items-center justify-between mb-1.5">
-                            <span id="toc-download-chapter-info" class="text-[10px] font-bold text-slate-400 truncate max-w-[70%]">Chapter 1/5</span>
-                            <span id="toc-download-percent" class="text-[10px] font-mono text-primary font-bold">0%</span>
+                            <span id="toc-download-chapter-info"
+                                class="text-[10px] font-bold text-slate-400 truncate max-w-[70%]">Chapter 1/5</span>
+                            <span id="toc-download-percent"
+                                class="text-[10px] font-mono text-primary font-bold">0%</span>
                         </div>
                         <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                            <div id="toc-download-progress-bar" class="h-full bg-gradient-to-r from-primary/50 to-primary rounded-full transition-all duration-500 ease-out" style="width: 0%"></div>
+                            <div id="toc-download-progress-bar"
+                                class="h-full bg-gradient-to-r from-primary/50 to-primary rounded-full transition-all duration-500 ease-out"
+                                style="width: 0%"></div>
                         </div>
                     </div>
                     <p id="toc-download-status" class="text-[10px] text-center text-slate-500 mt-2 hidden"></p>
