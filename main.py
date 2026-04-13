@@ -223,41 +223,46 @@ async def append_chapter(
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
         tmp_path = tmp.name
-        
-        # 1. Download existing if it exists
-        if blob.exists():
-            blob.download_to_filename(tmp_path)
-            # Ensure there's a newline separator
-            with open(tmp_path, "a", encoding="utf-8") as f:
-                f.write("\n\n")
-        
-        # 2. Append new content
-        with open(tmp_path, "ab") as f:
-            while chunk := await file.read(1024 * 1024):
-                f.write(chunk)
-                
-    try:
-        # 3. Re-upload merged file
-        blob.upload_from_filename(tmp_path)
-        
-        # 4. Parse the merged result to get new metadata
-        chapters = parse_chapters_from_file(tmp_path)
-        processed_chapters = []
-        for chap in chapters:
-            sentences = split_text_into_chunks(chap['content'])
-            processed_chapters.append({
-                "title": chap['title'],
-                "sentences": sentences
-            })
+        try:
+            # 1. Download existing if it exists
+            if blob.exists():
+                blob.download_to_filename(tmp_path)
+                # Ensure there's a newline separator
+                with open(tmp_path, "a", encoding="utf-8") as f:
+                    f.write("\n\n")
             
-        return JSONResponse({
-            "title": filename.replace(".txt", ""),
-            "chapters": processed_chapters,
-            "total_chunks": sum(len(c["sentences"]) for c in processed_chapters)
-        })
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+            # 2. Append new content
+            with open(tmp_path, "ab") as f:
+                while chunk := await file.read(1024 * 1024):
+                    f.write(chunk)
+                    
+            # 3. Re-upload merged file
+            blob.upload_from_filename(tmp_path)
+            
+            # 4. Parse the merged result to get new metadata
+            chapters = parse_chapters_from_file(tmp_path)
+            processed_chapters = []
+            for chap in chapters:
+                sentences = split_text_into_chunks(chap['content'])
+                processed_chapters.append({
+                    "title": chap['title'],
+                    "sentences": sentences
+                })
+                
+            return JSONResponse({
+                "title": filename.replace(".txt", ""),
+                "chapters": processed_chapters,
+                "total_chunks": sum(len(c["sentences"]) for c in processed_chapters)
+            })
+        except Exception as e:
+            print(f"Error in append_chapter processing: {e}")
+            return JSONResponse({"error": str(e)}, status_code=500)
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except:
+                    pass
 
 @app.post("/api/delete-chapters")
 async def delete_chapters(
@@ -292,46 +297,52 @@ async def delete_chapters(
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
         tmp_path = tmp.name
-        blob.download_to_filename(tmp_path)
-        
-    try:
-        # 1. Parse into chapters
-        chapters = parse_chapters_from_file(tmp_path)
-        
-        # 2. Remove chapters
-        for idx in target_indices:
-            if 0 <= idx < len(chapters):
-                chapters.pop(idx)
-            else:
-                print(f"Warning: Index {idx} out of range for deletion.")
-        
-        # 3. Reconstruct file
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            for i, chap in enumerate(chapters):
-                if i > 0:
-                    f.write("\n\n===\n\n")
-                f.write(chap['content'])
-                
-        # 4. Re-upload
-        blob.upload_from_filename(tmp_path)
-        
-        # 5. Return updated metadata
-        processed_chapters = []
-        for chap in chapters:
-            sentences = split_text_into_chunks(chap['content'])
-            processed_chapters.append({
-                "title": chap['title'],
-                "sentences": sentences
-            })
+        try:
+            blob.download_to_filename(tmp_path)
             
-        return JSONResponse({
-            "title": filename.replace(".txt", ""),
-            "chapters": processed_chapters,
-            "total_chunks": sum(len(c["sentences"]) for c in processed_chapters)
-        })
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+            # 1. Parse into chapters
+            chapters = parse_chapters_from_file(tmp_path)
+            
+            # 2. Remove chapters
+            for idx in target_indices:
+                if 0 <= idx < len(chapters):
+                    chapters.pop(idx)
+                else:
+                    print(f"Warning: Index {idx} out of range for deletion.")
+            
+            # 3. Reconstruct file
+            with open(tmp_path, "w", encoding="utf-8") as f:
+                for i, chap in enumerate(chapters):
+                    if i > 0:
+                        f.write("\n\n===\n\n")
+                    f.write(chap['content'])
+                    
+            # 4. Re-upload
+            blob.upload_from_filename(tmp_path)
+            
+            # 5. Return updated metadata
+            processed_chapters = []
+            for chap in chapters:
+                sentences = split_text_into_chunks(chap['content'])
+                processed_chapters.append({
+                    "title": chap['title'],
+                    "sentences": sentences
+                })
+                
+            return JSONResponse({
+                "title": filename.replace(".txt", ""),
+                "chapters": processed_chapters,
+                "total_chunks": sum(len(c["sentences"]) for c in processed_chapters)
+            })
+        except Exception as e:
+            print(f"Error in delete_chapters processing: {e}")
+            return JSONResponse({"error": str(e)}, status_code=500)
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except:
+                    pass
 
 class ChapterDownloadItem(BaseModel):
     chapterIndex: int
