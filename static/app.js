@@ -1,8 +1,8 @@
 // Firebase Modules
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+import { getFirestore, doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 
 // Firebase placeholders (Initialized via API)
 let app, auth, db, storage, provider;
@@ -484,28 +484,233 @@ async function refreshLibrary() {
             return;
         }
 
-        querySnapshot.forEach((doc) => {
-            const data = doc.data();
-            const bookId = doc.id;
-            const progress = (data.last_read_chunk / data.total_chunks * 100).toFixed(1);
+        querySnapshot.forEach((docSnap) => {
+            const data = docSnap.data();
+            const bookId = docSnap.id;
+            const rawProgress = data.total_chunks > 0
+                ? (data.last_read_chunk / data.total_chunks * 100)
+                : 0;
+            const progress = rawProgress.toFixed(1);
+            const filename = data.filename || (bookId.replace('book_', '') + '.txt');
 
+            // ── Outer wrapper (enables named-group hover) ──────────────────────
+            const wrapper = document.createElement('div');
+            wrapper.className = 'relative group/item';
+
+            // ── Book card ─────────────────────────────────────────────────────
             const div = document.createElement('div');
-            div.className = 'glass p-3 flex flex-col gap-1 cursor-pointer hover:bg-primary/5 transition-all group border-l-2 border-transparent hover:border-primary';
+            div.className = 'glass p-3 pr-9 flex flex-col gap-1 cursor-pointer hover:bg-primary/5 transition-all group border-l-2 border-transparent hover:border-primary rounded-lg';
             div.innerHTML = `
-                <div class="flex items-center justify-between">
-                    <span class="text-sm font-bold text-white group-hover:text-primary transition-colors line-clamp-1">${data.title}</span>
-                    <span class="text-[10px] text-primary font-mono">${progress}%</span>
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-sm font-bold text-white group-hover:text-primary transition-colors line-clamp-1 flex-1 min-w-0">${data.title}</span>
+                    <span class="text-[10px] text-primary font-mono shrink-0">${progress}%</span>
                 </div>
                 <div class="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
                     <div class="bg-primary h-full transition-all duration-500" style="width: ${progress}%"></div>
                 </div>
             `;
             div.onclick = () => loadBookFromStorage(bookId, data);
-            bookList.appendChild(div);
+
+            // ── Hidden file input for merge ────────────────────────────────────
+            const mergeInput = document.createElement('input');
+            mergeInput.type = 'file';
+            mergeInput.accept = '.txt';
+            mergeInput.className = 'hidden';
+            mergeInput.id = `merge-input-${bookId}`;
+            mergeInput.onchange = (e) => mergeChapterFile(e, bookId, data);
+
+            // ── Kebab (⋮) button ──────────────────────────────────────────────
+            const kebabBtn = document.createElement('button');
+            kebabBtn.className = 'absolute top-1/2 -translate-y-1/2 right-1.5 w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:text-primary hover:bg-white/10 transition-all opacity-0 group-hover/item:opacity-100 z-10';
+            kebabBtn.title = 'Tùy chọn';
+            kebabBtn.innerHTML = '<i class="fas fa-ellipsis-v text-xs"></i>';
+            kebabBtn.onclick = (e) => {
+                e.stopPropagation();
+                toggleKebabMenu(bookId);
+            };
+
+            // ── Dropdown menu ─────────────────────────────────────────────────
+            const dropdown = document.createElement('div');
+            dropdown.id = `kebab-menu-${bookId}`;
+            dropdown.className = 'hidden absolute right-0 top-full mt-1 w-44 bg-surface-high/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden py-1';
+            dropdown.onclick = (e) => e.stopPropagation();
+
+            const mergeBtn = document.createElement('button');
+            mergeBtn.className = 'w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-slate-300';
+            mergeBtn.innerHTML = '<i class="fas fa-file-import w-4 text-center"></i> Nối chương';
+            mergeBtn.onclick = () => {
+                toggleKebabMenu(bookId);
+                document.getElementById(`merge-input-${bookId}`).click();
+            };
+
+            const deleteBtn = document.createElement('button');
+            deleteBtn.className = 'w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 hover:bg-red-500/10 hover:text-red-400 transition-colors text-slate-300';
+            deleteBtn.innerHTML = '<i class="fas fa-trash-alt w-4 text-center"></i> Xóa truyện';
+            deleteBtn.onclick = () => deleteBook(bookId, filename, data.title);
+
+            dropdown.appendChild(mergeBtn);
+            dropdown.appendChild(deleteBtn);
+
+            wrapper.appendChild(div);
+            wrapper.appendChild(mergeInput);
+            wrapper.appendChild(kebabBtn);
+            wrapper.appendChild(dropdown);
+            bookList.appendChild(wrapper);
         });
     } catch (err) {
         console.error("Library Refresh Error:", err);
         bookList.innerHTML = '<div class="text-center p-8 text-red-400 italic text-sm">Error updating library.</div>';
+    }
+}
+
+// ── Kebab Menu Helpers ───────────────────────────────────────────────────────
+
+/**
+ * Toggles a kebab dropdown menu. Closes all other open menus first.
+ */
+function toggleKebabMenu(bookId) {
+    const targetId = `kebab-menu-${bookId}`;
+    document.querySelectorAll('[id^="kebab-menu-"]').forEach(menu => {
+        if (menu.id !== targetId) menu.classList.add('hidden');
+    });
+    const menu = document.getElementById(targetId);
+    if (menu) menu.classList.toggle('hidden');
+}
+
+// Close all kebab menus when clicking anywhere outside
+document.addEventListener('click', () => {
+    document.querySelectorAll('[id^="kebab-menu-"]').forEach(menu => menu.classList.add('hidden'));
+});
+
+// ── Feature 1: Delete Book ───────────────────────────────────────────────────
+
+/**
+ * Deletes a book's Firestore document AND Storage file in parallel.
+ * Gracefully handles the case where the Storage file doesn't exist.
+ */
+async function deleteBook(bookId, filename, title) {
+    toggleKebabMenu(bookId); // close menu first
+
+    if (!confirm(`Xóa truyện "${title}"?\n\nHành động này sẽ xóa vĩnh viễn dữ liệu trên Cloud. Không thể hoàn tác!`)) return;
+    if (!STATE.user) return;
+
+    document.getElementById('status-indicator').innerText = 'Đang xóa...';
+
+    try {
+        // ── 1. Firestore delete ──────────────────────────────────────────────
+        const deleteFirestore = deleteDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId));
+
+        // ── 2. Storage delete (ignore "not found" gracefully) ────────────────
+        let deleteStorage = Promise.resolve();
+        if (filename) {
+            const fileRef = ref(storage, `users/${STATE.user.uid}/files/${filename}`);
+            deleteStorage = deleteObject(fileRef).catch(err => {
+                if (err.code === 'storage/object-not-found') {
+                    console.warn('[Delete] Storage file not found, skipping:', filename);
+                } else {
+                    throw err; // re-throw unexpected errors
+                }
+            });
+        }
+
+        // ── 3. Run both in PARALLEL ──────────────────────────────────────────
+        await Promise.all([deleteFirestore, deleteStorage]);
+        console.log(`[Delete] "${title}" deleted successfully.`);
+
+        // ── 4. If the deleted book is currently open, reset the reader ────────
+        if (STATE.currentBookId === bookId) {
+            STATE.currentBook = null;
+            STATE.currentBookId = null;
+            STATE.currentFilename = null;
+            STATE.currentChapterIndex = 0;
+            STATE.currentSentenceIndex = 0;
+            document.getElementById('current-title').innerText = 'Select a Masterpiece';
+            document.getElementById('current-chapter').innerText = 'Standby Mode';
+            document.getElementById('text-container').innerHTML = '';
+            document.getElementById('edit-title-btn').classList.add('hidden');
+            audio.pause();
+            STATE.isPlaying = false;
+            updateUI();
+        }
+
+        // ── 5. Refresh library sidebar ────────────────────────────────────────
+        await refreshLibrary();
+        document.getElementById('status-indicator').innerText = 'Đã xóa!';
+        setTimeout(() => document.getElementById('status-indicator').innerText = 'Ready', 2500);
+
+    } catch (err) {
+        console.error('[Delete] Error:', err);
+        alert(`Xóa thất bại: ${err.message}`);
+        document.getElementById('status-indicator').innerText = 'Error';
+        setTimeout(() => document.getElementById('status-indicator').innerText = 'Ready', 3000);
+    }
+}
+
+// ── Feature 2: Merge Chapter File ────────────────────────────────────────────
+
+/**
+ * Appends the content of a new .txt file to the existing book file on Storage.
+ * Uses TextEncoder to guarantee UTF-8 encoding and preserve Vietnamese characters.
+ */
+async function mergeChapterFile(event, bookId, bookData) {
+    const newFile = event.target.files[0];
+    event.target.value = ''; // reset so same file can be picked again later
+    if (!newFile || !STATE.user) return;
+
+    const filename = bookData.filename || (bookId.replace('book_', '') + '.txt');
+    document.getElementById('status-indicator').innerText = 'Đang nối chương...';
+
+    try {
+        const fileRef = ref(storage, `users/${STATE.user.uid}/files/${filename}`);
+
+        // ── 1. Download existing file from Storage (decoded as UTF-8 string) ──
+        const existingUrl = await getDownloadURL(fileRef);
+        const existingRes = await fetch(existingUrl);
+        if (!existingRes.ok) throw new Error(`Không tải được file gốc: HTTP ${existingRes.status}`);
+        const existingText = await existingRes.text();
+
+        // ── 2. Read new supplemental file as UTF-8 string ─────────────────────
+        const newText = await newFile.text();
+
+        // ── 3. Concatenate: trim trailing whitespace of old, then append new ──
+        const mergedText = existingText.trimEnd() + '\n\n' + newText.trimStart();
+
+        // ── 4. Encode back to UTF-8 bytes (TextEncoder always outputs UTF-8) ──
+        const encoder = new TextEncoder();
+        const mergedBytes = encoder.encode(mergedText);
+        const mergedBlob = new Blob([mergedBytes], { type: 'text/plain; charset=utf-8' });
+
+        // ── 5. Re-upload to same Storage path (overwrite) ─────────────────────
+        const snapshot = await uploadBytes(fileRef, mergedBlob);
+        console.log('[Merge] Re-uploaded:', snapshot.metadata.fullPath);
+
+        // ── 6. Re-parse to get updated chapter/chunk count ────────────────────
+        const formData = new FormData();
+        formData.append('file', new File([mergedBlob], filename, { type: 'text/plain' }));
+        const parseRes = await fetch('/api/parse-book', { method: 'POST', body: formData });
+        const newBookData = await parseRes.json();
+        const newTotalChunks = newBookData.chapters.reduce((s, c) => s + c.sentences.length, 0);
+
+        // ── 7. Update total_chunks in Firestore ───────────────────────────────
+        const progressRef = doc(db, 'users', STATE.user.uid, 'progress', bookId);
+        await setDoc(progressRef, { total_chunks: newTotalChunks }, { merge: true });
+
+        console.log(`[Merge] Success! total_chunks updated to ${newTotalChunks}`);
+        document.getElementById('status-indicator').innerText = 'Nối chương thành công!';
+        alert(`✅ Đã nối chương thành công!\nFile: ${filename}\nTổng chunks mới: ${newTotalChunks}`);
+
+        // ── 8. If this book is currently open, reload it ──────────────────────
+        if (STATE.currentBookId === bookId) {
+            await loadBook(newBookData, bookId, filename);
+        }
+
+        setTimeout(() => document.getElementById('status-indicator').innerText = 'Ready', 3000);
+
+    } catch (err) {
+        console.error('[Merge] Error:', err);
+        alert(`Nối chương thất bại: ${err.message}`);
+        document.getElementById('status-indicator').innerText = 'Error';
+        setTimeout(() => document.getElementById('status-indicator').innerText = 'Ready', 3000);
     }
 }
 
