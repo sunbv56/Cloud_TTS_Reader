@@ -175,13 +175,56 @@ async def parse_book(file: UploadFile = File(...)):
                 "sentences": sentences
             })
             
+        chapters_metadata = []
+        for chap in chapters:
+            sentences = split_text_into_chunks(chap['content'])
+            chapters_metadata.append({
+                "title": chap['title'],
+                "count": len(sentences)
+            })
+
         return JSONResponse({
             "title": file.filename.replace(".txt", ""),
-            "chapters": processed_chapters
+            "chapters": chapters_metadata
         })
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+@app.post("/api/get-chapter-sentences")
+async def get_chapter_sentences(
+    userId: str = Form(...),
+    filename: str = Form(...),
+    chapterIndex: int = Form(...)
+):
+    """Memory-efficiently fetch sentences for a specific chapter only."""
+    if not firebase_admin_initialized:
+        return JSONResponse({"error": "Firebase Admin not initialized on server. Check credentials."}, status_code=500)
+
+    try:
+        bucket = storage.bucket()
+        blob_path = f"users/{userId}/files/{filename}"
+        blob = bucket.blob(blob_path)
+        
+        if not blob.exists():
+            return JSONResponse({"error": "File not found"}, status_code=404)
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+            tmp_path = tmp.name
+            blob.download_to_filename(tmp_path)
+        
+        try:
+            chapters = parse_chapters_from_file(tmp_path)
+            if 0 <= chapterIndex < len(chapters):
+                sentences = split_text_into_chunks(chapters[chapterIndex]['content'])
+                return JSONResponse({"sentences": sentences})
+            else:
+                return JSONResponse({"error": "Chapter index out of range"}, status_code=400)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 @app.get("/api/firebase-config")
 async def get_firebase_config():
@@ -241,18 +284,17 @@ async def append_chapter(
             
             # 4. Parse the merged result to get new metadata
             chapters = parse_chapters_from_file(tmp_path)
-            processed_chapters = []
+            chapters_metadata = []
             for chap in chapters:
                 sentences = split_text_into_chunks(chap['content'])
-                processed_chapters.append({
+                chapters_metadata.append({
                     "title": chap['title'],
-                    "sentences": sentences
+                    "count": len(sentences)
                 })
                 
             return JSONResponse({
                 "title": filename.replace(".txt", ""),
-                "chapters": processed_chapters,
-                "total_chunks": sum(len(c["sentences"]) for c in processed_chapters)
+                "chapters": chapters_metadata
             })
         except Exception as e:
             print(f"Error in append_chapter processing: {e}")
@@ -320,19 +362,18 @@ async def delete_chapters(
             # 4. Re-upload
             blob.upload_from_filename(tmp_path)
             
-            # 5. Return updated metadata
-            processed_chapters = []
+            chapters_metadata = []
             for chap in chapters:
+                # We need counts for progress tracking
                 sentences = split_text_into_chunks(chap['content'])
-                processed_chapters.append({
+                chapters_metadata.append({
                     "title": chap['title'],
-                    "sentences": sentences
+                    "count": len(sentences)
                 })
-                
+
             return JSONResponse({
                 "title": filename.replace(".txt", ""),
-                "chapters": processed_chapters,
-                "total_chunks": sum(len(c["sentences"]) for c in processed_chapters)
+                "chapters": chapters_metadata
             })
         except Exception as e:
             print(f"Error in delete_chapters processing: {e}")

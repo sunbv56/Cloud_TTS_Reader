@@ -445,14 +445,14 @@ async function loadProgress(bookId) {
 
 function getTotalChunks() {
     if (!STATE.currentBook) return 0;
-    return STATE.currentBook.chapters.reduce((acc, chap) => acc + chap.sentences.length, 0);
+    return STATE.currentBook.chapters.reduce((acc, chap) => acc + (chap.count || 0), 0);
 }
 
 function getGlobalIndex(chapIdx, sentIdx) {
     if (!STATE.currentBook) return 0;
     let total = 0;
     for (let i = 0; i < chapIdx; i++) {
-        total += STATE.currentBook.chapters[i].sentences.length;
+        total += (STATE.currentBook.chapters[i].count || 0);
     }
     return total + sentIdx;
 }
@@ -461,7 +461,7 @@ function getLocalIndices(globalIdx) {
     if (!STATE.currentBook) return { chapterIndex: 0, sentenceIndex: 0 };
     let remaining = globalIdx;
     for (let i = 0; i < STATE.currentBook.chapters.length; i++) {
-        const len = STATE.currentBook.chapters[i].sentences.length;
+        const len = (STATE.currentBook.chapters[i].count || 0);
         if (remaining < len) {
             return { chapterIndex: i, sentenceIndex: remaining };
         }
@@ -679,7 +679,9 @@ async function mergeChapterFile(event, bookId, bookData) {
         }
 
         const newBookData = await response.json();
-        const newTotalChunks = newBookData.total_chunks;
+        
+        // Calculate total chunks from metadata chapters
+        const newTotalChunks = newBookData.chapters.reduce((sum, ch) => sum + (ch.count || 0), 0);
 
         // ── 2. Cập nhật total_chunks trong Firestore ──────────────────────────
         const progressRef = doc(db, 'users', STATE.user.uid, 'progress', bookId);
@@ -825,10 +827,51 @@ async function loadBook(bookData, bookId, filename) {
 
 }
 
-function renderChapter(index) {
+async function fetchChapterSentences(index) {
+    if (!STATE.user || !STATE.currentFilename) return;
+    
+    const formData = new FormData();
+    formData.append('userId', STATE.user.uid);
+    formData.append('filename', STATE.currentFilename);
+    formData.append('chapterIndex', index);
+    
+    document.getElementById('status-indicator').innerText = "Loading Chapter...";
+
+    try {
+        const response = await fetch('/api/get-chapter-sentences', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+        if (data.sentences) {
+            STATE.currentBook.chapters[index].sentences = data.sentences;
+            STATE.currentBook.chapters[index].count = data.sentences.length; // Ensure count is correct
+            document.getElementById('status-indicator').innerText = "Ready";
+        } else {
+            throw new Error(data.error || "Failed to load chapter content.");
+        }
+    } catch (e) {
+        console.error(e);
+        document.getElementById('status-indicator').innerText = "Error loading chapter";
+        throw e;
+    }
+}
+
+async function renderChapter(index) {
     STATE.currentChapterIndex = index;
     const chapter = STATE.currentBook.chapters[index];
     document.getElementById('current-chapter').innerText = chapter.title;
+
+    // Lazy load sentences if missing
+    if (!chapter.sentences) {
+        textContainer.innerHTML = '<div class="text-center p-8 text-primary/50 italic animate-pulse">Đang tải nội dung chương...</div>';
+        try {
+            await fetchChapterSentences(index);
+        } catch (e) {
+            textContainer.innerHTML = `<div class="text-center p-8 text-red-500 italic">Không thể tải nội dung: ${e.message}</div>`;
+            return;
+        }
+    }
 
     textContainer.innerHTML = '';
     chapter.sentences.forEach((text, i) => {
@@ -998,6 +1041,15 @@ async function downloadSelectedChapters() {
     }
 
     const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.chapterIndex));
+
+    // --- Lazy loading for download ---
+    // We need all sentences for all selected chapters to proceed with download
+    document.getElementById('status-indicator').innerText = "Preparing chapters for download...";
+    for (const idx of selectedIndices) {
+        if (!STATE.currentBook.chapters[idx].sentences) {
+            await fetchChapterSentences(idx);
+        }
+    }
 
     const chapters = selectedIndices.map(idx => ({
         chapterIndex: idx,
@@ -1203,13 +1255,16 @@ async function deleteSelectedChapters() {
         }
 
         const data = await response.json();
+        
+        // Calculate total chunks from metadata chapters
+        const newTotalChunks = data.chapters.reduce((sum, ch) => sum + (ch.count || 0), 0);
 
         // Update local state
         STATE.currentBook.chapters = data.chapters;
 
         // Update Firestore total_chunks (to keep library in sync)
         const bookRef = doc(db, "users", STATE.user.uid, "progress", STATE.currentBookId);
-        await setDoc(bookRef, { total_chunks: data.total_chunks }, { merge: true });
+        await setDoc(bookRef, { total_chunks: newTotalChunks }, { merge: true });
 
         alert('Chapters deleted successfully!');
 
@@ -1308,10 +1363,23 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
 
         for (let i = 0; i < count; i++) {
             // Check if we reached the end of the chapter
-            if (currentSentIdx >= STATE.currentBook.chapters[currentChapIdx].sentences.length) {
+            const currentChapter = STATE.currentBook.chapters[currentChapIdx];
+            const chapSentencesCount = currentChapter.count || (currentChapter.sentences ? currentChapter.sentences.length : 0);
+
+            if (currentSentIdx >= chapSentencesCount) {
                 currentChapIdx++;
                 currentSentIdx = 0;
                 if (currentChapIdx >= STATE.currentBook.chapters.length) break;
+                // Move to next chapter - we might need to load its metadata/sentences later
+                continue; 
+            }
+
+            // Ensure sentences are loaded for prefetching
+            if (!currentChapter.sentences) {
+                // For prefetching, we'll just stop here and wait for the chapter to be needed
+                // OR we can trigger a lazy load here. 
+                // Let's trigger a lazy load so prefetching continues smoothly.
+                await fetchChapterSentences(currentChapIdx);
             }
 
             const key = `${currentChapIdx}_${currentSentIdx}`;
@@ -1352,6 +1420,13 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
 async function playFromSentence(index) {
     if (!STATE.currentBook) return;
     await waitForWebSocket();
+
+    const chapter = STATE.currentBook.chapters[STATE.currentChapterIndex];
+    if (!chapter.sentences) {
+        await fetchChapterSentences(STATE.currentChapterIndex);
+        // Chapter might have changed or sentences loaded
+    }
+    
     STATE.currentSentenceIndex = index;
     const sentences = STATE.currentBook.chapters[STATE.currentChapterIndex].sentences;
 
@@ -1636,13 +1711,15 @@ audio.ontimeupdate = () => {
 
     // --- Progress Bar Sync ---
     if (STATE.currentBook) {
-        const sentences = STATE.currentBook.chapters[STATE.currentChapterIndex].sentences;
-        const total = sentences.length;
+        const chapter = STATE.currentBook.chapters[STATE.currentChapterIndex];
+        const total = chapter.count || (chapter.sentences ? chapter.sentences.length : 0);
         const current = STATE.currentSentenceIndex + 1;
 
-        const chunkProgress = (current / total) * 100;
-        document.getElementById('progress-bar').style.width = `${chunkProgress}%`;
-        document.getElementById('current-time-mock').innerText = `${current} / ${total}`;
+        if (total > 0) {
+            const chunkProgress = (current / total) * 100;
+            document.getElementById('progress-bar').style.width = `${chunkProgress}%`;
+            document.getElementById('current-time-mock').innerText = `${current} / ${total}`;
+        }
 
         const fmt = (s) => new Date(s * 1000).toISOString().substr(14, 5);
         document.getElementById('time-display').innerText = fmt(curTime);
