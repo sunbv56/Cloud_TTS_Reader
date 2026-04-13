@@ -21,6 +21,8 @@ firebase_creds_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
 
 if firebase_creds_json:
     try:
+        # Strip potential single/double quotes from the beginning and end (common in Fly.io/Docker secrets)
+        firebase_creds_json = firebase_creds_json.strip().strip("'").strip('"')
         creds_dict = json.loads(firebase_creds_json)
         cred = credentials.Certificate(creds_dict)
         firebase_admin.initialize_app(cred, {
@@ -30,6 +32,9 @@ if firebase_creds_json:
         firebase_admin_initialized = True
     except Exception as e:
         print(f"Error initializing Firebase Admin with service account: {e}")
+        # Log a snippet of the JSON to help domestic debugging (safely)
+        if firebase_creds_json:
+            print(f"Creds JSON starts with: {firebase_creds_json[:20]}...")
 else:
     # Try default initialization (e.g. if running on GCP/GCE)
     try:
@@ -180,14 +185,21 @@ async def parse_book(file: UploadFile = File(...)):
 
 @app.get("/api/firebase-config")
 async def get_firebase_config():
+    # Helper to get env but strip potential quotes
+    def get_env_safe(key):
+        val = os.getenv(key, "")
+        if val:
+            return val.strip().strip("'").strip('"')
+        return ""
+
     return {
-        "apiKey": os.getenv("FIREBASE_API_KEY", ""),
-        "authDomain": os.getenv("FIREBASE_AUTH_DOMAIN", ""),
-        "projectId": os.getenv("FIREBASE_PROJECT_ID", ""),
-        "storageBucket": os.getenv("FIREBASE_STORAGE_BUCKET", ""),
-        "messagingSenderId": os.getenv("FIREBASE_MESSAGING_SENDER_ID", ""),
-        "appId": os.getenv("FIREBASE_APP_ID", ""),
-        "measurementId": os.getenv("FIREBASE_MEASUREMENT_ID", "")
+        "apiKey": get_env_safe("FIREBASE_API_KEY"),
+        "authDomain": get_env_safe("FIREBASE_AUTH_DOMAIN"),
+        "projectId": get_env_safe("FIREBASE_PROJECT_ID"),
+        "storageBucket": get_env_safe("FIREBASE_STORAGE_BUCKET"),
+        "messagingSenderId": get_env_safe("FIREBASE_MESSAGING_SENDER_ID"),
+        "appId": get_env_safe("FIREBASE_APP_ID"),
+        "measurementId": get_env_safe("FIREBASE_MEASUREMENT_ID")
     }
 
 @app.post("/api/append-chapter")
