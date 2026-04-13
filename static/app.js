@@ -112,7 +112,8 @@ let STATE = {
     downloadBuffer: new Map(),
     downloadExpected: 0,
     downloadResolve: null,
-    downloadReject: null
+    downloadReject: null,
+    tocAutoMinimized: false
 };
 
 // Constants
@@ -588,10 +589,10 @@ document.addEventListener('click', () => {
  * Deletes a book's Firestore document AND Storage file in parallel.
  * Gracefully handles the case where the Storage file doesn't exist.
  */
-async function deleteBook(bookId, filename, title) {
+async function deleteBook(bookId, filename, title, bypassConfirm = false) {
     toggleKebabMenu(bookId); // close menu first
 
-    if (!confirm(`Xóa truyện "${title}"?\n\nHành động này sẽ xóa vĩnh viễn dữ liệu trên Cloud. Không thể hoàn tác!`)) return;
+    if (!bypassConfirm && !confirm(`Xóa truyện "${title}"?\n\nHành động này sẽ xóa vĩnh viễn dữ liệu trên Cloud. Không thể hoàn tác!`)) return;
     if (!STATE.user) return;
 
     document.getElementById('status-indicator').innerText = 'Đang xóa...';
@@ -619,6 +620,7 @@ async function deleteBook(bookId, filename, title) {
 
         // ── 4. If the deleted book is currently open, reset the reader ────────
         if (STATE.currentBookId === bookId) {
+            await handlePlaybackStall(); // This handles WS close, RAM/ROM clear, and UI reset
             STATE.currentBook = null;
             STATE.currentBookId = null;
             STATE.currentFilename = null;
@@ -628,8 +630,6 @@ async function deleteBook(bookId, filename, title) {
             document.getElementById('current-chapter').innerText = 'Standby Mode';
             document.getElementById('text-container').innerHTML = '';
             document.getElementById('edit-title-btn').classList.add('hidden');
-            audio.pause();
-            STATE.isPlaying = false;
             updateUI();
         }
 
@@ -658,40 +658,30 @@ async function mergeChapterFile(event, bookId, bookData) {
     if (!newFile || !STATE.user) return;
 
     const filename = bookData.filename || (bookId.replace('book_', '') + '.txt');
-    document.getElementById('status-indicator').innerText = 'Đang nối chương...';
+    document.getElementById('status-indicator').innerText = 'Đang nối chương (Server)...';
 
     try {
-        const fileRef = ref(storage, `users/${STATE.user.uid}/files/${filename}`);
-
-        // ── 1. Download existing file from Storage (decoded as UTF-8 string) ──
-        const existingUrl = await getDownloadURL(fileRef);
-        const existingRes = await fetch(existingUrl);
-        if (!existingRes.ok) throw new Error(`Không tải được file gốc: HTTP ${existingRes.status}`);
-        const existingText = await existingRes.text();
-
-        // ── 2. Read new supplemental file as UTF-8 string ─────────────────────
-        const newText = await newFile.text();
-
-        // ── 3. Concatenate: trim trailing whitespace of old, then append new ──
-        const mergedText = existingText.trimEnd() + '\n\n' + newText.trimStart();
-
-        // ── 4. Encode back to UTF-8 bytes (TextEncoder always outputs UTF-8) ──
-        const encoder = new TextEncoder();
-        const mergedBytes = encoder.encode(mergedText);
-        const mergedBlob = new Blob([mergedBytes], { type: 'text/plain; charset=utf-8' });
-
-        // ── 5. Re-upload to same Storage path (overwrite) ─────────────────────
-        const snapshot = await uploadBytes(fileRef, mergedBlob);
-        console.log('[Merge] Re-uploaded:', snapshot.metadata.fullPath);
-
-        // ── 6. Re-parse to get updated chapter/chunk count ────────────────────
+        // ── 1. Gửi tệp mới lên server để xử lý nối và phân tách ────────────────
         const formData = new FormData();
-        formData.append('file', new File([mergedBlob], filename, { type: 'text/plain' }));
-        const parseRes = await fetch('/api/parse-book', { method: 'POST', body: formData });
-        const newBookData = await parseRes.json();
-        const newTotalChunks = newBookData.chapters.reduce((s, c) => s + c.sentences.length, 0);
+        formData.append('userId', STATE.user.uid);
+        formData.append('bookId', bookId);
+        formData.append('filename', filename);
+        formData.append('file', newFile);
 
-        // ── 7. Update total_chunks in Firestore ───────────────────────────────
+        const response = await fetch('/api/append-chapter', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Server error (${response.status}): ${errorText}`);
+        }
+
+        const newBookData = await response.json();
+        const newTotalChunks = newBookData.total_chunks;
+
+        // ── 2. Cập nhật total_chunks trong Firestore ──────────────────────────
         const progressRef = doc(db, 'users', STATE.user.uid, 'progress', bookId);
         await setDoc(progressRef, { total_chunks: newTotalChunks }, { merge: true });
 
@@ -699,7 +689,7 @@ async function mergeChapterFile(event, bookId, bookData) {
         document.getElementById('status-indicator').innerText = 'Nối chương thành công!';
         alert(`✅ Đã nối chương thành công!\nFile: ${filename}\nTổng chunks mới: ${newTotalChunks}`);
 
-        // ── 8. If this book is currently open, reload it ──────────────────────
+        // ── 3. Nếu sách này đang mở, tải lại dữ liệu mới ──────────────────────
         if (STATE.currentBookId === bookId) {
             await loadBook(newBookData, bookId, filename);
         }
@@ -1178,6 +1168,77 @@ function stopDownload() {
     }
 }
 
+async function deleteSelectedChapters() {
+    const checkboxes = document.querySelectorAll('.toc-chapter-checkbox:checked');
+    if (checkboxes.length === 0) {
+        alert('Please select at least one chapter to delete.');
+        return;
+    }
+
+    const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.chapterIndex));
+    const confirmMsg = `Are you sure you want to delete ${selectedIndices.length} chapter(s)?\nThis will permanently modify the source file.`;
+
+    if (!confirm(confirmMsg)) return;
+
+    const btn = document.getElementById('toc-delete-btn');
+    const originalHTML = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Deleting...</span>';
+    btn.disabled = true;
+
+    try {
+        const formData = new FormData();
+        formData.append('userId', STATE.user.uid);
+        formData.append('bookId', STATE.currentBookId);
+        formData.append('filename', STATE.currentFilename);
+        formData.append('indices', JSON.stringify(selectedIndices));
+
+        const response = await fetch('/api/delete-chapters', {
+            method: 'POST',
+            body: formData
+        });
+
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.error || 'Failed to delete chapters');
+        }
+
+        const data = await response.json();
+
+        // Update local state
+        STATE.currentBook.chapters = data.chapters;
+
+        // Update Firestore total_chunks (to keep library in sync)
+        const bookRef = doc(db, "users", STATE.user.uid, "progress", STATE.currentBookId);
+        await setDoc(bookRef, { total_chunks: data.total_chunks }, { merge: true });
+
+        alert('Chapters deleted successfully!');
+
+        // Reset UI
+        toggleSelectMode();
+        renderTOC();
+
+        // --- AUTO-DELETE STORY IF EMPTY ---
+        if (data.chapters.length === 0) {
+            alert('Tất cả các chương đã bị xóa. Đang gỡ bỏ truyện khỏi thư viện...');
+            await deleteBook(STATE.currentBookId, STATE.currentFilename, STATE.currentBook.title, true);
+            return;
+        }
+
+        // If we deleted the current chapter or shifted things, it's safer to just reset to chapter 0 or reload
+        if (STATE.currentChapterIndex >= data.chapters.length) {
+            STATE.currentChapterIndex = 0;
+        }
+        renderChapter(STATE.currentChapterIndex);
+
+    } catch (err) {
+        console.error('Delete Error:', err);
+        alert(`Error: ${err.message}`);
+    } finally {
+        btn.innerHTML = originalHTML;
+        btn.disabled = false;
+    }
+}
+
 // --- Audio Logic ---
 /**
  * Updates the Prefetch Progress UI to show buffer health (Ready Chunks / Target)
@@ -1628,6 +1689,15 @@ document.getElementById('next-btn').onclick = () => {
 };
 
 document.getElementById('toc-btn').onclick = () => {
+    // Tự động thu gọn trình phát nếu đang mở
+    const mediaPlayer = document.getElementById('media-player');
+    if (!mediaPlayer.classList.contains('minimized-player')) {
+        STATE.tocAutoMinimized = true;
+        toggleMinimize(true);
+    } else {
+        STATE.tocAutoMinimized = false;
+    }
+
     document.getElementById('toc-overlay').classList.remove('translate-x-full');
     renderTOC(); // Re-render to ensure active state is correct
     setTimeout(scrollTOCCurrentChapter, 300);
@@ -1638,6 +1708,13 @@ document.getElementById('close-toc').onclick = () => {
     if (selectBtn?.classList.contains('active')) {
         toggleSelectMode();
     }
+
+    // Trả về trạng thái cũ cho trình phát nếu được thu gọn tự động bởi TOC
+    if (STATE.tocAutoMinimized) {
+        toggleMinimize(false);
+        STATE.tocAutoMinimized = false;
+    }
+
     document.getElementById('toc-overlay').classList.add('translate-x-full');
 };
 document.getElementById('sync-btn').onclick = () => refreshLibrary();
@@ -1654,6 +1731,8 @@ document.getElementById('toc-download-btn').onclick = () => {
         downloadSelectedChapters();
     }
 };
+
+document.getElementById('toc-delete-btn').onclick = () => deleteSelectedChapters();
 
 // // Player Minimize Logic
 function toggleMinimize(isMinimized) {

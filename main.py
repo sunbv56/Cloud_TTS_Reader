@@ -6,11 +6,49 @@ import re
 import json
 import asyncio
 import edge_tts
+import tempfile
+import firebase_admin
+from firebase_admin import credentials, storage, firestore
 from fastapi import FastAPI, Request, Response, Form, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional
+
+# Initialize Firebase Admin
+firebase_admin_initialized = False
+firebase_creds_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
+
+if firebase_creds_json:
+    try:
+        creds_dict = json.loads(firebase_creds_json)
+        cred = credentials.Certificate(creds_dict)
+        firebase_admin.initialize_app(cred, {
+            'storageBucket': os.getenv("FIREBASE_STORAGE_BUCKET")
+        })
+        print("Firebase Admin initialized via environment variable.")
+        firebase_admin_initialized = True
+    except Exception as e:
+        print(f"Error initializing Firebase Admin with service account: {e}")
+else:
+    # Try default initialization (e.g. if running on GCP/GCE)
+    try:
+        firebase_admin.initialize_app(options={
+            'storageBucket': os.getenv("FIREBASE_STORAGE_BUCKET")
+        })
+        print("Firebase Admin initialized via default credentials.")
+        firebase_admin_initialized = True
+    except Exception as e:
+        print(f"Warning: Firebase Admin could not be initialized (local dev?). Storage features will be limited: {e}")
+
+try:
+    if firebase_admin_initialized:
+        db_admin = firestore.client()
+    else:
+        db_admin = None
+except Exception as e:
+    print(f"Firestore client could not be initialized: {e}")
+    db_admin = None
 
 app = FastAPI()
 NUM_WORKERS = 3  # Tăng số lượng worker nếu muốn nạp song song nhanh hơn
@@ -21,21 +59,46 @@ if not os.path.exists(static_dir):
     os.makedirs(static_dir)
 
 # Helper functions for book parsing
-def parse_chapters(text: str):
-    raw_chapters = re.split(r'={3,}', text)
+def parse_chapters_from_file(file_path: str):
+    """Memory-efficient chapter parsing by reading file line by line."""
     chapters = []
-    for raw in raw_chapters:
-        raw = raw.strip()
-        if not raw: continue
-        lines = raw.split('\n')
+    current_raw_lines = []
+    
+    def process_raw_chapter(raw_lines):
+        if not raw_lines: return
+        raw_text = "".join(raw_lines).strip()
+        if not raw_text: return
+        
+        lines = raw_text.split('\n')
         title = "Chương không tên"
         for line in lines:
             if line.strip():
                 title = line.strip()
                 break
-        chapters.append({'title': title, 'content': raw})
-    if not chapters and text.strip():
-        chapters.append({'title': "Mở đầu", 'content': text.strip()})
+        chapters.append({'title': title, 'content': raw_text})
+
+    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+        for line in f:
+            if re.match(r'={3,}', line.strip()):
+                process_raw_chapter(current_raw_lines)
+                current_raw_lines = []
+            else:
+                current_raw_lines.append(line)
+    
+    # Process last chapter
+    process_raw_chapter(current_raw_lines)
+    
+    # Handle empty case
+    if not chapters:
+        # Check if file has any content
+        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+            full_text = f.read(1000).strip() # just a peek
+            if full_text:
+                # If no delimiters found, treat entire file as one chapter
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f2:
+                    content = f2.read().strip()
+                    if content:
+                        chapters.append({'title': "Mở đầu", 'content': content})
     return chapters
 
 def split_text_into_chunks(text: str, max_chars: int = 500):
@@ -91,22 +154,29 @@ async def stream_metadata(text: str, voice: str, rate: str = "+0%", pitch: str =
 
 @app.post("/api/parse-book")
 async def parse_book(file: UploadFile = File(...)):
-    content = await file.read()
-    text = content.decode("utf-8")
-    chapters = parse_chapters(text)
-    
-    processed_chapters = []
-    for chap in chapters:
-        sentences = split_text_into_chunks(chap['content'])
-        processed_chapters.append({
-            "title": chap['title'],
-            "sentences": sentences
+    # Memory optimization: Stream upload to a temporary file
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+        while chunk := await file.read(1024 * 1024): # 1MB chunks
+            tmp.write(chunk)
+        tmp_path = tmp.name
+
+    try:
+        chapters = parse_chapters_from_file(tmp_path)
+        processed_chapters = []
+        for chap in chapters:
+            sentences = split_text_into_chunks(chap['content'])
+            processed_chapters.append({
+                "title": chap['title'],
+                "sentences": sentences
+            })
+            
+        return JSONResponse({
+            "title": file.filename.replace(".txt", ""),
+            "chapters": processed_chapters
         })
-        
-    return JSONResponse({
-        "title": file.filename.replace(".txt", ""),
-        "chapters": processed_chapters
-    })
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 @app.get("/api/firebase-config")
 async def get_firebase_config():
@@ -119,6 +189,137 @@ async def get_firebase_config():
         "appId": os.getenv("FIREBASE_APP_ID", ""),
         "measurementId": os.getenv("FIREBASE_MEASUREMENT_ID", "")
     }
+
+@app.post("/api/append-chapter")
+async def append_chapter(
+    userId: str = Form(...),
+    bookId: str = Form(...),
+    filename: str = Form(...),
+    file: UploadFile = File(...)
+):
+    """Memory-efficient chapter appending on the server."""
+    if not firebase_admin_initialized:
+        return JSONResponse({"error": "Firebase Admin not initialized on server. Check credentials."}, status_code=500)
+
+    try:
+        bucket = storage.bucket()
+    except Exception as e:
+        return JSONResponse({"error": f"Could not access storage bucket: {e}"}, status_code=500)
+
+    blob_path = f"users/{userId}/files/{filename}"
+    blob = bucket.blob(blob_path)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+        tmp_path = tmp.name
+        
+        # 1. Download existing if it exists
+        if blob.exists():
+            blob.download_to_filename(tmp_path)
+            # Ensure there's a newline separator
+            with open(tmp_path, "a", encoding="utf-8") as f:
+                f.write("\n\n")
+        
+        # 2. Append new content
+        with open(tmp_path, "ab") as f:
+            while chunk := await file.read(1024 * 1024):
+                f.write(chunk)
+                
+    try:
+        # 3. Re-upload merged file
+        blob.upload_from_filename(tmp_path)
+        
+        # 4. Parse the merged result to get new metadata
+        chapters = parse_chapters_from_file(tmp_path)
+        processed_chapters = []
+        for chap in chapters:
+            sentences = split_text_into_chunks(chap['content'])
+            processed_chapters.append({
+                "title": chap['title'],
+                "sentences": sentences
+            })
+            
+        return JSONResponse({
+            "title": filename.replace(".txt", ""),
+            "chapters": processed_chapters,
+            "total_chunks": sum(len(c["sentences"]) for c in processed_chapters)
+        })
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+@app.post("/api/delete-chapters")
+async def delete_chapters(
+    userId: str = Form(...),
+    bookId: str = Form(...),
+    filename: str = Form(...),
+    indices: str = Form(...) # JSON string of list of ints [0, 2, 5]
+):
+    """Memory-efficient multi-chapter deletion on the server."""
+    if not firebase_admin_initialized:
+        return JSONResponse({"error": "Firebase Admin not initialized on server. Check credentials."}, status_code=500)
+
+    try:
+        bucket = storage.bucket()
+    except Exception as e:
+        return JSONResponse({"error": f"Could not access storage bucket: {e}"}, status_code=500)
+
+    blob_path = f"users/{userId}/files/{filename}"
+    blob = bucket.blob(blob_path)
+
+    if not blob.exists():
+        return JSONResponse({"error": "File not found"}, status_code=404)
+
+    try:
+        target_indices = json.loads(indices)
+        if not isinstance(target_indices, list):
+            return JSONResponse({"error": "Indices must be a JSON array"}, status_code=400)
+        # Sort descending so we can pop without shifting remaining target indices
+        target_indices.sort(reverse=True)
+    except Exception as e:
+        return JSONResponse({"error": f"Invalid indices format: {e}"}, status_code=400)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+        tmp_path = tmp.name
+        blob.download_to_filename(tmp_path)
+        
+    try:
+        # 1. Parse into chapters
+        chapters = parse_chapters_from_file(tmp_path)
+        
+        # 2. Remove chapters
+        for idx in target_indices:
+            if 0 <= idx < len(chapters):
+                chapters.pop(idx)
+            else:
+                print(f"Warning: Index {idx} out of range for deletion.")
+        
+        # 3. Reconstruct file
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            for i, chap in enumerate(chapters):
+                if i > 0:
+                    f.write("\n\n===\n\n")
+                f.write(chap['content'])
+                
+        # 4. Re-upload
+        blob.upload_from_filename(tmp_path)
+        
+        # 5. Return updated metadata
+        processed_chapters = []
+        for chap in chapters:
+            sentences = split_text_into_chunks(chap['content'])
+            processed_chapters.append({
+                "title": chap['title'],
+                "sentences": sentences
+            })
+            
+        return JSONResponse({
+            "title": filename.replace(".txt", ""),
+            "chapters": processed_chapters,
+            "total_chunks": sum(len(c["sentences"]) for c in processed_chapters)
+        })
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 class ChapterDownloadItem(BaseModel):
     chapterIndex: int
