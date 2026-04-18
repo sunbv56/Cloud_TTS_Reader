@@ -113,7 +113,11 @@ let STATE = {
     downloadExpected: 0,
     downloadResolve: null,
     downloadReject: null,
-    tocAutoMinimized: false
+    tocAutoMinimized: false,
+    // Performance Optimization State
+    heartbeatInterval: null,
+    lastHighlightedIndex: -1,
+    lastOntimeUpdateTick: 0
 };
 
 // Constants
@@ -138,9 +142,13 @@ function initWebSocket() {
     STATE.ws.onopen = () => {
         console.log("Connected to WebSocket");
         document.getElementById('status-indicator').innerText = "Ready";
+
+        // --- FIXED: Clear existing heartbeat to avoid PING interval leaks ---
+        if (STATE.heartbeatInterval) clearInterval(STATE.heartbeatInterval);
+
         // Start Heartbeat
-        setInterval(() => {
-            if (STATE.ws.readyState === WebSocket.OPEN) {
+        STATE.heartbeatInterval = setInterval(() => {
+            if (STATE.ws && STATE.ws.readyState === WebSocket.OPEN) {
                 STATE.ws.send(JSON.stringify({ type: "PING" }));
             }
         }, 30000);
@@ -1525,10 +1533,19 @@ async function playFromSentence(index) {
 }
 
 function highlightSentence(index) {
-    document.querySelectorAll('.chunk-text').forEach(el => el.classList.remove('chunk-active'));
+    // --- OPTIMIZED: Use targeted removal instead of querySelectorAll ---
+    if (STATE.lastHighlightedIndex !== -1 && STATE.lastHighlightedIndex !== index) {
+        const prev = document.getElementById(`sentence-${STATE.lastHighlightedIndex}`);
+        if (prev) prev.classList.remove('chunk-active');
+
+        const prevMini = document.getElementById(`minimap-node-${STATE.lastHighlightedIndex}`);
+        if (prevMini) prevMini.classList.remove('minimap-active');
+    }
+
     const cur = document.getElementById(`sentence-${index}`);
     if (cur) {
         cur.classList.add('chunk-active');
+        STATE.lastHighlightedIndex = index;
 
         // Calculate offset to position sentence approx 10% from top instead of 25% (scrolling further down)
         const container = document.getElementById('text-container');
@@ -1543,7 +1560,6 @@ function highlightSentence(index) {
     }
 
     // Minimap sync
-    document.querySelectorAll('.minimap-node').forEach(el => el.classList.remove('minimap-active'));
     const miniNode = document.getElementById(`minimap-node-${index}`);
     if (miniNode) {
         miniNode.classList.add('minimap-active');
@@ -1641,6 +1657,11 @@ audio.onwaiting = () => {
 
 audio.ontimeupdate = () => {
     const curTime = audio.currentTime || 0;
+
+    // --- OPTIMIZATION: Throttle execution frequency to ~6Hz ---
+    // Reduced from browser default (~60Hz) to save CPU/Battery during long playback
+    if (Math.abs(curTime - STATE.lastOntimeUpdateTick) < 0.15) return;
+    STATE.lastOntimeUpdateTick = curTime;
 
     // --- UI Synchronization via chunkTimings ---
     if (STATE.chunkTimings.length > 0) {
@@ -2205,8 +2226,12 @@ async function handlePlaybackStall() {
     STATE.isPlaying = false;
     audio.pause();
 
-    // 1. Disconnect WebSocket
+    // 1. Disconnect WebSocket & Clear Heartbeat
     if (STATE.ws) {
+        if (STATE.heartbeatInterval) {
+            clearInterval(STATE.heartbeatInterval);
+            STATE.heartbeatInterval = null;
+        }
         STATE.ws.close();
     }
 
