@@ -679,7 +679,7 @@ async function mergeChapterFile(event, bookId, bookData) {
         }
 
         const newBookData = await response.json();
-        
+
         // Calculate total chunks from metadata chapters
         const newTotalChunks = newBookData.chapters.reduce((sum, ch) => sum + (ch.count || 0), 0);
 
@@ -829,12 +829,12 @@ async function loadBook(bookData, bookId, filename) {
 
 async function fetchChapterSentences(index) {
     if (!STATE.user || !STATE.currentFilename) return;
-    
+
     const formData = new FormData();
     formData.append('userId', STATE.user.uid);
     formData.append('filename', STATE.currentFilename);
     formData.append('chapterIndex', index);
-    
+
     document.getElementById('status-indicator').innerText = "Loading Chapter...";
 
     try {
@@ -1255,7 +1255,7 @@ async function deleteSelectedChapters() {
         }
 
         const data = await response.json();
-        
+
         // Calculate total chunks from metadata chapters
         const newTotalChunks = data.chapters.reduce((sum, ch) => sum + (ch.count || 0), 0);
 
@@ -1371,7 +1371,7 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
                 currentSentIdx = 0;
                 if (currentChapIdx >= STATE.currentBook.chapters.length) break;
                 // Move to next chapter - we might need to load its metadata/sentences later
-                continue; 
+                continue;
             }
 
             // Ensure sentences are loaded for prefetching
@@ -1426,7 +1426,7 @@ async function playFromSentence(index) {
         await fetchChapterSentences(STATE.currentChapterIndex);
         // Chapter might have changed or sentences loaded
     }
-    
+
     STATE.currentSentenceIndex = index;
     const sentences = STATE.currentBook.chapters[STATE.currentChapterIndex].sentences;
 
@@ -1701,8 +1701,9 @@ audio.ontimeupdate = () => {
             if (removeEnd > 10) {
                 console.log(`Cleaning up buffer: 0 to ${removeEnd.toFixed(2)}s`);
                 STATE.sourceBuffer.remove(0, removeEnd);
-                // We need to shift timing offsets as well if we were using timestampOffset, 
-                // but standard MSE removal doesn't change current time.
+
+                // FIXED MEMORY LEAK: Clean up old elements from chunkTimings
+                STATE.chunkTimings = STATE.chunkTimings.filter(t => t.startTime >= removeEnd);
             }
         } catch (e) {
             console.error("Buffer cleanup error:", e);
@@ -1717,12 +1718,25 @@ audio.ontimeupdate = () => {
 
         if (total > 0) {
             const chunkProgress = (current / total) * 100;
-            document.getElementById('progress-bar').style.width = `${chunkProgress}%`;
-            document.getElementById('current-time-mock').innerText = `${current} / ${total}`;
+            const chunkProgressStr = `${chunkProgress}%`;
+            const currentMockStr = `${current} / ${total}`;
+
+            if (STATE.lastProgressWidth !== chunkProgressStr) {
+                document.getElementById('progress-bar').style.width = chunkProgressStr;
+                STATE.lastProgressWidth = chunkProgressStr;
+            }
+            if (STATE.lastCurrentMock !== currentMockStr) {
+                document.getElementById('current-time-mock').innerText = currentMockStr;
+                STATE.lastCurrentMock = currentMockStr;
+            }
         }
 
         const fmt = (s) => new Date(s * 1000).toISOString().substr(14, 5);
-        document.getElementById('time-display').innerText = fmt(curTime);
+        const timeStr = fmt(curTime);
+        if (STATE.lastTimeStr !== timeStr) {
+            document.getElementById('time-display').innerText = timeStr;
+            STATE.lastTimeStr = timeStr;
+        }
     }
 };
 
