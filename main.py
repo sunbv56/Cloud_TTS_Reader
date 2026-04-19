@@ -546,6 +546,18 @@ async def websocket_endpoint(websocket: WebSocket):
                             break
                 except Exception as e:
                     print(f"[Worker {worker_id}] Generation Error: {e}")
+                    if state["active_session"] <= sid:
+                        try:
+                            async with ws_lock:
+                                await websocket.send_json({
+                                    "type": "PREFETCH_FAILED",
+                                    "index": msg["index"],
+                                    "chapterIndex": msg.get("chapterIndex", 0),
+                                    "sessionId": sid,
+                                    "error": str(e)
+                                })
+                        except Exception:
+                            pass
                 finally:
                     queue.task_done()
         except asyncio.CancelledError:

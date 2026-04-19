@@ -165,10 +165,15 @@ function initWebSocket() {
                 }
                 // Đưa vào hàng đợi thay vì gán đè biến
                 STATE.metadataQueue.push(data);
-            } else if (data.type === "PREFETCH_DONE") {
+            } else if (data.type === "PREFETCH_DONE" || data.type === "PREFETCH_FAILED") {
                 if (data.sessionId && data.sessionId !== STATE.sessionId) return;
                 STATE.fetchingSet.delete(`${data.chapterIndex}_${data.index}`);
-                document.getElementById('status-indicator').innerText = "Ready";
+                
+                if (data.type === "PREFETCH_FAILED") {
+                    console.error(`Chunk fetch failed: ${data.chapterIndex}-${data.index} - ${data.error || "Unknown"}`);
+                } else {
+                    document.getElementById('status-indicator').innerText = "Ready";
+                }
 
                 // Update UI using buffer health logic
                 updatePrefetchUI();
@@ -227,9 +232,28 @@ function initWebSocket() {
 
     STATE.ws.onclose = () => {
         console.log("WebSocket Disconnected.");
+        
+        // --- CRITICAL FIX FOR 30M DISCONNECT ---
+        // Release any pending chunk locks so they can be re-fetched after reconnect
+        STATE.fetchingSet.clear();
+        STATE.metadataQueue = [];
+        STATE.sessionId++; // Invalidate pending responses from old connection
+
         if (STATE.isPlaying && !STATE.isStalled) {
             console.log("Unexpected disconnect, reconnecting in 3s...");
+            document.getElementById('status-indicator').innerText = "Reconnecting...";
             setTimeout(initWebSocket, 3000);
+            
+            // Force a prefetch check shortly after reconnect completes
+            setTimeout(() => {
+                if (STATE.currentBook) {
+                    // Start filling buffer heavily just like a jump
+                    let lastChap = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].chapterIndex : STATE.currentChapterIndex;
+                    let lastIdx = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].index : STATE.currentSentenceIndex;
+                    console.log("Post-reconnect prefetch trigger...");
+                    prefetchNext(lastChap, lastIdx, null, true);
+                }
+            }, 4000);
         } else {
             document.getElementById('status-indicator').innerText = "Disconnected";
         }
