@@ -61,6 +61,18 @@ function removeVietnameseTones(str) {
     return str;
 }
 
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
 // App State
 let STATE = {
     user: null,
@@ -80,7 +92,9 @@ let STATE = {
         speed: 1.0,
         pitch: "+0Hz",
         volume: "+0%",
-        numWorkers: 5
+        numWorkers: 5,
+        fontSize: 20,
+        textColor: "default"
     },
     isTransitioning: false,
     // MSE State
@@ -1005,7 +1019,7 @@ function renderTOC() {
             }
             renderChapter(i);
             playFromSentence(0);
-            document.getElementById('toc-overlay').classList.add('translate-x-full');
+            closeTOC();
         };
         tocList.appendChild(div);
     });
@@ -1017,6 +1031,25 @@ function scrollTOCCurrentChapter() {
     if (activeItem && tocList) {
         activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
+}
+
+/**
+ * Closes the TOC overlay and restores the media player state if it was auto-minimized.
+ */
+function closeTOC() {
+    // Reset select mode when closing TOC
+    const selectBtn = document.getElementById('toc-select-mode-btn');
+    if (selectBtn?.classList.contains('active')) {
+        toggleSelectMode();
+    }
+
+    // Trả về trạng thái cũ cho trình phát nếu được thu gọn tự động bởi TOC
+    if (STATE.tocAutoMinimized) {
+        toggleMinimize(false);
+        STATE.tocAutoMinimized = false;
+    }
+
+    document.getElementById('toc-overlay').classList.add('translate-x-full');
 }
 
 // --- Offline Download Logic ---
@@ -1807,6 +1840,65 @@ document.getElementById('prefetch-range').oninput = (e) => {
     prefetchNext(STATE.currentChapterIndex, STATE.currentSentenceIndex);
 };
 
+// --- Typography settings ---
+const debouncedApplyTypography = debounce(() => {
+    applyTypographySettings();
+    saveProgress(false); // Proactive save after adjustment
+}, 350);
+
+document.getElementById('font-size-range').oninput = (e) => {
+    const val = parseInt(e.target.value);
+    STATE.settings.fontSize = val;
+    document.getElementById('font-size-val').innerText = `${val}px`;
+    
+    // Instant preview via CSS variable
+    document.documentElement.style.setProperty('--reader-font-size', `${val}px`);
+    
+    debouncedApplyTypography();
+};
+
+document.getElementById('font-color-picker').oninput = (e) => {
+    const val = e.target.value;
+    STATE.settings.textColor = val;
+    
+    // Instant preview via CSS variable
+    document.documentElement.style.setProperty('--reader-text-color', val);
+    
+    debouncedApplyTypography();
+};
+
+document.getElementById('color-reset-btn').onclick = () => {
+    STATE.settings.textColor = "default";
+    applyTypographySettings();
+    saveProgress(false); // Proactive save
+};
+
+document.querySelectorAll('.preset-color').forEach(btn => {
+    btn.onclick = () => {
+        const color = btn.dataset.color;
+        STATE.settings.textColor = color;
+        applyTypographySettings();
+        saveProgress(false); // Proactive save
+    };
+});
+
+function applyTypographySettings() {
+    const s = STATE.settings;
+    const root = document.documentElement;
+    
+    // Apply Font Size
+    root.style.setProperty('--reader-font-size', `${s.fontSize}px`);
+    
+    // Apply Text Color
+    if (s.textColor === "default") {
+        root.style.setProperty('--reader-text-color', 'var(--theme-text-reading)');
+        document.getElementById('font-color-picker').value = "#bac9cc"; // Default looking
+    } else {
+        root.style.setProperty('--reader-text-color', s.textColor);
+        document.getElementById('font-color-picker').value = s.textColor;
+    }
+}
+
 // --- UI Interactions ---
 document.getElementById('prev-btn').onclick = () => {
     if (STATE.currentChapterIndex > 0) {
@@ -1838,21 +1930,7 @@ document.getElementById('toc-btn').onclick = () => {
     renderTOC(); // Re-render to ensure active state is correct
     setTimeout(scrollTOCCurrentChapter, 300);
 };
-document.getElementById('close-toc').onclick = () => {
-    // Reset select mode when closing TOC
-    const selectBtn = document.getElementById('toc-select-mode-btn');
-    if (selectBtn?.classList.contains('active')) {
-        toggleSelectMode();
-    }
-
-    // Trả về trạng thái cũ cho trình phát nếu được thu gọn tự động bởi TOC
-    if (STATE.tocAutoMinimized) {
-        toggleMinimize(false);
-        STATE.tocAutoMinimized = false;
-    }
-
-    document.getElementById('toc-overlay').classList.add('translate-x-full');
-};
+document.getElementById('close-toc').onclick = () => closeTOC();
 document.getElementById('sync-btn').onclick = () => refreshLibrary();
 document.getElementById('edit-title-btn').onclick = () => editTitle();
 
@@ -1936,6 +2014,19 @@ function applySettingsToUI() {
             document.getElementById('prefetch-val').innerText = `${s.numWorkers} Workers`;
         }
     }
+
+    if (document.getElementById('font-size-range')) {
+        document.getElementById('font-size-range').value = s.fontSize;
+        document.getElementById('font-size-val').innerText = `${s.fontSize}px`;
+    }
+
+    if (document.getElementById('font-color-picker')) {
+        if (s.textColor !== "default") {
+            document.getElementById('font-color-picker').value = s.textColor;
+        }
+    }
+
+    applyTypographySettings();
 }
 
 // --- Media Session API ---
