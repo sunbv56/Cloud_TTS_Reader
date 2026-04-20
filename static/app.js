@@ -182,7 +182,7 @@ function initWebSocket() {
             } else if (data.type === "PREFETCH_DONE" || data.type === "PREFETCH_FAILED") {
                 if (data.sessionId && data.sessionId !== STATE.sessionId) return;
                 STATE.fetchingSet.delete(`${data.chapterIndex}_${data.index}`);
-                
+
                 if (data.type === "PREFETCH_FAILED") {
                     console.error(`Chunk fetch failed: ${data.chapterIndex}-${data.index} - ${data.error || "Unknown"}`);
                 } else {
@@ -252,7 +252,7 @@ function initWebSocket() {
 
     STATE.ws.onclose = () => {
         console.log("WebSocket Disconnected.");
-        
+
         // --- CRITICAL FIX FOR 30M DISCONNECT ---
         // Release any pending chunk locks so they can be re-fetched after reconnect
         STATE.fetchingSet.clear();
@@ -267,7 +267,7 @@ function initWebSocket() {
             console.log("Unexpected disconnect, reconnecting in 3s...");
             document.getElementById('status-indicator').innerText = "Reconnecting...";
             setTimeout(initWebSocket, 3000);
-            
+
             // Force a prefetch check shortly after reconnect completes
             setTimeout(() => {
                 if (STATE.currentBook) {
@@ -1419,7 +1419,7 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
     if (STATE.prefetchTimeout) clearTimeout(STATE.prefetchTimeout);
 
     const runPrefetch = async () => {
-        if (count === null) count = Math.max(30, STATE.settings.numWorkers * 5); // FIX #5: Reduced from 200 to 30 to prevent 256MB server overload
+        if (count === null) count = Math.max(150, STATE.settings.numWorkers * 15); // FIX #5 REVISED: 150 chunks = ~10 min buffer; enough for background tabs where ontimeupdate is throttled
         if (!STATE.ws || STATE.ws.readyState !== WebSocket.OPEN) {
             await waitForWebSocket();
         }
@@ -1861,20 +1861,20 @@ document.getElementById('font-size-range').oninput = (e) => {
     const val = parseInt(e.target.value);
     STATE.settings.fontSize = val;
     document.getElementById('font-size-val').innerText = `${val}px`;
-    
+
     // Instant preview via CSS variable
     document.documentElement.style.setProperty('--reader-font-size', `${val}px`);
-    
+
     debouncedApplyTypography();
 };
 
 document.getElementById('font-color-picker').oninput = (e) => {
     const val = e.target.value;
     STATE.settings.textColor = val;
-    
+
     // Instant preview via CSS variable
     document.documentElement.style.setProperty('--reader-text-color', val);
-    
+
     debouncedApplyTypography();
 };
 
@@ -1896,10 +1896,10 @@ document.querySelectorAll('.preset-color').forEach(btn => {
 function applyTypographySettings() {
     const s = STATE.settings;
     const root = document.documentElement;
-    
+
     // Apply Font Size
     root.style.setProperty('--reader-font-size', `${s.fontSize}px`);
-    
+
     // Apply Text Color
     if (s.textColor === "default") {
         root.style.setProperty('--reader-text-color', 'var(--theme-text-reading)');
@@ -2406,6 +2406,15 @@ document.getElementById('wake-lock-btn').onclick = () => toggleWakeLock();
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && STATE.wakeLockEnabled) {
         requestWakeLock();
+    }
+
+    // BACKGROUND TAB FIX: When page is hidden, ontimeupdate is throttled by the browser.
+    // Proactively fill buffer to max so audio can continue playing for 10+ minutes in background.
+    if (document.visibilityState === 'hidden' && STATE.isPlaying && STATE.currentBook) {
+        console.log("Tab hidden: triggering aggressive background prefetch (500 chunks)...");
+        let lastChap = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].chapterIndex : STATE.currentChapterIndex;
+        let lastIdx = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].index : STATE.currentSentenceIndex;
+        prefetchNext(lastChap, lastIdx, 500, true); // Force 500 chunks on hide
     }
 });
 
