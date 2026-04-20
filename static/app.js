@@ -165,7 +165,7 @@ function initWebSocket() {
             if (STATE.ws && STATE.ws.readyState === WebSocket.OPEN) {
                 STATE.ws.send(JSON.stringify({ type: "PING" }));
             }
-        }, 30000);
+        }, 15000); // FIX #1: Reduced from 30s to 15s to prevent Fly.io proxy hard timeout
     };
 
     STATE.ws.onmessage = async (event) => {
@@ -244,6 +244,12 @@ function initWebSocket() {
         }
     };
 
+    // FIX #3: Add onerror handler to catch WebSocket errors
+    STATE.ws.onerror = (err) => {
+        console.error("WebSocket Error:", err);
+        // onclose will fire after onerror in most browsers
+    };
+
     STATE.ws.onclose = () => {
         console.log("WebSocket Disconnected.");
         
@@ -252,8 +258,12 @@ function initWebSocket() {
         STATE.fetchingSet.clear();
         STATE.metadataQueue = [];
         STATE.sessionId++; // Invalidate pending responses from old connection
+        STATE.isTransitioning = false; // FIX #6: Clear transitioning flag to unblock stall detector
 
-        if (STATE.isPlaying && !STATE.isStalled) {
+        // FIX #4: Use chunkTimings presence instead of isStalled to decide reconnect
+        // isStalled was never reset, permanently blocking reconnection after any stall
+        if (STATE.isPlaying || STATE.chunkTimings.length > 0) {
+            STATE.isStalled = false; // FIX #2: Reset isStalled so future reconnects work
             console.log("Unexpected disconnect, reconnecting in 3s...");
             document.getElementById('status-indicator').innerText = "Reconnecting...";
             setTimeout(initWebSocket, 3000);
@@ -1409,7 +1419,7 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
     if (STATE.prefetchTimeout) clearTimeout(STATE.prefetchTimeout);
 
     const runPrefetch = async () => {
-        if (count === null) count = Math.max(200, STATE.settings.numWorkers * 20);
+        if (count === null) count = Math.max(30, STATE.settings.numWorkers * 5); // FIX #5: Reduced from 200 to 30 to prevent 256MB server overload
         if (!STATE.ws || STATE.ws.readyState !== WebSocket.OPEN) {
             await waitForWebSocket();
         }
@@ -1492,6 +1502,7 @@ async function playFromSentence(index) {
         // Chapter might have changed or sentences loaded
     }
 
+    STATE.isStalled = false; // FIX #2: Reset isStalled on play resume so reconnect works
     STATE.currentSentenceIndex = index;
     const sentences = STATE.currentBook.chapters[STATE.currentChapterIndex].sentences;
 
@@ -2420,4 +2431,4 @@ if ('serviceWorker' in navigator) {
                 console.log('ServiceWorker registration failed: ', err);
             });
     });
-}
+}
