@@ -3,8 +3,10 @@ const ASSETS = [
     '/',
     '/static/index.html',
     '/static/app.js',
-    '/static/icon.svg'
+    '/static/icon.svg',
+    '/static/manifest.json'
 ];
+
 
 // Install Event
 self.addEventListener('install', (event) => {

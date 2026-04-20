@@ -1,0 +1,23 @@
+{
+  "name": "Cloud TTS | Pro Reader Edition",
+  "short_name": "Cloud TTS",
+  "description": "Premium Text-to-Speech Reader with Cloud Sync",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b1326",
+  "theme_color": "#00E5FF",
+  "icons": [
+    {
+      "src": "/static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}

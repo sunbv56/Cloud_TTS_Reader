@@ -18,7 +18,9 @@ Thumbs.db
 # Environment / Secrets
 .env
 *.json
+!static/manifest.json
 !fly.toml
+
 
 # Data / Temporary
 *.log
