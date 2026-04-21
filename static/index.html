@@ -602,6 +602,10 @@
                 <span class="w-2 h-2 rounded-full bg-slate-500"></span>
                 <span class="text-slate-400">Guest Mode</span>
             </div>
+            <button id="fullscreen-btn"
+                class="lg:hidden w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary transition-all">
+                <i class="fas fa-expand"></i>
+            </button>
             <button id="auth-btn" class="btn-primary flex items-center gap-2">
                 <i class="fab fa-google text-lg"></i>
                 <span class="hidden sm:inline">Sign In</span>
@@ -720,7 +724,7 @@
                 </button>
                 <div id="visual-settings-body" class="space-y-4 overflow-hidden transition-all duration-400 ease-in-out"
                     style="max-height: 0; opacity: 0; margin-top: 0;">
-                    
+
                     <!-- Font Size Control -->
                     <div class="bg-white/5 p-4 rounded-2xl border border-white/5 mt-4">
                         <div class="flex items-center justify-between text-xs font-bold px-1 mb-3">
@@ -736,10 +740,13 @@
                         <div class="flex items-center justify-between text-xs font-bold px-1 mb-4">
                             <span class="text-slate-400 uppercase tracking-tighter">Text Color</span>
                             <div class="flex items-center gap-2">
-                                <button id="color-reset-btn" class="text-[10px] bg-primary/10 text-primary px-2 py-1 rounded hover:bg-primary hover:text-black transition-all" title="Reset to Theme Default">
+                                <button id="color-reset-btn"
+                                    class="text-[10px] bg-primary/10 text-primary px-2 py-1 rounded hover:bg-primary hover:text-black transition-all"
+                                    title="Reset to Theme Default">
                                     DEFAULT
                                 </button>
-                                <div class="relative w-7 h-7 rounded-lg overflow-hidden border border-white/20 shadow-lg">
+                                <div
+                                    class="relative w-7 h-7 rounded-lg overflow-hidden border border-white/20 shadow-lg">
                                     <input type="color" id="font-color-picker" value="#bac9cc"
                                         class="absolute inset-[-5px] w-[150%] h-[150%] cursor-pointer bg-transparent border-none">
                                 </div>
@@ -747,12 +754,24 @@
                         </div>
                         <div class="flex gap-2.5 flex-wrap justify-between" id="font-color-presets">
                             <!-- Premium Presets for Quick Selection -->
-                            <button class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95" style="background: #F8F9FA;" data-color="#F8F9FA" title="Pure White"></button>
-                            <button class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95" style="background: #FFE4B5;" data-color="#FFE4B5" title="Warm Amber"></button>
-                            <button class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95" style="background: #E8DDD0;" data-color="#E8DDD0" title="Vintage Paper"></button>
-                            <button class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95" style="background: #C8E0D0;" data-color="#C8E0D0" title="Mint Green"></button>
-                            <button class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95" style="background: #E8D0DE;" data-color="#E8D0DE" title="Soft Rose"></button>
-                            <button class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95" style="background: #00E5FF;" data-color="#00E5FF" title="Cyber Cyan"></button>
+                            <button
+                                class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95"
+                                style="background: #F8F9FA;" data-color="#F8F9FA" title="Pure White"></button>
+                            <button
+                                class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95"
+                                style="background: #FFE4B5;" data-color="#FFE4B5" title="Warm Amber"></button>
+                            <button
+                                class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95"
+                                style="background: #E8DDD0;" data-color="#E8DDD0" title="Vintage Paper"></button>
+                            <button
+                                class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95"
+                                style="background: #C8E0D0;" data-color="#C8E0D0" title="Mint Green"></button>
+                            <button
+                                class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95"
+                                style="background: #E8D0DE;" data-color="#E8D0DE" title="Soft Rose"></button>
+                            <button
+                                class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95"
+                                style="background: #00E5FF;" data-color="#00E5FF" title="Cyber Cyan"></button>
                         </div>
                     </div>
                 </div>
@@ -1085,10 +1104,21 @@
                             </div>
                             <span id="time-display"
                                 class="text-[10px] font-mono font-black text-primary min-w-[3.5rem] text-right">0:00</span>
-                            <button id="fullscreen-btn"
-                                class="lg:hidden w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary transition-all">
-                                <i class="fas fa-expand"></i>
-                            </button>
+                            <!-- Mobile Performance/Lite Mode Toggle -->
+                            <label class="flex lg:hidden items-center gap-2 cursor-pointer group"
+                                title="Toggle Lite Mode (Improves Performance)">
+                                <div class="relative">
+                                    <input type="checkbox" id="lite-mode-toggle-mobile" class="sr-only peer"
+                                        onchange="document.getElementById('lite-mode-toggle').click();">
+                                    <div
+                                        class="w-10 h-6 bg-white/10 rounded-full peer-checked:bg-primary/80 transition-colors border border-white/5">
+                                    </div>
+                                    <div
+                                        class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4 flex items-center justify-center shadow-sm">
+                                        <i class="fas fa-bolt text-[8px] text-black"></i>
+                                    </div>
+                                </div>
+                            </label>
                         </div>
                     </div>
                     <!-- Utilities Layer -->
@@ -1103,13 +1133,17 @@
                         </div>
                         <button id="speak-speed-chip"
                             class="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black text-slate-400 hover:text-primary transition-colors">1.0X</button>
-                        
+
                         <!-- Performance/Lite Mode Toggle -->
-                        <label class="flex items-center gap-2 cursor-pointer group" title="Toggle Lite Mode (Improves Performance)">
+                        <label class="flex items-center gap-2 cursor-pointer group"
+                            title="Toggle Lite Mode (Improves Performance)">
                             <div class="relative">
                                 <input type="checkbox" id="lite-mode-toggle" class="sr-only peer">
-                                <div class="w-10 h-6 bg-white/10 rounded-full peer-checked:bg-primary/80 transition-colors border border-white/5"></div>
-                                <div class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4 flex items-center justify-center shadow-sm">
+                                <div
+                                    class="w-10 h-6 bg-white/10 rounded-full peer-checked:bg-primary/80 transition-colors border border-white/5">
+                                </div>
+                                <div
+                                    class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4 flex items-center justify-center shadow-sm">
                                     <i class="fas fa-bolt text-[8px] text-black"></i>
                                 </div>
                             </div>
@@ -1299,7 +1333,7 @@
         if (voiceSettingsOpen === 'true') {
             toggleVoiceSettings(true);
         }
-        
+
         const visualSettingsOpen = localStorage.getItem('visual-settings-open');
         if (visualSettingsOpen === 'true') {
             toggleVisualSettings(true);
