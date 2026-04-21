@@ -548,6 +548,26 @@
         #media-player.minimized-player #next-btn {
             display: none;
         }
+
+        /* Lite/Performance Mode Rules - Disables animations, hides text and minimizes GPU/CPU usage */
+        body.lite-mode * {
+            animation: none !important;
+            transition: none !important;
+            box-shadow: none !important;
+            /* text-shadow: none !important; */
+        }
+        body.lite-mode #text-container {
+            opacity: 0 !important;
+            pointer-events: none !important;
+            visibility: hidden !important;
+        }
+        body.lite-mode #minimap-container,
+        body.lite-mode #sidebar-container {
+            display: none !important;
+        }
+        body.lite-mode main {
+            background: transparent !important;
+        }
     </style>
 </head>
 
@@ -1083,10 +1103,17 @@
                         </div>
                         <button id="speak-speed-chip"
                             class="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black text-slate-400 hover:text-primary transition-colors">1.0X</button>
-                        <button id="fullscreen-btn-desktop"
-                            class="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary transition-all">
-                            <i class="fas fa-expand"></i>
-                        </button>
+                        
+                        <!-- Performance/Lite Mode Toggle -->
+                        <label class="flex items-center gap-2 cursor-pointer group" title="Toggle Lite Mode (Improves Performance)">
+                            <div class="relative">
+                                <input type="checkbox" id="lite-mode-toggle" class="sr-only peer">
+                                <div class="w-10 h-6 bg-white/10 rounded-full peer-checked:bg-primary/80 transition-colors border border-white/5"></div>
+                                <div class="absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4 flex items-center justify-center shadow-sm">
+                                    <i class="fas fa-bolt text-[8px] text-black"></i>
+                                </div>
+                            </div>
+                        </label>
                     </div>
                 </footer>
             </div>

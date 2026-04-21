@@ -1992,8 +1992,23 @@ const toggleFullscreen = () => {
 };
 
 document.getElementById('fullscreen-btn').onclick = toggleFullscreen;
-if (document.getElementById('fullscreen-btn-desktop')) {
-    document.getElementById('fullscreen-btn-desktop').onclick = toggleFullscreen;
+
+// Performance / Lite Mode
+const liteModeToggle = document.getElementById('lite-mode-toggle');
+if (liteModeToggle) {
+    // Restore saved state
+    const savedLiteMode = localStorage.getItem('lite-mode-enabled') === 'true';
+    liteModeToggle.checked = savedLiteMode;
+    if (savedLiteMode) {
+        document.body.classList.add('lite-mode');
+    }
+
+    liteModeToggle.addEventListener('change', (e) => {
+        const isLite = e.target.checked;
+        document.body.classList.toggle('lite-mode', isLite);
+        localStorage.setItem('lite-mode-enabled', isLite);
+        console.log(`Lite mode toggled: ${isLite}`);
+    });
 }
 
 function updateUI() {
