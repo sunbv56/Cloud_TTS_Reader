@@ -437,6 +437,10 @@ async def download_chapters(req: ChapterDownloadRequest):
 async def get_index():
     return FileResponse(os.path.join(static_dir, "index.html"))
 
+@app.get("/api/ping")
+async def api_ping():
+    return {"status": "ok", "message": "Keep-alive ping received"}
+
 # Serving static files
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 

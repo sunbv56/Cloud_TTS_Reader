@@ -143,6 +143,44 @@ const playBtn = document.getElementById('play-btn');
 const textContainer = document.getElementById('text-container');
 const fileInput = document.getElementById('file-input');
 const bookList = document.getElementById('book-list');
+// --- No-Sleep Web Audio Hack ---
+let noSleepContext = null;
+let noSleepOscillator = null;
+
+function enableNoSleepAudio() {
+    if (noSleepContext && noSleepContext.state === 'running') return;
+    try {
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        noSleepContext = new AudioContext();
+        noSleepOscillator = noSleepContext.createOscillator();
+        const gainNode = noSleepContext.createGain();
+
+        // Cực kỳ nhỏ, không thể nghe thấy
+        gainNode.gain.value = 0.0001;
+        noSleepOscillator.connect(gainNode);
+        gainNode.connect(noSleepContext.destination);
+
+        noSleepOscillator.start();
+        console.log("No-Sleep Audio Context started.");
+    } catch (e) {
+        console.warn("Failed to start No-Sleep Audio:", e);
+    }
+}
+
+function disableNoSleepAudio() {
+    if (noSleepOscillator) {
+        try {
+            noSleepOscillator.stop();
+            noSleepOscillator.disconnect();
+        } catch (e) { }
+        noSleepOscillator = null;
+    }
+    if (noSleepContext) {
+        noSleepContext.close();
+        noSleepContext = null;
+    }
+    console.log("No-Sleep Audio Context stopped.");
+}
 
 // --- Initialization ---
 function initWebSocket() {
@@ -165,6 +203,8 @@ function initWebSocket() {
             if (STATE.ws && STATE.ws.readyState === WebSocket.OPEN) {
                 STATE.ws.send(JSON.stringify({ type: "PING" }));
             }
+            // --- HTTP Ping to keep Fly proxy alive while playing ---
+            if (STATE.isPlaying) fetch('/api/ping').catch(() => { });
         }, 15000); // FIX #1: Reduced from 30s to 15s to prevent Fly.io proxy hard timeout
     };
 
@@ -1655,6 +1695,7 @@ playBtn.onclick = async () => {
 audio.onplay = () => {
     STATE.isTransitioning = false;
     STATE.isPlaying = true;
+    enableNoSleepAudio();
     playBtn.innerHTML = '<i class="fas fa-pause"></i>';
     document.getElementById('status-indicator').innerText = "Streaming";
     if ('mediaSession' in navigator) {
@@ -1664,6 +1705,7 @@ audio.onplay = () => {
 
 audio.onpause = () => {
     STATE.isPlaying = false;
+    disableNoSleepAudio();
     playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
     document.getElementById('status-indicator').innerText = "Paused";
     if ('mediaSession' in navigator) {
