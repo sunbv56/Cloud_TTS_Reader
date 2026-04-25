@@ -420,6 +420,19 @@ function processAppendQueue() {
         }
     }
 
+    // [HOTFIX] Discard any chunks that are older than our expected chunk to prevent queue blocking
+    while (STATE.appendQueue.length > 0) {
+        const check = STATE.appendQueue[0];
+        if (check.chapterIndex < expectedChap || (check.chapterIndex === expectedChap && check.index < expectedIdx)) {
+            console.log(`Discarding obsolete/orphaned chunk ${check.chapterIndex}-${check.index} (Expected ${expectedChap}-${expectedIdx})`);
+            STATE.appendQueue.shift();
+        } else {
+            break;
+        }
+    }
+
+    if (STATE.appendQueue.length === 0) return;
+
     const chunkToCheck = STATE.appendQueue[0];
     if (chunkToCheck.chapterIndex !== expectedChap || chunkToCheck.index !== expectedIdx) {
         console.log(`Waiting for chunk ${expectedChap}-${expectedIdx} (Queue has ${chunkToCheck.chapterIndex}-${chunkToCheck.index})`);
