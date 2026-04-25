@@ -2587,6 +2587,103 @@ if (STATE.wakeLockEnabled) {
 
 console.log("Cloud TTS Reader Pro Initialized.");
 
+// --- Keyboard Shortcuts ---
+// Space       → Play / Pause
+// →           → Câu tiếp theo (next sentence)
+// ←           → Câu trước (prev sentence)
+// Shift + →   → Chương tiếp theo (next chapter)
+// Shift + ←   → Chương trước (prev chapter)
+document.addEventListener('keydown', async (e) => {
+    // Bỏ qua nếu đang gõ trong input, textarea, hoặc contenteditable
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
+
+    // Bỏ qua nếu chưa load sách
+    if (!STATE.currentBook) return;
+
+    const chapters = STATE.currentBook.chapters;
+    const curChap = STATE.currentChapterIndex;
+    const curSent = STATE.currentSentenceIndex;
+
+    if (e.code === 'Space') {
+        e.preventDefault();
+        // Replicates playBtn.onclick logic
+        if (document.getElementById('media-player').classList.contains('minimized-player')) {
+            toggleMinimize(false);
+            return;
+        }
+        if (audio.paused) {
+            await waitForWebSocket();
+            if (STATE.chunkTimings.length === 0) {
+                await playFromSentence(curSent);
+            } else {
+                audio.play();
+            }
+        } else {
+            audio.pause();
+        }
+
+    } else if (e.code === 'ArrowRight' && !e.shiftKey) {
+        e.preventDefault();
+        // Tìm chunk hiện tại trong buffer
+        const curTimingIdx = STATE.chunkTimings.findIndex(
+            t => t.chapterIndex === curChap && t.index === curSent
+        );
+        if (curTimingIdx !== -1 && curTimingIdx < STATE.chunkTimings.length - 1) {
+            // Chunk tiếp theo đã có trong buffer → seek trực tiếp
+            const nextChunk = STATE.chunkTimings[curTimingIdx + 1];
+            audio.currentTime = nextChunk.startTime + 0.01;
+            if (audio.paused) audio.play();
+        } else {
+            // Chunk chưa được prefetch → fallback reset session
+            const sentenceCount = chapters[curChap]?.sentences?.length ?? 0;
+            if (sentenceCount > 0 && curSent < sentenceCount - 1) {
+                await playFromSentence(curSent + 1);
+            } else if (curChap < chapters.length - 1) {
+                await renderChapter(curChap + 1);
+                await playFromSentence(0);
+            }
+        }
+
+    } else if (e.code === 'ArrowLeft' && !e.shiftKey) {
+        e.preventDefault();
+        // Tìm chunk hiện tại trong buffer
+        const curTimingIdx = STATE.chunkTimings.findIndex(
+            t => t.chapterIndex === curChap && t.index === curSent
+        );
+        if (curTimingIdx > 0) {
+            // Chunk trước đã có trong buffer → seek trực tiếp
+            const prevChunk = STATE.chunkTimings[curTimingIdx - 1];
+            audio.currentTime = prevChunk.startTime + 0.01;
+            if (audio.paused) audio.play();
+        } else {
+            // Chunk trước không có trong buffer → fallback reset session
+            if (curSent > 0) {
+                await playFromSentence(curSent - 1);
+            } else if (curChap > 0) {
+                const prevChap = curChap - 1;
+                await renderChapter(prevChap);
+                const prevSentCount = STATE.currentBook.chapters[prevChap]?.sentences?.length ?? 1;
+                await playFromSentence(Math.max(0, prevSentCount - 1));
+            }
+        }
+
+    } else if (e.code === 'ArrowRight' && e.shiftKey) {
+        e.preventDefault();
+        if (curChap < chapters.length - 1) {
+            await renderChapter(curChap + 1);
+            await playFromSentence(0);
+        }
+
+    } else if (e.code === 'ArrowLeft' && e.shiftKey) {
+        e.preventDefault();
+        if (curChap > 0) {
+            await renderChapter(curChap - 1);
+            await playFromSentence(0);
+        }
+    }
+});
+
 // --- Service Worker Registration for PWA ---
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
