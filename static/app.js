@@ -55,6 +55,46 @@ async function startFirebase() {
 startFirebase();
 
 // --- Utility Functions ---
+function toggleDiscoveryMode(isActive) {
+    const discoveryMode = document.getElementById('discovery-mode');
+    const readerContainer = document.getElementById('reader-container');
+    const sidebarContainer = document.getElementById('sidebar-container');
+
+    if (isActive) {
+        if (discoveryMode) discoveryMode.classList.remove('hidden');
+        if (sidebarContainer) sidebarContainer.classList.add('hidden');
+        if (readerContainer) readerContainer.classList.add('hidden');
+    } else {
+        if (discoveryMode) discoveryMode.classList.add('hidden');
+        if (sidebarContainer) sidebarContainer.classList.remove('hidden');
+        if (readerContainer) readerContainer.classList.remove('hidden');
+    }
+}
+
+const logoBtn = document.getElementById('logo-btn');
+if (logoBtn) {
+    logoBtn.onclick = () => {
+        toggleDiscoveryMode(true);
+    };
+}
+
+const discoverySearch = document.getElementById('discovery-search');
+if (discoverySearch) {
+    discoverySearch.addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase();
+        const grid = document.getElementById('discovery-grid');
+        if (!grid) return;
+        Array.from(grid.children).forEach(card => {
+            if (!card.dataset.title) return; // skip placeholders
+            if (card.dataset.title.includes(query)) {
+                card.style.display = '';
+            } else {
+                card.style.display = 'none';
+            }
+        });
+    });
+}
+
 function removeVietnameseTones(str) {
     str = str.normalize('NFD').replace(/[\u0300-\u036f]/g, "");
     str = str.replace(/[đĐ]/g, m => m === 'đ' ? 'd' : 'D');
@@ -582,7 +622,10 @@ function getLocalIndices(globalIdx) {
 async function refreshLibrary() {
     if (!STATE.user) return;
     const bookList = document.getElementById('book-list');
+    const discoveryGrid = document.getElementById('discovery-grid');
+
     bookList.innerHTML = '<div class="text-center p-4 text-primary animate-pulse text-xs uppercase font-bold tracking-widest">Updating Library...</div>';
+    if (discoveryGrid) discoveryGrid.innerHTML = '';
 
     try {
         const q = query(collection(db, "users", STATE.user.uid, "progress"));
@@ -591,8 +634,14 @@ async function refreshLibrary() {
 
         if (querySnapshot.empty) {
             bookList.innerHTML = '<div class="text-center p-8 text-slate-500 italic text-sm">No books loaded. Upload a .txt file!</div>';
+            if (discoveryGrid) {
+                discoveryGrid.innerHTML = '<div class="col-span-full flex flex-col items-center justify-center p-12 text-slate-500 italic bg-surface-low rounded-2xl border border-white/5"><i class="fas fa-book-open text-4xl mb-4 opacity-50"></i><span>No recent reads found.</span></div>';
+            }
+            if (!STATE.currentBookId) toggleDiscoveryMode(true);
             return;
         }
+
+        if (!STATE.currentBookId) toggleDiscoveryMode(true);
 
         querySnapshot.forEach((docSnap) => {
             const data = docSnap.data();
@@ -603,11 +652,10 @@ async function refreshLibrary() {
             const progress = rawProgress.toFixed(1);
             const filename = data.filename || (bookId.replace('book_', '') + '.txt');
 
-            // ── Outer wrapper (enables named-group hover) ──────────────────────
+            // ── Sidebar Book List Card ───────────────────────────────────────
             const wrapper = document.createElement('div');
             wrapper.className = 'relative group/item';
 
-            // ── Book card ─────────────────────────────────────────────────────
             const div = document.createElement('div');
             div.className = 'glass p-3 pr-9 flex flex-col gap-1 cursor-pointer hover:bg-primary/5 transition-all group border-l-2 border-transparent hover:border-primary rounded-lg';
             div.innerHTML = `
@@ -666,10 +714,44 @@ async function refreshLibrary() {
             wrapper.appendChild(kebabBtn);
             wrapper.appendChild(dropdown);
             bookList.appendChild(wrapper);
+
+            // ── Discovery Grid Card ───────────────────────────────────────────
+            if (discoveryGrid) {
+                const discCard = document.createElement('div');
+                discCard.className = 'glass p-6 rounded-3xl flex flex-col gap-4 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 transition-all border border-white/5 group border-t-white/10 relative overflow-hidden';
+                discCard.dataset.title = removeVietnameseTones(data.title.toLowerCase()) + " " + data.title.toLowerCase();
+                discCard.innerHTML = `
+                    <div class="absolute inset-0 bg-primary/0 group-hover:bg-primary/5 transition-colors duration-500"></div>
+                    <div class="flex items-center gap-4 relative z-10">
+                        <div class="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
+                            <i class="fas fa-book text-primary text-xl"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <h3 class="text-white font-bold truncate group-hover:text-primary transition-colors">${data.title}</h3>
+                            <div class="text-xs text-slate-400 flex items-center gap-2 mt-1">
+                                <i class="fas fa-bookmark text-[10px]"></i> Continue Reading
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-auto relative z-10">
+                        <div class="flex justify-between items-center text-xs font-mono font-bold mb-2">
+                            <span class="text-slate-400">PROGRESS</span>
+                            <span class="text-primary">${progress}%</span>
+                        </div>
+                        <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
+                            <div class="bg-gradient-to-r from-primary/50 to-primary h-full transition-all duration-500" style="width: ${progress}%"></div>
+                        </div>
+                    </div>
+                `;
+                discCard.onclick = () => loadBookFromStorage(bookId, data);
+                discoveryGrid.appendChild(discCard);
+            }
         });
     } catch (err) {
         console.error("Library Refresh Error:", err);
         bookList.innerHTML = '<div class="text-center p-8 text-red-400 italic text-sm">Error updating library.</div>';
+        if (discoveryGrid) discoveryGrid.innerHTML = '<div class="text-center p-8 text-red-400 italic">Error loading recent reads.</div>';
     }
 }
 
@@ -740,6 +822,7 @@ async function deleteBook(bookId, filename, title, bypassConfirm = false) {
             document.getElementById('text-container').innerHTML = '';
             document.getElementById('edit-title-btn').classList.add('hidden');
             updateUI();
+            toggleDiscoveryMode(true);
         }
 
         // ── 5. Refresh library sidebar ────────────────────────────────────────
@@ -849,7 +932,7 @@ async function loadBookFromStorage(bookId, bookData) {
 // --- Auth state is now handled inside startFirebase() ---
 
 // --- File Handling ---
-fileInput.onchange = async (e) => {
+const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -877,9 +960,14 @@ fileInput.onchange = async (e) => {
     }
 };
 
+fileInput.onchange = handleFileUpload;
+const discoveryFileInput = document.getElementById('discovery-file-input');
+if (discoveryFileInput) discoveryFileInput.onchange = handleFileUpload;
+
 async function loadBook(bookData, bookId, filename) {
     // Auto-close sidebar on mobile after selection
     toggleSidebar(false);
+    toggleDiscoveryMode(false);
 
     // Save progress of the current book before switching to the new one
     if (STATE.currentBookId) {
