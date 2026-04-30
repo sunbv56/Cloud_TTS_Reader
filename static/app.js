@@ -1099,6 +1099,20 @@ async function renderChapter(index) {
     const chapter = STATE.currentBook.chapters[index];
     document.getElementById('current-chapter').innerText = chapter.title;
 
+    // In lite-mode: text-container is hidden, skip heavy DOM build
+    // Only fetch sentences data (needed for audio engine / prefetch)
+    if (STATE.isLiteMode) {
+        if (!chapter.sentences) {
+            document.getElementById('status-indicator').innerText = "Loading Chapter...";
+            try {
+                await fetchChapterSentences(index);
+            } catch (e) {
+                document.getElementById('status-indicator').innerText = `Error: ${e.message}`;
+            }
+        }
+        return; // Skip all DOM rendering — no spans, no minimap
+    }
+
     // Lazy load sentences if missing
     if (!chapter.sentences) {
         textContainer.innerHTML = '<div class="text-center p-8 text-primary/50 italic animate-pulse">Đang tải nội dung chương...</div>';
@@ -1168,8 +1182,10 @@ function syncMinimapScroll() {
     viewport.style.top = `${scrollPct * maxTop}px`;
 }
 
-// Add scroll listener for minimap
-document.getElementById('text-container').addEventListener('scroll', syncMinimapScroll);
+// Add scroll listener for minimap — guarded against lite-mode for zero layout cost
+document.getElementById('text-container').addEventListener('scroll', () => {
+    if (!STATE.isLiteMode) syncMinimapScroll();
+});
 
 function renderTOC() {
     const tocList = document.getElementById('toc-list');
@@ -1565,6 +1581,8 @@ async function deleteSelectedChapters() {
  * Updates the Prefetch Progress UI to show buffer health (Ready Chunks / Target)
  */
 function updatePrefetchUI() {
+    // In lite-mode: prefetch status UI is hidden — skip all computation
+    if (STATE.isLiteMode) return;
     if (!STATE.currentBook) return;
 
     // Target buffer size: keep at least 100 chunks ahead, or 10x the workers
@@ -2231,9 +2249,13 @@ function applyLiteMode(isLite) {
         const mobileToggle = document.getElementById('lite-mode-toggle-mobile');
         if (mobileToggle) mobileToggle.checked = false;
 
-        // Re-render minimap if a book is open (minimap was cleared on lite enable)
+        // Re-render full chapter view (text spans + minimap were skipped in lite-mode)
         if (STATE.currentBook) {
-            renderMinimap();
+            renderChapter(STATE.currentChapterIndex).then(() => {
+                // Restore highlight and scroll position after rebuild
+                highlightSentence(STATE.currentSentenceIndex);
+                syncMinimapScroll();
+            });
         }
 
         // Reset throttle tick to force immediate UI refresh
