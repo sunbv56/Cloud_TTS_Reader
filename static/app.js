@@ -1157,9 +1157,19 @@ function renderTOC() {
         titleSpan.className = 'truncate';
         titleSpan.innerText = chap.title;
 
+        const editBtn = document.createElement('button');
+        editBtn.className = `ml-auto w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-primary hover:bg-white/10 transition-all ${isSelectMode ? 'hidden' : ''}`;
+        editBtn.innerHTML = '<i class="fas fa-pen text-xs"></i>';
+        editBtn.title = 'Edit Chapter';
+        editBtn.onclick = (e) => {
+            e.stopPropagation();
+            openEditChapterModal(i);
+        };
+
         div.appendChild(checkbox);
         div.appendChild(numSpan);
         div.appendChild(titleSpan);
+        div.appendChild(editBtn);
 
         div.onclick = () => {
             const selectMode = document.getElementById('toc-select-mode-btn')?.classList.contains('active');
@@ -2696,3 +2706,123 @@ if ('serviceWorker' in navigator) {
             });
     });
 }
+ 
+// --- Edit Chapter Logic ---
+let editingChapterIndex = -1;
+
+async function openEditChapterModal(index) {
+    if (!STATE.user || !STATE.currentFilename) return;
+    
+    editingChapterIndex = index;
+    const modal = document.getElementById('edit-chapter-modal');
+    const textarea = document.getElementById('edit-chapter-textarea');
+    const statusIndicator = document.getElementById('status-indicator');
+
+    statusIndicator.innerText = "Fetching raw content...";
+    
+    try {
+        const formData = new FormData();
+        formData.append('userId', STATE.user.uid);
+        formData.append('filename', STATE.currentFilename);
+        formData.append('chapterIndex', index);
+
+        const response = await fetch('/api/get-chapter-content', {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        if (data.content) {
+            textarea.value = data.content;
+            modal.classList.remove('hidden');
+            statusIndicator.innerText = "Ready";
+        } else {
+            throw new Error(data.error || "Failed to fetch content");
+        }
+    } catch (err) {
+        console.error("Edit fetch error:", err);
+        alert(`Error: ${err.message}`);
+        statusIndicator.innerText = "Error";
+    }
+}
+
+function closeEditModal() {
+    document.getElementById('edit-chapter-modal').classList.add('hidden');
+    editingChapterIndex = -1;
+}
+
+async function saveChapterEdit() {
+    if (editingChapterIndex === -1 || !STATE.user || !STATE.currentFilename) return;
+
+    const textarea = document.getElementById('edit-chapter-textarea');
+    const newContent = textarea.value;
+    const saveBtn = document.getElementById('save-edit-btn');
+    const statusIndicator = document.getElementById('status-indicator');
+
+    const originalText = saveBtn.innerText;
+    saveBtn.innerText = "Saving...";
+    saveBtn.disabled = true;
+    statusIndicator.innerText = "Saving changes...";
+
+    try {
+        const formData = new FormData();
+        formData.append('userId', STATE.user.uid);
+        formData.append('bookId', STATE.currentBookId);
+        formData.append('filename', STATE.currentFilename);
+        formData.append('chapterIndex', editingChapterIndex);
+        formData.append('newContent', newContent);
+
+        const response = await fetch('/api/update-chapter', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+            // Update local state
+            const chapter = STATE.currentBook.chapters[editingChapterIndex];
+            chapter.title = data.title;
+            chapter.count = data.count;
+            chapter.sentences = data.sentences;
+
+            // If we're currently viewing this chapter, re-render it
+            if (STATE.currentChapterIndex === editingChapterIndex) {
+                renderChapter(editingChapterIndex);
+                // Also reset playback session to reflect changes in chunks
+                STATE.sessionId++;
+                STATE.appendQueue = [];
+                STATE.chunkTimings = [];
+                STATE.fetchingSet.clear();
+                STATE.metadataQueue = [];
+                // If it was playing, restart from current sentence or start
+                if (STATE.isPlaying) {
+                    playFromSentence(STATE.currentSentenceIndex);
+                }
+            }
+
+            // Refresh TOC to show new title/metadata
+            renderTOC();
+            
+            // Sync progress to update total_chunks if needed
+            saveProgress(true);
+
+            closeEditModal();
+            statusIndicator.innerText = "Changes saved!";
+            setTimeout(() => statusIndicator.innerText = "Ready", 3000);
+        } else {
+            throw new Error(data.error || "Failed to save changes");
+        }
+    } catch (err) {
+        console.error("Save edit error:", err);
+        alert(`Error: ${err.message}`);
+        statusIndicator.innerText = "Error saving";
+    } finally {
+        saveBtn.innerText = originalText;
+        saveBtn.disabled = false;
+    }
+}
+
+// Event Listeners for Edit Modal
+document.getElementById('close-edit-modal')?.addEventListener('click', closeEditModal);
+document.getElementById('cancel-edit-btn')?.addEventListener('click', closeEditModal);
+document.getElementById('save-edit-btn')?.addEventListener('click', saveChapterEdit);

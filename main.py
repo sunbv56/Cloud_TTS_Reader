@@ -385,6 +385,103 @@ async def delete_chapters(
                 except:
                     pass
 
+@app.post("/api/get-chapter-content")
+async def get_chapter_content(
+    userId: str = Form(...),
+    filename: str = Form(...),
+    chapterIndex: int = Form(...)
+):
+    """Retrieve raw text content of a specific chapter."""
+    if not firebase_admin_initialized:
+        return JSONResponse({"error": "Firebase Admin not initialized"}, status_code=500)
+
+    try:
+        bucket = storage.bucket()
+        blob_path = f"users/{userId}/files/{filename}"
+        blob = bucket.blob(blob_path)
+        
+        if not blob.exists():
+            return JSONResponse({"error": "File not found"}, status_code=404)
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+            tmp_path = tmp.name
+            blob.download_to_filename(tmp_path)
+        
+        try:
+            chapters = parse_chapters_from_file(tmp_path)
+            if 0 <= chapterIndex < len(chapters):
+                return JSONResponse({"content": chapters[chapterIndex]['content']})
+            else:
+                return JSONResponse({"error": "Chapter index out of range"}, status_code=400)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+@app.post("/api/update-chapter")
+async def update_chapter(
+    userId: str = Form(...),
+    bookId: str = Form(...),
+    filename: str = Form(...),
+    chapterIndex: int = Form(...),
+    newContent: str = Form(...)
+):
+    """Update raw text content of a specific chapter and re-upload."""
+    if not firebase_admin_initialized:
+        return JSONResponse({"error": "Firebase Admin not initialized"}, status_code=500)
+
+    try:
+        bucket = storage.bucket()
+        blob_path = f"users/{userId}/files/{filename}"
+        blob = bucket.blob(blob_path)
+        
+        if not blob.exists():
+            return JSONResponse({"error": "File not found"}, status_code=404)
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+            tmp_path = tmp.name
+            blob.download_to_filename(tmp_path)
+        
+        try:
+            chapters = parse_chapters_from_file(tmp_path)
+            if 0 <= chapterIndex < len(chapters):
+                # Update the chapter content
+                chapters[chapterIndex]['content'] = newContent
+                
+                # Reconstruct file
+                with open(tmp_path, "w", encoding="utf-8") as f:
+                    for i, chap in enumerate(chapters):
+                        if i > 0:
+                            f.write("\n\n===\n\n")
+                        f.write(chap['content'])
+                
+                # Re-upload
+                blob.upload_from_filename(tmp_path)
+                
+                # Return updated metadata for this chapter
+                # Re-parse the updated content to get new title and sentences
+                updated_lines = newContent.split('\n')
+                new_title = "Chương không tên"
+                for line in updated_lines:
+                    if line.strip():
+                        new_title = line.strip()
+                        break
+                
+                sentences = split_text_into_chunks(newContent)
+                return JSONResponse({
+                    "title": new_title,
+                    "count": len(sentences),
+                    "sentences": sentences
+                })
+            else:
+                return JSONResponse({"error": "Chapter index out of range"}, status_code=400)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
 class ChapterDownloadItem(BaseModel):
     chapterIndex: int
     title: str
