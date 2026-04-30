@@ -195,7 +195,13 @@ let STATE = {
     // Performance Optimization State
     heartbeatInterval: null,
     lastHighlightedIndex: -1,
-    lastOntimeUpdateTick: 0
+    lastOntimeUpdateTick: 0,
+    // Lite Mode: JS-level flag (avoids repeated DOM class checks)
+    isLiteMode: false,
+    // UI render cache: prevents redundant DOM writes
+    lastProgressWidth: null,
+    lastCurrentMock: null,
+    lastTimeStr: null
 };
 
 // Constants
@@ -1791,8 +1797,17 @@ function highlightSentence(index) {
         const prev = document.getElementById(`sentence-${STATE.lastHighlightedIndex}`);
         if (prev) prev.classList.remove('chunk-active');
 
-        const prevMini = document.getElementById(`minimap-node-${STATE.lastHighlightedIndex}`);
-        if (prevMini) prevMini.classList.remove('minimap-active');
+        // Skip minimap DOM access in lite-mode (minimap is hidden/removed)
+        if (!STATE.isLiteMode) {
+            const prevMini = document.getElementById(`minimap-node-${STATE.lastHighlightedIndex}`);
+            if (prevMini) prevMini.classList.remove('minimap-active');
+        }
+    }
+
+    // In lite-mode, text-container is hidden — no need to highlight or scroll
+    if (STATE.isLiteMode) {
+        STATE.lastHighlightedIndex = index;
+        return;
     }
 
     const cur = document.getElementById(`sentence-${index}`);
@@ -1800,7 +1815,7 @@ function highlightSentence(index) {
         cur.classList.add('chunk-active');
         STATE.lastHighlightedIndex = index;
 
-        // Calculate offset to position sentence approx 10% from top instead of 25% (scrolling further down)
+        // Calculate offset to position sentence approx 10% from top
         const container = document.getElementById('text-container');
         const offsetTop = cur.offsetTop;
         const containerHeight = container.offsetHeight;
@@ -1913,9 +1928,11 @@ audio.onwaiting = () => {
 audio.ontimeupdate = () => {
     const curTime = audio.currentTime || 0;
 
-    // --- OPTIMIZATION: Throttle execution frequency to ~6Hz ---
-    // Reduced from browser default (~60Hz) to save CPU/Battery during long playback
-    if (Math.abs(curTime - STATE.lastOntimeUpdateTick) < 0.15) return;
+    // --- OPTIMIZATION: Throttle execution frequency ---
+    // Lite-mode: ~1Hz (0.9s interval) — minimal CPU footprint
+    // Normal-mode: ~6Hz (0.15s interval) — smooth UI sync
+    const throttleInterval = STATE.isLiteMode ? 0.9 : 0.15;
+    if (Math.abs(curTime - STATE.lastOntimeUpdateTick) < throttleInterval) return;
     STATE.lastOntimeUpdateTick = curTime;
 
     // --- UI Synchronization via chunkTimings ---
@@ -1986,8 +2003,8 @@ audio.ontimeupdate = () => {
         }
     }
 
-    // --- Progress Bar Sync ---
-    if (STATE.currentBook) {
+    // --- Progress Bar & Time Sync (skip in lite-mode: elements are hidden/unnecessary) ---
+    if (!STATE.isLiteMode && STATE.currentBook) {
         const chapter = STATE.currentBook.chapters[STATE.currentChapterIndex];
         const total = chapter.count || (chapter.sentences ? chapter.sentences.length : 0);
         const current = STATE.currentSentenceIndex + 1;
@@ -2182,19 +2199,73 @@ document.getElementById('fullscreen-btn').onclick = toggleFullscreen;
 
 // Performance / Lite Mode
 const liteModeToggle = document.getElementById('lite-mode-toggle');
-if (liteModeToggle) {
-    // Restore saved state
-    const savedLiteMode = localStorage.getItem('lite-mode-enabled') === 'true';
-    liteModeToggle.checked = savedLiteMode;
-    if (savedLiteMode) {
-        document.body.classList.add('lite-mode');
+
+/**
+ * Applies or removes lite-mode optimizations at both CSS and JS levels.
+ * CSS-level: body.lite-mode class (disables animations, hides heavy elements)
+ * JS-level: STATE.isLiteMode flag (skips scroll, minimap, DOM renders)
+ */
+function applyLiteMode(isLite) {
+    STATE.isLiteMode = isLite;
+    document.body.classList.toggle('lite-mode', isLite);
+    localStorage.setItem('lite-mode-enabled', isLite);
+
+    if (isLite) {
+        // Freeze any pending smooth scrolls by forcing instant snap
+        const textContainer = document.getElementById('text-container');
+        if (textContainer) textContainer.style.scrollBehavior = 'auto';
+
+        // Clear minimap DOM to free up memory & layout cost
+        const minimap = document.getElementById('minimap-container');
+        if (minimap) minimap.innerHTML = '';
+
+        // Sync mobile toggle if it exists
+        const mobileToggle = document.getElementById('lite-mode-toggle-mobile');
+        if (mobileToggle) mobileToggle.checked = true;
+    } else {
+        // Restore smooth scrolling
+        const textContainer = document.getElementById('text-container');
+        if (textContainer) textContainer.style.scrollBehavior = '';
+
+        // Sync mobile toggle
+        const mobileToggle = document.getElementById('lite-mode-toggle-mobile');
+        if (mobileToggle) mobileToggle.checked = false;
+
+        // Re-render minimap if a book is open (minimap was cleared on lite enable)
+        if (STATE.currentBook) {
+            renderMinimap();
+        }
+
+        // Reset throttle tick to force immediate UI refresh
+        STATE.lastOntimeUpdateTick = -999;
+        STATE.lastProgressWidth = null;
+        STATE.lastCurrentMock = null;
+        STATE.lastTimeStr = null;
     }
 
+    console.log(`[LiteMode] ${isLite ? 'ON — UI computations minimized' : 'OFF — Full UI restored'}`);
+}
+
+if (liteModeToggle) {
+    // Restore saved state on page load
+    const savedLiteMode = localStorage.getItem('lite-mode-enabled') === 'true';
+    liteModeToggle.checked = savedLiteMode;
+    applyLiteMode(savedLiteMode);
+
+    // Desktop toggle
     liteModeToggle.addEventListener('change', (e) => {
-        const isLite = e.target.checked;
-        document.body.classList.toggle('lite-mode', isLite);
-        localStorage.setItem('lite-mode-enabled', isLite);
-        console.log(`Lite mode toggled: ${isLite}`);
+        applyLiteMode(e.target.checked);
+    });
+}
+
+// Mobile toggle: override the inline onchange with a proper listener for symmetry
+const liteModeToggleMobile = document.getElementById('lite-mode-toggle-mobile');
+if (liteModeToggleMobile) {
+    // Remove inline onchange to prevent double-fire
+    liteModeToggleMobile.removeAttribute('onchange');
+    liteModeToggleMobile.addEventListener('change', (e) => {
+        if (liteModeToggle) liteModeToggle.checked = e.target.checked;
+        applyLiteMode(e.target.checked);
     });
 }
 

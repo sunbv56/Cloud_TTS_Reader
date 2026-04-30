@@ -556,24 +556,78 @@
             display: none;
         }
 
-        /* Lite/Performance Mode Rules - Disables animations, hides text and minimizes GPU/CPU usage */
+        /* =========================================================
+           Lite / Performance Mode
+           Goal: absolute minimum CPU & GPU cost — audio-only mode.
+           Kept: audio engine, play controls, status indicator.
+           Removed: all visual rendering, animations, compositing.
+           ========================================================= */
+
+        /* 1. Kill ALL animations, transitions, and shadows globally */
         body.lite-mode * {
             animation: none !important;
             transition: none !important;
             box-shadow: none !important;
-            /* text-shadow: none !important; */
+            text-shadow: none !important;
+            /* GPU: prevent unnecessary composite layers */
+            will-change: auto !important;
+            transform: none !important;
         }
+
+        /* 2. Kill GPU-heavy filters on all elements */
+        body.lite-mode *:not(#minimap-container):not(#text-container) {
+            backdrop-filter: none !important;
+            -webkit-backdrop-filter: none !important;
+            filter: none !important;
+        }
+
+        /* 3. Flatten all gradient/complex backgrounds to solid colors */
+        body.lite-mode .glass,
+        body.lite-mode nav,
+        body.lite-mode footer,
+        body.lite-mode #media-player,
+        body.lite-mode #reader-header {
+            background: #0b1326 !important;
+            border-color: rgba(255,255,255,0.05) !important;
+        }
+
+        /* 4. Kill decorative elements: glow, pulse dot, logo glow */
+        body.lite-mode .glow-pulse,
+        body.lite-mode .animate-pulse,
+        body.lite-mode #sidebar-overlay,
+        body.lite-mode .minimap-node,
+        body.lite-mode #minimap-viewport,
+        body.lite-mode .theme-swatch.active::before,
+        body.lite-mode [class*="blur"] {
+            display: none !important;
+        }
+
+        /* 5. Hide heavy DOM areas: text view, minimap, sidebar, discovery */
         body.lite-mode #text-container {
             opacity: 0 !important;
             pointer-events: none !important;
             visibility: hidden !important;
         }
         body.lite-mode #minimap-container,
-        body.lite-mode #sidebar-container {
+        body.lite-mode #sidebar-container,
+        body.lite-mode #discovery-mode {
             display: none !important;
         }
+
+        /* 6. Collapse main area — player is the only visible UI */
         body.lite-mode main {
             background: transparent !important;
+        }
+        body.lite-mode #reader-container {
+            border-radius: 0 !important;
+        }
+
+        /* 7. Strip gradient text — avoid GPU clip-path compositing */
+        body.lite-mode .bg-clip-text,
+        body.lite-mode [class*="bg-gradient"] {
+            background: transparent !important;
+            -webkit-text-fill-color: unset !important;
+            color: #aaa !important;
         }
     </style>
 </head>
