@@ -80,6 +80,13 @@
             0%, 100% { opacity: 0.3; transform: scale(1); }
             50% { opacity: 0.8; transform: scale(1.1); }
         }
+        .animate-spin-slow {
+            animation: spin 3s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
         .glow-pulse { position: relative; }
         .glow-pulse::before {
             content: '';
@@ -849,8 +856,8 @@
                 class="p-6 lg:p-8 border-b border-glass-border flex justify-between items-center bg-white/[0.02]">
                 <div class="flex-1 min-w-0 mr-4">
                     <div class="flex items-center gap-3">
-                        <h2 id="current-title"
-                            class="text-xl lg:text-3xl font-black text-white tracking-tight truncate">Select a
+                        <h2 id="current-title" class="text-xl lg:text-3xl font-black text-white tracking-tight truncate"
+                            title="Select a Masterpiece">Select a
                             Masterpiece</h2>
                         <button id="edit-title-btn"
                             class="w-8 h-8 rounded-full flex items-center justify-center bg-white/5 hover:bg-primary/20 hover:text-primary transition-all hidden shrink-0">
@@ -1412,6 +1419,31 @@
                 <button id="cancel-edit-btn"
                     class="px-6 py-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-all">Cancel</button>
                 <button id="save-edit-btn" class="btn-primary">Save Changes</button>
+            </div>
+        </div>
+    </div>
+    <!-- Global Loading Spinner Overlay -->
+    <div id="global-loading"
+        class="fixed inset-0 z-[200] bg-black/80 backdrop-blur-xl hidden opacity-0 flex flex-col items-center justify-center transition-all duration-500">
+        <div class="relative">
+            <!-- Outer spinning ring -->
+            <div class="w-24 h-24 border-4 border-primary/10 border-t-primary rounded-full animate-spin"></div>
+            <!-- Inner pulse ring -->
+            <div class="absolute inset-2 border-4 border-primary/5 border-b-primary/40 rounded-full animate-spin-slow">
+            </div>
+            <!-- Center icon -->
+            <div class="absolute inset-0 flex items-center justify-center">
+                <img src="/static/icon.svg" class="w-10 h-10 animate-pulse">
+            </div>
+        </div>
+        <div class="mt-8 flex flex-col items-center">
+            <p id="loading-text" class="text-primary font-black tracking-[0.3em] uppercase text-xs animate-pulse">
+                Processing Masterpiece
+            </p>
+            <div class="flex gap-1 mt-3">
+                <span class="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]"></span>
+                <span class="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></span>
+                <span class="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></span>
             </div>
         </div>
     </div>

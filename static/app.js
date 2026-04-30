@@ -101,6 +101,30 @@ function removeVietnameseTones(str) {
     return str;
 }
 
+// --- Loading Overlay Helpers ---
+function showLoading(text = "Processing Masterpiece") {
+    const overlay = document.getElementById('global-loading');
+    const textEl = document.getElementById('loading-text');
+    if (overlay && textEl) {
+        textEl.innerText = text;
+        overlay.classList.remove('hidden');
+        overlay.classList.add('flex');
+        // Fade in effect
+        setTimeout(() => overlay.classList.remove('opacity-0'), 10);
+    }
+}
+
+function hideLoading() {
+    const overlay = document.getElementById('global-loading');
+    if (overlay) {
+        overlay.classList.add('opacity-0');
+        setTimeout(() => {
+            overlay.classList.add('hidden');
+            overlay.classList.remove('flex');
+        }, 500);
+    }
+}
+
 function debounce(func, wait) {
     let timeout;
     return function executedFunction(...args) {
@@ -660,7 +684,7 @@ async function refreshLibrary() {
             div.className = 'glass p-3 pr-9 flex flex-col gap-1 cursor-pointer hover:bg-primary/5 transition-all group border-l-2 border-transparent hover:border-primary rounded-lg';
             div.innerHTML = `
                 <div class="flex items-center justify-between gap-2">
-                    <span class="text-sm font-bold text-white group-hover:text-primary transition-colors line-clamp-1 flex-1 min-w-0">${data.title}</span>
+                    <span class="text-sm font-bold text-white group-hover:text-primary transition-colors line-clamp-1 flex-1 min-w-0" title="${data.title}">${data.title}</span>
                     <span class="text-[10px] text-primary font-mono shrink-0">${progress}%</span>
                 </div>
                 <div class="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
@@ -727,7 +751,7 @@ async function refreshLibrary() {
                             <i class="fas fa-book text-primary text-xl"></i>
                         </div>
                         <div class="flex-1 min-w-0">
-                            <h3 class="text-white font-bold truncate group-hover:text-primary transition-colors">${data.title}</h3>
+                            <h3 class="text-white font-bold truncate group-hover:text-primary transition-colors" title="${data.title}">${data.title}</h3>
                             <div class="text-xs text-slate-400 flex items-center gap-2 mt-1">
                                 <i class="fas fa-bookmark text-[10px]"></i> Continue Reading
                             </div>
@@ -902,8 +926,11 @@ async function loadBookFromStorage(bookId, bookData) {
     // Close sidebar immediately on selection (don't wait for loading to finish)
     toggleSidebar(false);
 
+    showLoading("Fetching " + bookData.title + "...");
     document.getElementById('status-indicator').innerText = "Loading from Storage...";
-    document.getElementById('current-title').innerText = "Fetching " + bookData.title + "...";
+    const currentTitleEl = document.getElementById('current-title');
+    currentTitleEl.innerText = "Fetching " + bookData.title + "...";
+    currentTitleEl.title = bookData.title;
 
     try {
         const filename = bookData.filename || (bookId.replace("book_", "") + ".txt");
@@ -926,6 +953,8 @@ async function loadBookFromStorage(bookId, bookData) {
     } catch (err) {
         console.error("Load from Storage Error:", err);
         alert("Failed to load book from storage. Make sure the file still exists.");
+    } finally {
+        hideLoading();
     }
 }
 
@@ -936,6 +965,7 @@ const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    showLoading("Uploading & Parsing " + file.name + "...");
     const formData = new FormData();
     formData.append('file', file);
 
@@ -957,6 +987,8 @@ const handleFileUpload = async (e) => {
     } catch (err) {
         console.error(err);
         alert("Error parsing book.");
+    } finally {
+        hideLoading();
     }
 };
 
@@ -1005,7 +1037,9 @@ async function loadBook(bookData, bookId, filename) {
         STATE.lastSavedChunkIndex = -1;
     }
 
-    document.getElementById('current-title').innerText = bookData.title;
+    const currentTitleEl = document.getElementById('current-title');
+    currentTitleEl.innerText = bookData.title;
+    currentTitleEl.title = bookData.title;
     document.getElementById('edit-title-btn').classList.remove('hidden');
     renderChapter(STATE.currentChapterIndex);
     renderTOC();
