@@ -195,6 +195,8 @@ let STATE = {
     downloadExpected: 0,
     downloadResolve: null,
     downloadReject: null,
+    downloadChunkMeta: new Map(), // key -> { chapterIndex, index, text, voice, rate, pitch, volume } for retry
+    downloadRetryCount: new Map(), // key -> retry attempt count
     tocAutoMinimized: false,
     // Performance Optimization State
     heartbeatInterval: null,
@@ -295,10 +297,57 @@ function initWebSocket() {
                 STATE.metadataQueue.push(data);
             } else if (data.type === "PREFETCH_DONE" || data.type === "PREFETCH_FAILED") {
                 if (data.sessionId && data.sessionId !== STATE.sessionId) return;
-                STATE.fetchingSet.delete(`${data.chapterIndex}_${data.index}`);
+                const failKey = `${data.chapterIndex}_${data.index}`;
+                STATE.fetchingSet.delete(failKey);
 
                 if (data.type === "PREFETCH_FAILED") {
                     console.error(`Chunk fetch failed: ${data.chapterIndex}-${data.index} - ${data.error || "Unknown"}`);
+
+                    // --- Download Mode Retry Logic ---
+                    if (STATE.isDownloading && STATE.downloadChunkMeta.has(failKey)) {
+                        const MAX_RETRIES = 3;
+                        const retries = (STATE.downloadRetryCount.get(failKey) || 0) + 1;
+                        STATE.downloadRetryCount.set(failKey, retries);
+
+                        if (retries <= MAX_RETRIES) {
+                            // Retry after a short delay
+                            const delay = retries * 1500; // 1.5s, 3s, 4.5s
+                            console.warn(`[Download] Retrying chunk ${failKey} (attempt ${retries}/${MAX_RETRIES}) in ${delay}ms...`);
+
+                            // Update status UI
+                            const statusEl = document.getElementById('toc-download-status');
+                            const received = STATE.downloadBuffer.size;
+                            const total = STATE.downloadExpected;
+                            if (statusEl) statusEl.innerText = `Retrying failed chunk (${retries}/${MAX_RETRIES})... (${received}/${total})`;
+
+                            setTimeout(() => {
+                                if (!STATE.isDownloading) return; // cancelled
+                                const meta = STATE.downloadChunkMeta.get(failKey);
+                                if (!meta) return;
+                                STATE.fetchingSet.add(failKey);
+                                STATE.ws.send(JSON.stringify({
+                                    type: "PREFETCH",
+                                    index: meta.index,
+                                    chapterIndex: meta.chapterIndex,
+                                    text: meta.text,
+                                    voice: meta.voice,
+                                    rate: meta.rate,
+                                    pitch: meta.pitch,
+                                    volume: meta.volume,
+                                    numWorkers: STATE.settings.numWorkers,
+                                    sessionId: STATE.sessionId
+                                }));
+                            }, delay);
+                        } else {
+                            // Max retries exhausted → fail the whole download
+                            console.error(`[Download] Chunk ${failKey} failed after ${MAX_RETRIES} retries. Aborting download.`);
+                            if (STATE.downloadReject) {
+                                STATE.downloadReject(new Error(`Chunk ${failKey} failed after ${MAX_RETRIES} retries. Download aborted.`));
+                                STATE.downloadReject = null;
+                                STATE.downloadResolve = null;
+                            }
+                        }
+                    }
                 } else {
                     document.getElementById('status-indicator').innerText = "Ready";
                 }
@@ -1415,6 +1464,10 @@ async function downloadSelectedChapters() {
         await waitForWebSocket();
 
         // 5. Send ALL sentences as PREFETCH tasks — workers process in parallel!
+        // Also cache chunk metadata for retry on failure
+        STATE.downloadChunkMeta = new Map();
+        STATE.downloadRetryCount = new Map();
+
         for (const chapter of chapters) {
             for (let s = 0; s < chapter.sentences.length; s++) {
                 // Check if cancelled before sending each chunk
@@ -1422,6 +1475,17 @@ async function downloadSelectedChapters() {
 
                 const key = `${chapter.chapterIndex}_${s}`;
                 STATE.fetchingSet.add(key);
+
+                // Cache metadata so failed chunks can be retried
+                STATE.downloadChunkMeta.set(key, {
+                    index: s,
+                    chapterIndex: chapter.chapterIndex,
+                    text: chapter.sentences[s],
+                    voice,
+                    rate,
+                    pitch,
+                    volume
+                });
 
                 STATE.ws.send(JSON.stringify({
                     type: "PREFETCH",
@@ -1507,6 +1571,8 @@ async function downloadSelectedChapters() {
         STATE.downloadExpected = 0;
         STATE.downloadResolve = null;
         STATE.downloadReject = null;
+        STATE.downloadChunkMeta = new Map();
+        STATE.downloadRetryCount = new Map();
         downloadBtn.innerHTML = '<i class="fas fa-download"></i><span>Download Offline MP3</span>';
         downloadBtn.classList.remove('!bg-red-500/20', '!text-red-400', '!border-red-500/30', '!bg-amber-500/20', '!text-amber-400', '!border-amber-500/30');
 
