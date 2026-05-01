@@ -64,10 +64,14 @@ function toggleDiscoveryMode(isActive) {
         if (discoveryMode) discoveryMode.classList.remove('hidden');
         if (sidebarContainer) sidebarContainer.classList.add('hidden');
         if (readerContainer) readerContainer.classList.add('hidden');
+        // Homepage không được litemode
+        document.body.classList.remove('lite-mode');
     } else {
         if (discoveryMode) discoveryMode.classList.add('hidden');
         if (sidebarContainer) sidebarContainer.classList.remove('hidden');
         if (readerContainer) readerContainer.classList.remove('hidden');
+        // Restore lite-mode if enabled in settings
+        if (STATE.isLiteMode) document.body.classList.add('lite-mode');
     }
 }
 
@@ -2225,8 +2229,17 @@ const liteModeToggle = document.getElementById('lite-mode-toggle');
  */
 function applyLiteMode(isLite) {
     STATE.isLiteMode = isLite;
-    document.body.classList.toggle('lite-mode', isLite);
     localStorage.setItem('lite-mode-enabled', isLite);
+
+    // Only apply visual effects if reader is active (not discovery mode)
+    const discoveryMode = document.getElementById('discovery-mode');
+    const isDiscovery = discoveryMode && !discoveryMode.classList.contains('hidden');
+    
+    if (isLite && !isDiscovery) {
+        document.body.classList.add('lite-mode');
+    } else {
+        document.body.classList.remove('lite-mode');
+    }
 
     if (isLite) {
         // Freeze any pending smooth scrolls by forcing instant snap
