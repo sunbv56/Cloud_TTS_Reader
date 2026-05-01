@@ -1328,24 +1328,6 @@ async function downloadSelectedChapters() {
 
     const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.chapterIndex));
 
-    // --- Lazy loading for download ---
-    // We need all sentences for all selected chapters to proceed with download
-    document.getElementById('status-indicator').innerText = "Preparing chapters for download...";
-    for (const idx of selectedIndices) {
-        if (!STATE.currentBook.chapters[idx].sentences) {
-            await fetchChapterSentences(idx);
-        }
-    }
-
-    const chapters = selectedIndices.map(idx => ({
-        chapterIndex: idx,
-        title: STATE.currentBook.chapters[idx].title,
-        sentences: STATE.currentBook.chapters[idx].sentences
-    }));
-
-    const { voice, speed, pitch, volume } = STATE.settings;
-    const rate = `${Math.round((speed - 1) * 100) >= 0 ? '+' : ''}${Math.round((speed - 1) * 100)}%`;
-
     // UI elements
     const downloadBtn = document.getElementById('toc-download-btn');
     const statusEl = document.getElementById('toc-download-status');
@@ -1354,43 +1336,88 @@ async function downloadSelectedChapters() {
     const chapterInfo = document.getElementById('toc-download-chapter-info');
     const percentEl = document.getElementById('toc-download-percent');
 
-    downloadBtn.innerHTML = '<i class="fas fa-stop"></i><span>Stop Download</span>';
-    downloadBtn.classList.add('!bg-red-500/20', '!text-red-400', '!border-red-500/30');
+    // --- IMMEDIATE FEEDBACK ---
+    STATE.isDownloading = true; // Set early to capture next click as "Stop"
+    downloadBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i><span>Preparing...</span>';
+    downloadBtn.classList.add('!bg-amber-500/20', '!text-amber-400', '!border-amber-500/30');
 
-    // --- Prepare download state ---
-    // 1. Pause audio
-    audio.pause();
-    STATE.isPlaying = false;
-
-    // 2. New session → kill old workers, clear queues
-    STATE.sessionId++;
-    STATE.appendQueue = [];
-    STATE.chunkTimings = [];
-    STATE.fetchingSet.clear();
-    STATE.metadataQueue = [];
-
-    // 3. Initialize download buffer
-    STATE.isDownloading = true;
-    STATE.downloadBuffer = new Map();
-    STATE.downloadExpected = chapters.reduce((sum, ch) => sum + ch.sentences.length, 0);
-
-    document.getElementById('status-indicator').innerText = "Downloading Offline...";
+    // Show progress bar early with "Preparing" message
     statusEl.classList.remove('hidden');
     progressContainer.classList.remove('hidden');
+    statusEl.innerText = "Preparing chapters for download...";
     progressBar.style.width = '0%';
     percentEl.innerText = '0%';
-    chapterInfo.innerText = `0 / ${STATE.downloadExpected} chunks`;
-    statusEl.innerText = `Dispatching ${STATE.downloadExpected} chunks to ${STATE.settings.numWorkers} workers...`;
-
-    console.log(`[Download] Starting parallel download: ${STATE.downloadExpected} chunks across ${chapters.length} chapters`);
 
     try {
+        // --- Lazy loading for download ---
+        // We need all sentences for all selected chapters to proceed with download
+        for (let i = 0; i < selectedIndices.length; i++) {
+            // Check if user cancelled during preparation
+            if (!STATE.isDownloading) {
+                console.log("[Download] Preparation cancelled by user.");
+                return;
+            }
+
+            const idx = selectedIndices[i];
+            const prepProgress = Math.round((i / selectedIndices.length) * 100);
+            
+            statusEl.innerText = `Preparing chapter ${i + 1}/${selectedIndices.length}...`;
+            progressBar.style.width = `${prepProgress}%`;
+            percentEl.innerText = `${prepProgress}%`;
+            chapterInfo.innerText = `Chapter ${idx + 1}`;
+
+            if (!STATE.currentBook.chapters[idx].sentences) {
+                await fetchChapterSentences(idx);
+            }
+        }
+
+        const chapters = selectedIndices.map(idx => ({
+            chapterIndex: idx,
+            title: STATE.currentBook.chapters[idx].title,
+            sentences: STATE.currentBook.chapters[idx].sentences
+        }));
+
+        const { voice, speed, pitch, volume } = STATE.settings;
+        const rate = `${Math.round((speed - 1) * 100) >= 0 ? '+' : ''}${Math.round((speed - 1) * 100)}%`;
+
+        // Switch to Active Download UI
+        downloadBtn.innerHTML = '<i class="fas fa-stop"></i><span>Stop Download</span>';
+        downloadBtn.classList.remove('!bg-amber-500/20', '!text-amber-400', '!border-amber-500/30');
+        downloadBtn.classList.add('!bg-red-500/20', '!text-red-400', '!border-red-500/30');
+
+        // --- Prepare download state ---
+        // 1. Pause audio
+        audio.pause();
+        STATE.isPlaying = false;
+
+        // 2. New session → kill old workers, clear queues
+        STATE.sessionId++;
+        STATE.appendQueue = [];
+        STATE.chunkTimings = [];
+        STATE.fetchingSet.clear();
+        STATE.metadataQueue = [];
+
+        // 3. Initialize download buffer
+        STATE.downloadBuffer = new Map();
+        STATE.downloadExpected = chapters.reduce((sum, ch) => sum + ch.sentences.length, 0);
+
+        document.getElementById('status-indicator').innerText = "Downloading Offline...";
+        progressBar.style.width = '0%';
+        percentEl.innerText = '0%';
+        chapterInfo.innerText = `0 / ${STATE.downloadExpected} chunks`;
+        statusEl.innerText = `Dispatching ${STATE.downloadExpected} chunks to ${STATE.settings.numWorkers} workers...`;
+
+        console.log(`[Download] Starting parallel download: ${STATE.downloadExpected} chunks across ${chapters.length} chapters`);
+
         // 4. Ensure WebSocket is connected (workers are needed!)
         await waitForWebSocket();
 
         // 5. Send ALL sentences as PREFETCH tasks — workers process in parallel!
         for (const chapter of chapters) {
             for (let s = 0; s < chapter.sentences.length; s++) {
+                // Check if cancelled before sending each chunk
+                if (!STATE.isDownloading) return;
+
                 const key = `${chapter.chapterIndex}_${s}`;
                 STATE.fetchingSet.add(key);
 
@@ -1479,7 +1506,7 @@ async function downloadSelectedChapters() {
         STATE.downloadResolve = null;
         STATE.downloadReject = null;
         downloadBtn.innerHTML = '<i class="fas fa-download"></i><span>Download Offline MP3</span>';
-        downloadBtn.classList.remove('!bg-red-500/20', '!text-red-400', '!border-red-500/30');
+        downloadBtn.classList.remove('!bg-red-500/20', '!text-red-400', '!border-red-500/30', '!bg-amber-500/20', '!text-amber-400', '!border-amber-500/30');
 
         // Close WebSocket after download (free backend resources)
         if (STATE.ws) {
@@ -1494,6 +1521,7 @@ async function downloadSelectedChapters() {
 
 function stopDownload() {
     console.log('[Download] User stopped download.');
+    STATE.isDownloading = false;
 
     // Increment session to invalidate all in-flight WS responses
     STATE.sessionId++;
