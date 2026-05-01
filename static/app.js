@@ -1102,6 +1102,7 @@ async function renderChapter(index) {
     STATE.currentChapterIndex = index;
     const chapter = STATE.currentBook.chapters[index];
     document.getElementById('current-chapter').innerText = chapter.title;
+    document.getElementById('current-chapter').title = chapter.title;
 
     // In lite-mode: text-container is hidden, skip heavy DOM build
     // Only fetch sentences data (needed for audio engine / prefetch)
@@ -1216,6 +1217,7 @@ function renderTOC() {
         const titleSpan = document.createElement('span');
         titleSpan.className = 'truncate';
         titleSpan.innerText = chap.title;
+        titleSpan.title = chap.title;
 
         const editBtn = document.createElement('button');
         editBtn.className = `ml-auto w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-primary hover:bg-white/10 transition-all ${isSelectMode ? 'hidden' : ''}`;
@@ -1932,6 +1934,7 @@ async function editTitle() {
     if (newTitle && newTitle.trim() !== "" && newTitle !== STATE.currentBook.title) {
         STATE.currentBook.title = newTitle.trim();
         document.getElementById('current-title').innerText = STATE.currentBook.title;
+        document.getElementById('current-title').title = STATE.currentBook.title;
         updateUI(); // Keep player and author tokens in sync
 
         // Force save with new title
@@ -2334,8 +2337,15 @@ if (liteModeToggleMobile) {
 
 function updateUI() {
     if (STATE.currentBook) {
-        document.getElementById('player-title').innerText = STATE.currentBook.chapters[STATE.currentChapterIndex].title;
-        document.getElementById('player-author').innerText = STATE.currentBook.title;
+        const titleEl = document.getElementById('player-title');
+        const authorEl = document.getElementById('player-author');
+        const chapterTitle = STATE.currentBook.chapters[STATE.currentChapterIndex].title;
+        
+        titleEl.innerText = chapterTitle;
+        titleEl.title = chapterTitle;
+        
+        authorEl.innerText = STATE.currentBook.title;
+        authorEl.title = STATE.currentBook.title;
     }
 }
 
