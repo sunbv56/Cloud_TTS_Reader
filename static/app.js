@@ -105,6 +105,41 @@ function removeVietnameseTones(str) {
     return str;
 }
 
+// --- Skip Dictionary ---
+const DICT_STORAGE_KEY = 'tts-skip-dictionary';
+
+/** Returns the current skip list as an Array of trimmed, non-empty strings. */
+function getSkipDictionary() {
+    try {
+        const raw = localStorage.getItem(DICT_STORAGE_KEY) || '';
+        return raw.split(',').map(s => s.trim()).filter(Boolean);
+    } catch { return []; }
+}
+
+/** Saves a comma-separated string to localStorage. */
+function saveSkipDictionary(csvString) {
+    localStorage.setItem(DICT_STORAGE_KEY, csvString.trim());
+}
+
+/**
+ * Applies the skip dictionary to a sentence before TTS.
+ * Uses split/join (no regex) to safely handle special chars like *, [, (, etc.
+ * If the entire sentence is filtered out, returns a single space " " so TTS
+ * generates near-silent micro-audio — this keeps the MSE chunk sequence intact
+ * (skipping an index entirely would block processAppendQueue forever).
+ */
+function applySkipDictionary(text) {
+    const skipList = getSkipDictionary();
+    if (!skipList.length) return text;
+    let result = text;
+    for (const term of skipList) {
+        result = result.split(term).join('');
+    }
+    result = result.trim();
+    // " " (single space) → TTS produces ~0s micro-silent audio, sequence stays intact
+    return result.length > 0 ? result : ' ';
+}
+
 // --- Loading Overlay Helpers ---
 function showLoading(text = "Processing Masterpiece") {
     const overlay = document.getElementById('global-loading');
@@ -1491,7 +1526,7 @@ async function downloadSelectedChapters() {
                     type: "PREFETCH",
                     index: s,
                     chapterIndex: chapter.chapterIndex,
-                    text: chapter.sentences[s],
+                    text: applySkipDictionary(chapter.sentences[s]),
                     voice: voice,
                     rate: rate,
                     pitch: pitch,
@@ -1773,7 +1808,7 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
             }
 
             STATE.fetchingSet.add(key);
-            const text = STATE.currentBook.chapters[currentChapIdx].sentences[currentSentIdx];
+            const text = applySkipDictionary(STATE.currentBook.chapters[currentChapIdx].sentences[currentSentIdx]);
             const { voice, speed, pitch, volume } = STATE.settings;
             const rate = `${Math.round((speed - 1) * 100) >= 0 ? '+' : ''}${Math.round((speed - 1) * 100)}%`;
 
@@ -1875,7 +1910,7 @@ async function playFromSentence(index) {
         type: "PREFETCH",
         index: index,
         chapterIndex: STATE.currentChapterIndex,
-        text: sentences[index],
+        text: applySkipDictionary(sentences[index]),
         voice: voice,
         rate: rate,
         pitch: pitch,
