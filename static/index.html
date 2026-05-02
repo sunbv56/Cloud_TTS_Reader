@@ -50,17 +50,23 @@
                 @apply px-6 py-2 bg-gradient-to-br from-[#c3f5ff] to-primary text-black font-bold rounded-xl hover:shadow-[0_8px_20px_rgba(0,229,255,0.3)] transition-all active:scale-95; 
             }
             .chunk-text { 
-                @apply cursor-pointer px-1.5 py-0.5 rounded-md transition-all duration-300 hover:bg-primary/10 hover:text-white; 
+                @apply cursor-pointer px-5 py-2 rounded-r-2xl transition-all; 
+                border-left: 4px solid transparent;
+                display: inline-block;
+                background-color: transparent;
+                transition: background-color 0.8s ease-in-out, 
+                            border-color 0.6s ease-in-out, 
+                            color 0.6s ease-in-out,
+                            box-shadow 0.8s ease-in-out;
+                will-change: background-color, border-color;
             }
             .chunk-active { 
-                background: color-mix(in srgb, var(--theme-primary, #00E5FF) 20%, transparent) !important;
-                border-left: 4px solid var(--theme-primary, #00E5FF) !important;
-                color: var(--reader-text-color) !important;
-                font-weight: 700;
-                padding-left: 0.75rem;
-                box-shadow: 0 0 20px color-mix(in srgb, var(--theme-primary, #00E5FF) 15%, transparent) !important;
-                filter: brightness(1.3);
-                text-shadow: 0 0 0.5px var(--reader-text-color);
+                background-color: color-mix(in srgb, var(--theme-primary, #00E5FF) 15%, transparent) !important;
+                border-left-color: var(--theme-primary, #00E5FF) !important;
+                color: var(--theme-text, #dae2fd) !important;
+                box-shadow: 0 0 25px color-mix(in srgb, var(--theme-primary, #00E5FF) 12%, transparent) !important;
+                filter: brightness(1.1);
+                text-shadow: 0 0 1px color-mix(in srgb, var(--theme-text), transparent 40%);
             }
             .sidebar-item {
                 @apply flex items-center gap-3 p-3 rounded-xl transition-all hover:bg-white/5 active:scale-[0.98];
@@ -246,12 +252,14 @@
 
         /* Chunk active highlight: follow theme primary and custom font color */
         [data-theme] .chunk-active {
-            background: color-mix(in srgb, var(--theme-primary) 20%, transparent) !important;
+            background-color: color-mix(in srgb, var(--theme-primary) 15%, transparent) !important;
+            background-image: none !important;
             border-left-color: var(--theme-primary) !important;
-            color: var(--reader-text-color) !important;
-            box-shadow: 0 0 20px color-mix(in srgb, var(--theme-primary) 15%, transparent) !important;
-            filter: brightness(1.3);
-            text-shadow: 0 0 0.5px var(--reader-text-color);
+            color: var(--theme-text) !important;
+            box-shadow: 0 0 25px color-mix(in srgb, var(--theme-primary) 12%, transparent) !important;
+            transform: none !important;
+            filter: brightness(1.1);
+            text-shadow: 0 0 1px color-mix(in srgb, var(--theme-text), transparent 40%);
         }
         [data-theme] .chunk-text:hover {
             color: var(--theme-text) !important;

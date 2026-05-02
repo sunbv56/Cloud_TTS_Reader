@@ -1182,7 +1182,7 @@ async function renderChapter(index) {
     chapter.sentences.forEach((text, i) => {
         const span = document.createElement('span');
         span.id = `sentence-${i}`;
-        span.className = 'chunk-text p-1 inline-block';
+        span.className = 'chunk-text';
         span.innerText = text;
         span.onclick = () => playFromSentence(i);
         textContainer.appendChild(span);
@@ -1411,7 +1411,7 @@ async function downloadSelectedChapters() {
 
             const idx = selectedIndices[i];
             const prepProgress = Math.round((i / selectedIndices.length) * 100);
-            
+
             statusEl.innerText = `Preparing chapter ${i + 1}/${selectedIndices.length}...`;
             progressBar.style.width = `${prepProgress}%`;
             percentEl.innerText = `${prepProgress}%`;
@@ -1933,16 +1933,24 @@ function highlightSentence(index) {
         cur.classList.add('chunk-active');
         STATE.lastHighlightedIndex = index;
 
-        // Calculate offset to position sentence approx 10% from top
         const container = document.getElementById('text-container');
-        const offsetTop = cur.offsetTop;
         const containerHeight = container.offsetHeight;
-        const targetScroll = offsetTop - (containerHeight * 0.1);
+        const offsetTop = cur.offsetTop;
+        const currentScroll = container.scrollTop;
 
-        container.scrollTo({
-            top: targetScroll,
-            behavior: 'smooth'
-        });
+        // Calculate relative position within the container viewport
+        const relativePos = offsetTop - currentScroll;
+        const relativePercent = relativePos / containerHeight;
+
+        // Comfort Zone Logic: Only scroll if text is too high (<15%) or too low (>60%)
+        // This prevents the screen from jumping on every single sentence.
+        if (relativePercent < 0.15 || relativePercent > 0.6) {
+            const targetScroll = offsetTop - (containerHeight * 0.2); // Smoothly center around 20% from top
+            container.scrollTo({
+                top: targetScroll,
+                behavior: 'smooth'
+            });
+        }
     }
 
     // Minimap sync
@@ -2331,7 +2339,7 @@ function applyLiteMode(isLite) {
     // Only apply visual effects if reader is active (not discovery mode)
     const discoveryMode = document.getElementById('discovery-mode');
     const isDiscovery = discoveryMode && !discoveryMode.classList.contains('hidden');
-    
+
     if (isLite && !isDiscovery) {
         document.body.classList.add('lite-mode');
     } else {
@@ -2406,10 +2414,10 @@ function updateUI() {
         const titleEl = document.getElementById('player-title');
         const authorEl = document.getElementById('player-author');
         const chapterTitle = STATE.currentBook.chapters[STATE.currentChapterIndex].title;
-        
+
         titleEl.innerText = chapterTitle;
         titleEl.title = chapterTitle;
-        
+
         authorEl.innerText = STATE.currentBook.title;
         authorEl.title = STATE.currentBook.title;
     }
@@ -2950,20 +2958,20 @@ if ('serviceWorker' in navigator) {
             });
     });
 }
- 
+
 // --- Edit Chapter Logic ---
 let editingChapterIndex = -1;
 
 async function openEditChapterModal(index) {
     if (!STATE.user || !STATE.currentFilename) return;
-    
+
     editingChapterIndex = index;
     const modal = document.getElementById('edit-chapter-modal');
     const textarea = document.getElementById('edit-chapter-textarea');
     const statusIndicator = document.getElementById('status-indicator');
 
     statusIndicator.innerText = "Fetching raw content...";
-    
+
     try {
         const formData = new FormData();
         formData.append('userId', STATE.user.uid);
@@ -2974,7 +2982,7 @@ async function openEditChapterModal(index) {
             method: 'POST',
             body: formData
         });
-        
+
         const data = await response.json();
         if (data.content) {
             textarea.value = data.content;
@@ -3046,7 +3054,7 @@ async function saveChapterEdit() {
 
             // Refresh TOC to show new title/metadata
             renderTOC();
-            
+
             // Sync progress to update total_chunks if needed
             saveProgress(true);
 
