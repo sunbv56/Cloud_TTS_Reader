@@ -1996,12 +1996,15 @@ function highlightSentence(index) {
     }
 }
 
-playBtn.onclick = async () => {
+async function togglePlayback() {
+    if (!STATE.currentBook) return;
+
     if (document.getElementById('media-player').classList.contains('minimized-player')) {
         toggleMinimize(false);
-        return;
     }
+
     if (audio.paused) {
+        document.getElementById('status-indicator').innerText = "Connecting...";
         await waitForWebSocket();
         if (STATE.chunkTimings.length === 0) {
             await playFromSentence(STATE.currentSentenceIndex);
@@ -2011,7 +2014,10 @@ playBtn.onclick = async () => {
     } else {
         audio.pause();
     }
-};
+}
+
+playBtn.onclick = () => togglePlayback();
+
 
 audio.onplay = () => {
     STATE.isTransitioning = false;
@@ -2511,7 +2517,7 @@ function updateMediaSession() {
         });
 
         // OS Handlers
-        navigator.mediaSession.setActionHandler('play', () => audio.play());
+        navigator.mediaSession.setActionHandler('play', () => togglePlayback());
         navigator.mediaSession.setActionHandler('pause', () => audio.pause());
         navigator.mediaSession.setActionHandler('previoustrack', () => {
             const prevIdx = STATE.currentSentenceIndex - 1;
@@ -2522,6 +2528,19 @@ function updateMediaSession() {
             if (nextIdx < chapter.sentences.length) playFromSentence(nextIdx);
         });
 
+        // Skip Handlers (10s)
+        try {
+            navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+                const skipTime = details.seekOffset || 10;
+                audio.currentTime = Math.max(audio.currentTime - skipTime, 0);
+            });
+            navigator.mediaSession.setActionHandler('seekforward', (details) => {
+                const skipTime = details.seekOffset || 10;
+                // For MSE, seeking forward is safe if data is buffered
+                audio.currentTime = audio.currentTime + skipTime;
+            });
+        } catch (e) { console.warn("Seek handlers not supported"); }
+
         // Android/Chrome support for jumping chapters
         try {
             navigator.mediaSession.setActionHandler('stop', () => {
@@ -2529,6 +2548,7 @@ function updateMediaSession() {
                 STATE.isPlaying = false;
             });
         } catch (e) { }
+
     }
 }
 
@@ -2902,24 +2922,9 @@ document.addEventListener('keydown', async (e) => {
     const curChap = STATE.currentChapterIndex;
     const curSent = STATE.currentSentenceIndex;
 
-    if (e.code === 'Space') {
+    if (e.code === 'Space' || e.key === ' ') {
         e.preventDefault();
-        // Replicates playBtn.onclick logic
-        if (document.getElementById('media-player').classList.contains('minimized-player')) {
-            toggleMinimize(false);
-            return;
-        }
-        if (audio.paused) {
-            await waitForWebSocket();
-            if (STATE.chunkTimings.length === 0) {
-                await playFromSentence(curSent);
-            } else {
-                audio.play();
-            }
-        } else {
-            audio.pause();
-        }
-
+        togglePlayback();
     } else if (e.code === 'ArrowRight' && !e.shiftKey) {
         e.preventDefault();
         // Tìm chunk hiện tại trong buffer
