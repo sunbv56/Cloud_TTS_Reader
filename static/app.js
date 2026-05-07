@@ -2037,16 +2037,8 @@ audio.onplay = async () => {
             await waitForWebSocket();
 
             if (STATE.currentSentenceIndex !== -1) {
-                // [LOGIC FIX]: If the current sentence wasn't fully loaded into the MSE buffer 
-                // before the connection dropped, we must re-fetch it from the start.
-                // Otherwise, we can safely just prefetch the next sentences.
-                if (STATE.lastAppendedIndex < STATE.currentSentenceIndex) {
-                    console.log(`Current sentence ${STATE.currentSentenceIndex} not fully buffered. Re-fetching chunk...`);
-                    playFromSentence(STATE.currentSentenceIndex);
-                } else {
-                    console.log(`Current sentence ${STATE.currentSentenceIndex} is already buffered. Resuming prefetch...`);
-                    prefetchNext(STATE.currentChapterIndex, STATE.currentSentenceIndex);
-                }
+                console.log(`Current sentence ${STATE.currentSentenceIndex} is already buffered. Resuming prefetch...`);
+                prefetchNext(STATE.currentChapterIndex, STATE.currentSentenceIndex);
             }
         } catch (e) {
             console.error("Failed to auto-reconnect on play:", e);
