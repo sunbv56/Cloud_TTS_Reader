@@ -897,12 +897,12 @@
                     </div>
                 </div>
 
-                <!-- Skip Dictionary Card -->
+                <!-- Dictionary Card -->
                 <div class="glass p-5 flex flex-col gap-0 rounded-3xl bg-surface-low/40">
                     <button id="dict-settings-toggle"
                         class="font-bold text-xs text-slate-500 uppercase tracking-widest flex items-center gap-2 w-full cursor-pointer hover:text-slate-300 transition-colors">
-                        <i class="fas fa-filter text-primary"></i> <span data-i18n="skip-dictionary">Skip
-                            Dictionary</span>
+                        <i class="fas fa-book-open text-primary"></i> <span
+                            data-i18n="skip-dictionary">Dictionary</span>
                         <i id="dict-settings-chevron"
                             class="fas fa-chevron-down ml-auto text-[10px] text-slate-600 transition-transform duration-300"
                             style="transform: rotate(-90deg);"></i>
@@ -910,12 +910,20 @@
                     <div id="dict-settings-body" class="overflow-hidden transition-all duration-400 ease-in-out"
                         style="max-height: 0; opacity: 0; margin-top: 0;">
                         <div class="mt-4 space-y-3">
-                            <p class="text-[11px] text-slate-500 leading-relaxed">
-                                Enter phrases or characters to skip during playback, separated by
-                                <strong class="text-primary">,</strong> — Applies to all stories on this device.
-                            </p>
-                            <textarea id="dict-input" rows="4" placeholder="e.g. ***,---,[Author Note],Chapter end,..."
-                                class="w-full border border-white/10 rounded-xl p-3 text-sm resize-none focus:outline-none focus:border-primary/50 transition-colors leading-relaxed"
+                            <!-- Legend -->
+                            <div
+                                class="text-[10px] text-slate-500 leading-relaxed space-y-1.5 bg-white/[0.03] rounded-xl p-3 border border-white/5">
+                                <p class="font-bold text-slate-400 mb-1">Syntax (separated by <strong
+                                        class="text-primary">,</strong>):</p>
+                                <p><code class="text-primary/80">word</code> &nbsp;→ skip plain word/symbol</p>
+                                <p><code class="text-primary/80">"phrase, with comma"</code> → skip exact phrase (commas
+                                    OK inside quotes)</p>
+                                <p><code class="text-primary/80">"A"="B"</code> &nbsp;→ replace <em>A</em> with
+                                    <em>B</em> (quotes optional)</p>
+                            </div>
+                            <textarea id="dict-input" rows="5"
+                                placeholder='"chào bạn nhé, tôi tên là","chào, tạm biệt"="hi, bye",one,...'
+                                class="w-full border border-white/10 rounded-xl p-3 text-sm resize-none focus:outline-none focus:border-primary/50 transition-colors leading-relaxed font-mono"
                                 style="background-color: var(--theme-surface); color: var(--theme-text);"></textarea>
                             <div class="flex items-center gap-2">
                                 <button id="dict-save-btn"
@@ -1680,7 +1688,7 @@
                 "no-books-loaded": "No books loaded.<br>Drag or upload a .txt file!",
                 "voice-intelligence": "Voice Intelligence",
                 "typography-style": "Typography & Style",
-                "skip-dictionary": "Skip Dictionary",
+                "skip-dictionary": "Dictionary",
                 "reading-theme": "Reading Theme",
                 "select-masterpiece": "Select a Masterpiece",
                 "standby-mode": "Standby Mode",
@@ -1708,7 +1716,7 @@
                 "no-books-loaded": "Chưa có sách nào.<br>Kéo thả hoặc tải lên file .txt!",
                 "voice-intelligence": "Giọng đọc AI",
                 "typography-style": "Giao diện & Chữ",
-                "skip-dictionary": "Từ điển bỏ qua",
+                "skip-dictionary": "Từ điển",
                 "reading-theme": "Chủ đề đọc",
                 "select-masterpiece": "Chọn một tác phẩm",
                 "standby-mode": "Chế độ chờ",

@@ -105,35 +105,107 @@ function removeVietnameseTones(str) {
     return str;
 }
 
-// --- Skip Dictionary ---
+// --- Dictionary (Skip & Replace) ---
 const DICT_STORAGE_KEY = 'tts-skip-dictionary';
 
-/** Returns the current skip list as an Array of trimmed, non-empty strings. */
-function getSkipDictionary() {
-    try {
-        const raw = localStorage.getItem(DICT_STORAGE_KEY) || '';
-        return raw.split(',').map(s => s.trim()).filter(Boolean);
-    } catch { return []; }
-}
-
-/** Saves a comma-separated string to localStorage. */
-function saveSkipDictionary(csvString) {
-    localStorage.setItem(DICT_STORAGE_KEY, csvString.trim());
+/** Saves the raw dictionary string to localStorage. */
+function saveSkipDictionary(rawString) {
+    localStorage.setItem(DICT_STORAGE_KEY, rawString.trim());
 }
 
 /**
- * Applies the skip dictionary to a sentence before TTS.
- * Uses split/join (no regex) to safely handle special chars like *, [, (, etc.
+ * Parses the dictionary string into an array of rule objects.
+ * Supports:
+ *   - Plain skip:           one,...
+ *   - Quoted skip:          "chào bạn nhé, tôi tên là"  (commas inside quotes are preserved)
+ *   - Replace (quoted):     "chào, tạm biệt"="hi, bye"
+ *   - Replace (plain):      hello=hi
+ *
+ * Grammar (tokenized by comma, but commas inside double-quotes are ignored):
+ *   token  :=  ["<lhs>"="<rhs>"] | ["<phrase>"] | [<word>=<word>] | [<word>]
+ * Returns: Array<{ from: string, to: string|null }>
+ *   - to === null  → skip (remove)
+ *   - to === ''    → also skip (remove)
+ *   - to !== null  → replace from with to
+ */
+function parseDictionary(raw) {
+    const rules = [];
+    if (!raw) return rules;
+
+    // Tokenize: split by comma but respect double-quoted segments
+    const tokens = [];
+    let cur = '';
+    let inQuote = false;
+    for (let i = 0; i < raw.length; i++) {
+        const ch = raw[i];
+        if (ch === '"') {
+            inQuote = !inQuote;
+            cur += ch;
+        } else if (ch === ',' && !inQuote) {
+            tokens.push(cur);
+            cur = '';
+        } else {
+            cur += ch;
+        }
+    }
+    if (cur.length > 0) tokens.push(cur);
+
+    for (let token of tokens) {
+        token = token.trim();
+        if (!token) continue;
+
+        // Check for replace rule: contains = outside of quotes
+        // We split on first = that is not inside quotes
+        let eqIdx = -1;
+        let q = false;
+        for (let i = 0; i < token.length; i++) {
+            if (token[i] === '"') { q = !q; continue; }
+            if (token[i] === '=' && !q) { eqIdx = i; break; }
+        }
+
+        if (eqIdx !== -1) {
+            // Replace rule
+            const lhsRaw = token.slice(0, eqIdx).trim();
+            const rhsRaw = token.slice(eqIdx + 1).trim();
+            const from = lhsRaw.startsWith('"') && lhsRaw.endsWith('"')
+                ? lhsRaw.slice(1, -1)
+                : lhsRaw;
+            const to = rhsRaw.startsWith('"') && rhsRaw.endsWith('"')
+                ? rhsRaw.slice(1, -1)
+                : rhsRaw;
+            if (from) rules.push({ from, to });
+        } else {
+            // Skip rule
+            const phrase = token.startsWith('"') && token.endsWith('"')
+                ? token.slice(1, -1)
+                : token;
+            if (phrase) rules.push({ from: phrase, to: null });
+        }
+    }
+    return rules;
+}
+
+/**
+ * Applies the dictionary rules to a sentence before TTS.
+ * Rules are applied in order: replace rules substitute text; skip rules remove it.
  * If the entire sentence is filtered out, returns a single space " " so TTS
  * generates near-silent micro-audio — this keeps the MSE chunk sequence intact
  * (skipping an index entirely would block processAppendQueue forever).
  */
 function applySkipDictionary(text) {
-    const skipList = getSkipDictionary();
-    if (!skipList.length) return text;
+    const raw = localStorage.getItem(DICT_STORAGE_KEY) || '';
+    const rules = parseDictionary(raw);
+    if (!rules.length) return text;
+
     let result = text;
-    for (const term of skipList) {
-        result = result.split(term).join('');
+    for (const rule of rules) {
+        if (rule.to === null || rule.to === '') {
+            // Skip: remove all occurrences
+            result = result.split(rule.from).join('');
+        } else {
+            // Replace
+            result = result.split(rule.from).join(rule.to);
+        }
     }
     result = result.trim();
     // " " (single space) → TTS produces ~0s micro-silent audio, sequence stays intact
