@@ -2019,14 +2019,29 @@ async function togglePlayback() {
 playBtn.onclick = () => togglePlayback();
 
 
-audio.onplay = () => {
+audio.onplay = async () => {
     STATE.isTransitioning = false;
     STATE.isPlaying = true;
     enableNoSleepAudio();
     playBtn.innerHTML = '<i class="fas fa-pause"></i>';
     document.getElementById('status-indicator').innerText = "Streaming";
+    
     if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
+    }
+
+    // FIX: Auto-reconnect if WebSocket is closed (e.g. resumed from Bluetooth/Background)
+    if (STATE.currentBook && (!STATE.ws || STATE.ws.readyState !== WebSocket.OPEN)) {
+        console.log("Playback resumed but WebSocket is closed. Reconnecting...");
+        try {
+            await waitForWebSocket();
+            // Resume prefetching from current position
+            if (STATE.currentSentenceIndex !== -1) {
+                prefetchNext(STATE.currentChapterIndex, STATE.currentSentenceIndex);
+            }
+        } catch (e) {
+            console.error("Failed to auto-reconnect on play:", e);
+        }
     }
 };
 
@@ -2517,8 +2532,12 @@ function updateMediaSession() {
         });
 
         // OS Handlers
-        navigator.mediaSession.setActionHandler('play', () => togglePlayback());
-        navigator.mediaSession.setActionHandler('pause', () => audio.pause());
+        navigator.mediaSession.setActionHandler('play', () => {
+            if (audio.paused) togglePlayback();
+        });
+        navigator.mediaSession.setActionHandler('pause', () => {
+            if (!audio.paused) audio.pause();
+        });
         navigator.mediaSession.setActionHandler('previoustrack', () => {
             const prevIdx = STATE.currentSentenceIndex - 1;
             if (prevIdx >= 0) playFromSentence(prevIdx);
