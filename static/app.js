@@ -2025,7 +2025,7 @@ audio.onplay = async () => {
     enableNoSleepAudio();
     playBtn.innerHTML = '<i class="fas fa-pause"></i>';
     document.getElementById('status-indicator').innerText = "Streaming";
-    
+
     if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
     }
@@ -2035,9 +2035,18 @@ audio.onplay = async () => {
         console.log("Playback resumed but WebSocket is closed. Reconnecting...");
         try {
             await waitForWebSocket();
-            // Resume prefetching from current position
+
             if (STATE.currentSentenceIndex !== -1) {
-                prefetchNext(STATE.currentChapterIndex, STATE.currentSentenceIndex);
+                // [LOGIC FIX]: If the current sentence wasn't fully loaded into the MSE buffer 
+                // before the connection dropped, we must re-fetch it from the start.
+                // Otherwise, we can safely just prefetch the next sentences.
+                if (STATE.lastAppendedIndex < STATE.currentSentenceIndex) {
+                    console.log(`Current sentence ${STATE.currentSentenceIndex} not fully buffered. Re-fetching chunk...`);
+                    playFromSentence(STATE.currentSentenceIndex);
+                } else {
+                    console.log(`Current sentence ${STATE.currentSentenceIndex} is already buffered. Resuming prefetch...`);
+                    prefetchNext(STATE.currentChapterIndex, STATE.currentSentenceIndex);
+                }
             }
         } catch (e) {
             console.error("Failed to auto-reconnect on play:", e);
