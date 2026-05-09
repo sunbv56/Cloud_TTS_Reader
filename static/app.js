@@ -2227,6 +2227,10 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
 
 async function playFromSentence(index) {
     if (!STATE.currentBook) return;
+
+    // Dọn dẹp cache cũ khi nhảy tới vị trí mới (jump) - "Dọn dẹp sạch cho cái mới đi vào"
+    await OFFLINE_MANAGER.clearCache();
+
     await waitForWebSocket();
 
     const chapter = STATE.currentBook.chapters[STATE.currentChapterIndex];
