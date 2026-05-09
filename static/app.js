@@ -847,10 +847,14 @@ async function refreshLibrary() {
             wrapper.className = 'relative group/item';
 
             const div = document.createElement('div');
-            div.className = 'glass p-3 pr-9 flex flex-col gap-1 cursor-pointer hover:bg-primary/5 transition-all group border-l-2 border-transparent hover:border-primary rounded-lg';
+            const isActive = bookId === STATE.currentBookId;
+            div.dataset.bookId = bookId;
+            div.className = `glass p-3 pr-9 flex flex-col gap-1 cursor-pointer hover:bg-primary/5 transition-all group border-l-2 rounded-lg ${isActive ? 'book-active' : 'border-transparent hover:border-primary'}`;
             div.innerHTML = `
                 <div class="flex items-center justify-between gap-2">
-                    <span class="text-sm font-bold text-white group-hover:text-primary transition-colors line-clamp-1 flex-1 min-w-0" title="${data.title}">${data.title}</span>
+                    <span class="text-sm font-bold ${isActive ? 'text-primary' : 'text-white'} group-hover:text-primary transition-colors line-clamp-1 flex-1 min-w-0" title="${data.title}">
+                        ${isActive ? '<i class="fas fa-headphones-alt mr-2 text-[10px] animate-pulse"></i>' : ''}${data.title}
+                    </span>
                     <span class="text-[10px] text-primary font-mono shrink-0">${progress}%</span>
                 </div>
                 <div class="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
@@ -908,18 +912,20 @@ async function refreshLibrary() {
             // ── Discovery Grid Card ───────────────────────────────────────────
             if (discoveryGrid) {
                 const discCard = document.createElement('div');
-                discCard.className = 'glass p-6 rounded-3xl flex flex-col gap-4 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 transition-all border border-white/5 group border-t-white/10 relative overflow-hidden';
+                const isActive = bookId === STATE.currentBookId;
+                discCard.dataset.bookId = bookId;
+                discCard.className = `glass p-6 rounded-3xl flex flex-col gap-4 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 transition-all border group relative overflow-hidden ${isActive ? 'border-primary bg-primary/10 ring-2 ring-primary/20 shadow-2xl shadow-primary/20' : 'border-white/5 border-t-white/10'}`;
                 discCard.dataset.title = removeVietnameseTones(data.title.toLowerCase()) + " " + data.title.toLowerCase();
                 discCard.innerHTML = `
                     <div class="absolute inset-0 bg-primary/0 group-hover:bg-primary/5 transition-colors duration-500"></div>
                     <div class="flex items-center gap-4 relative z-10">
-                        <div class="w-12 h-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center shrink-0">
-                            <i class="fas fa-book text-primary text-xl"></i>
+                        <div class="w-12 h-12 rounded-xl ${isActive ? 'bg-primary text-black shadow-lg shadow-primary/30' : 'bg-white/5 border border-white/10 text-primary'} flex items-center justify-center shrink-0">
+                            <i class="fas ${isActive ? 'fa-volume-up' : 'fa-book'} text-xl"></i>
                         </div>
                         <div class="flex-1 min-w-0">
-                            <h3 class="text-white font-bold truncate group-hover:text-primary transition-colors" title="${data.title}">${data.title}</h3>
-                            <div class="text-xs text-slate-400 flex items-center gap-2 mt-1">
-                                <i class="fas fa-bookmark text-[10px]"></i> Continue Reading
+                            <h3 class="${isActive ? 'text-primary' : 'text-white'} font-bold truncate group-hover:text-primary transition-colors" title="${data.title}">${data.title}</h3>
+                            <div class="text-xs ${isActive ? 'text-primary/70' : 'text-slate-400'} flex items-center gap-2 mt-1">
+                                <i class="fas ${isActive ? 'fa-play' : 'fa-bookmark'} text-[10px]"></i> ${isActive ? 'Currently Reading' : 'Continue Reading'}
                             </div>
                         </div>
                     </div>
@@ -1112,6 +1118,10 @@ async function loadBookFromStorage(bookId, bookData) {
 
         const parseRes = await fetch('/api/parse-book', { method: 'POST', body: formData });
         const data = await parseRes.json();
+        
+        // Cập nhật trạng thái Highlight trước khi loadBook (để UI phản hồi nhanh)
+        STATE.currentBookId = bookId;
+        updateLibraryHighlight();
 
         await loadBook(data, bookId, filename);
         document.getElementById('status-indicator').innerText = "Ready";
@@ -1222,6 +1232,83 @@ async function loadBook(bookData, bookId, filename) {
     // Auto-play from current position
     playFromSentence(STATE.currentSentenceIndex);
 
+    // Sync library highlight
+    updateLibraryHighlight();
+}
+
+/**
+ * Updates the highlighting for books in the sidebar and discovery grid
+ * based on the currently open book ID.
+ */
+function updateLibraryHighlight() {
+    if (!STATE.currentBookId) return;
+
+    // Update Sidebar Book List
+    const bookListItems = document.querySelectorAll('#book-list [data-book-id]');
+    bookListItems.forEach(item => {
+        const isActive = item.dataset.bookId === STATE.currentBookId;
+        const titleSpan = item.querySelector('span');
+
+        if (isActive) {
+            item.classList.add('book-active');
+            item.classList.remove('border-transparent');
+            if (titleSpan) {
+                titleSpan.classList.add('text-primary');
+                titleSpan.classList.remove('text-white');
+                if (!titleSpan.querySelector('.fa-headphones-alt')) {
+                    titleSpan.innerHTML = `<i class="fas fa-headphones-alt mr-2 text-[10px] animate-pulse"></i>${titleSpan.textContent}`;
+                }
+            }
+        } else {
+            item.classList.remove('book-active');
+            item.classList.add('border-transparent');
+            if (titleSpan) {
+                titleSpan.classList.remove('text-primary');
+                titleSpan.classList.add('text-white');
+                const icon = titleSpan.querySelector('.fa-headphones-alt');
+                if (icon) icon.remove();
+            }
+        }
+    });
+
+    // Update Discovery Grid
+    const discoveryCards = document.querySelectorAll('#discovery-grid [data-book-id]');
+    discoveryCards.forEach(card => {
+        const isActive = card.dataset.bookId === STATE.currentBookId;
+        const titleH3 = card.querySelector('h3');
+        const iconDiv = card.querySelector('.shrink-0');
+        const statusDiv = card.querySelector('.text-xs');
+
+        if (isActive) {
+            card.className = `glass p-6 rounded-3xl flex flex-col gap-4 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 transition-all border border-primary bg-primary/10 ring-2 ring-primary/20 shadow-2xl shadow-primary/20 group relative overflow-hidden`;
+            if (titleH3) {
+                titleH3.classList.add('text-primary');
+                titleH3.classList.remove('text-white');
+            }
+            if (iconDiv) {
+                iconDiv.className = `w-12 h-12 rounded-xl bg-primary text-black shadow-lg shadow-primary/30 flex items-center justify-center shrink-0`;
+                iconDiv.innerHTML = '<i class="fas fa-volume-up text-xl"></i>';
+            }
+            if (statusDiv) {
+                statusDiv.className = `text-xs text-primary/70 flex items-center gap-2 mt-1`;
+                statusDiv.innerHTML = '<i class="fas fa-play text-[10px]"></i> Currently Reading';
+            }
+        } else {
+            card.className = `glass p-6 rounded-3xl flex flex-col gap-4 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 transition-all border border-white/5 border-t-white/10 group relative overflow-hidden`;
+            if (titleH3) {
+                titleH3.classList.remove('text-primary');
+                titleH3.classList.add('text-white');
+            }
+            if (iconDiv) {
+                iconDiv.className = `w-12 h-12 rounded-xl bg-white/5 border border-white/10 text-primary flex items-center justify-center shrink-0`;
+                iconDiv.innerHTML = '<i class="fas fa-book text-xl"></i>';
+            }
+            if (statusDiv) {
+                statusDiv.className = `text-xs text-slate-400 flex items-center gap-2 mt-1`;
+                statusDiv.innerHTML = '<i class="fas fa-bookmark text-[10px]"></i> Continue Reading';
+            }
+        }
+    });
 }
 
 async function fetchChapterSentences(index) {
@@ -1357,7 +1444,7 @@ function renderTOC() {
         const div = document.createElement('div');
         const isActive = i === STATE.currentChapterIndex;
         div.id = `toc-item-${i}`;
-        div.className = `p-4 glass hover:bg-primary/10 cursor-pointer transition-colors flex items-center gap-3 ${isActive ? 'border-l-4 border-primary bg-primary/10 font-bold text-white' : ''}`;
+        div.className = `p-4 glass hover:bg-primary/10 cursor-pointer transition-colors flex items-center gap-3 ${isActive ? 'toc-active' : ''}`;
 
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
