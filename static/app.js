@@ -7,6 +7,182 @@ import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "http
 // Firebase placeholders (Initialized via API)
 let app, auth, db, storage, provider;
 
+// --- Offline & Cache Manager (IndexedDB) ---
+const OFFLINE_MANAGER = {
+    dbName: 'CloudTTSReaderDB',
+    dbVersion: 1,
+    storeName: 'audio_cache',
+    _db: null,
+    _dbPromise: null,
+
+    async init() {
+        if (this._db) return;
+        if (this._dbPromise) return this._dbPromise;
+
+        this._dbPromise = new Promise((resolve, reject) => {
+            const request = indexedDB.open(this.dbName, this.dbVersion);
+            request.onerror = () => {
+                this._dbPromise = null;
+                reject(request.error);
+            };
+            request.onsuccess = () => {
+                this._db = request.result;
+                resolve();
+            };
+            request.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    db.createObjectStore(this.storeName);
+                }
+            };
+        });
+        return this._dbPromise;
+    },
+
+    async saveBlob(bookId, chIndex, sIndex, blob) {
+        await this.init();
+        if (!this._db) return;
+        const key = `${bookId}_${chIndex}_${sIndex}`;
+        return new Promise((resolve, reject) => {
+            const tx = this._db.transaction(this.storeName, 'readwrite');
+            const store = tx.objectStore(this.storeName);
+            store.put(blob, key);
+            tx.oncomplete = () => resolve();
+            tx.onerror = () => reject(tx.error);
+        });
+    },
+
+    async getBlob(bookId, chIndex, sIndex) {
+        await this.init();
+        if (!this._db) return null;
+        const key = `${bookId}_${chIndex}_${sIndex}`;
+        return new Promise((resolve, reject) => {
+            const tx = this._db.transaction(this.storeName, 'readonly');
+            const store = tx.objectStore(this.storeName);
+            const request = store.get(key);
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async clearCache() {
+        await this.init();
+        return new Promise((resolve, reject) => {
+            const tx = this._db.transaction(this.storeName, 'readwrite');
+            const store = tx.objectStore(this.storeName);
+            const request = store.clear();
+            request.onsuccess = () => {
+                this.updateUsageUI();
+                resolve();
+            };
+            request.onerror = () => reject(request.error);
+        });
+    },
+
+    async updateUsageUI() {
+        await this.init();
+        const tx = this._db.transaction(this.storeName, 'readonly');
+        const store = tx.objectStore(this.storeName);
+        const request = store.getAll();
+        request.onsuccess = () => {
+            const blobs = request.result;
+            const totalBytes = blobs.reduce((sum, b) => sum + b.size, 0);
+            const mb = (totalBytes / (1024 * 1024)).toFixed(2);
+            const el = document.getElementById('offline-usage-text');
+            if (el) el.innerText = `${mb} MB`;
+        };
+    }
+};
+
+// --- Statistics & Insights Manager ---
+const STATS_MANAGER = {
+    _lastActiveTime: 0,
+    _syncTimer: null,
+
+    init() {
+        this._lastActiveTime = Date.now();
+        // Start tracking only when playing
+        setInterval(() => this.track(), 10000); // Track every 10s
+    },
+
+    async track() {
+        if (!STATE.isPlaying || !STATE.user) return;
+        
+        const now = Date.now();
+        const deltaMs = now - this._lastActiveTime;
+        this._lastActiveTime = now;
+
+        // Add to local state
+        STATE.stats.totalTime += Math.floor(deltaMs / 1000);
+        
+        // Update Streak
+        const today = new Date().toDateString();
+        if (STATE.stats.lastReadDate !== today) {
+            const lastDate = new Date(STATE.stats.lastReadDate);
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            
+            if (lastDate.toDateString() === yesterday.toDateString()) {
+                STATE.stats.streak += 1;
+            } else if (STATE.stats.lastReadDate === 'never') {
+                STATE.stats.streak = 1;
+            } else {
+                // If it's not today and not yesterday, reset
+                STATE.stats.streak = 1;
+            }
+            STATE.stats.lastReadDate = today;
+        }
+
+        this.updateUI();
+        this.scheduleSync();
+    },
+
+    updateUI() {
+        const streakEl = document.getElementById('stat-streak');
+        const timeEl = document.getElementById('stat-total-time');
+        const streakDot = document.getElementById('streak-dot');
+        
+        if (streakEl) streakEl.innerText = STATE.stats.streak;
+        if (timeEl) {
+            const mins = Math.floor(STATE.stats.totalTime / 60);
+            timeEl.innerText = mins > 60 ? `${(mins/60).toFixed(1)}h` : `${mins}m`;
+        }
+        if (streakDot && STATE.stats.streak > 0) streakDot.classList.remove('hidden');
+    },
+
+    scheduleSync() {
+        if (this._syncTimer) return;
+        this._syncTimer = setTimeout(async () => {
+            this._syncTimer = null;
+            await this.syncToFirestore();
+        }, 30000); // Sync every 30s
+    },
+
+    async syncToFirestore() {
+        if (!STATE.user) return;
+        try {
+            const statsRef = doc(db, 'users', STATE.user.uid, 'stats', 'reading');
+            await setDoc(statsRef, STATE.stats, { merge: true });
+        } catch (err) {
+            console.warn('[Stats] Sync failed:', err);
+        }
+    },
+
+    async load() {
+        if (!STATE.user) return;
+        try {
+            const statsRef = doc(db, 'users', STATE.user.uid, 'stats', 'reading');
+            const snap = await getDoc(statsRef);
+            if (snap.exists()) {
+                STATE.stats = { ...STATE.stats, ...snap.data() };
+            }
+            this.updateUI();
+        } catch (err) {
+            console.warn('[Stats] Load failed:', err);
+        }
+    }
+};
+
 // --- Firebase Initialization ---
 async function startFirebase() {
     try {
@@ -248,6 +424,18 @@ function debounce(func, wait) {
     };
 }
 
+/**
+ * Wraps a callback in View Transitions API if available.
+ * @param {Function} callback 
+ */
+function safeViewTransition(callback) {
+    if (document.startViewTransition) {
+        return document.startViewTransition(callback);
+    } else {
+        return callback();
+    }
+}
+
 // App State
 let STATE = {
     user: null,
@@ -269,7 +457,8 @@ let STATE = {
         volume: "+0%",
         numWorkers: 5,
         fontSize: 20,
-        textColor: "default"
+        textColor: "default",
+        theme: "default"
     },
     isTransitioning: false,
     // MSE State
@@ -314,8 +503,19 @@ let STATE = {
     // UI render cache: prevents redundant DOM writes
     lastProgressWidth: null,
     lastCurrentMock: null,
-    lastTimeStr: null
+    lastTimeStr: null,
+    // Statistics
+    stats: {
+        streak: 0,
+        totalTime: 0,
+        lastReadDate: 'never',
+        booksCompleted: 0
+    }
 };
+
+// Initialize Managers
+STATS_MANAGER.init();
+OFFLINE_MANAGER.updateUsageUI();
 
 // Constants
 const WORKER_STEPS = [1, 2, 3, 5, 10, 20, 50];
@@ -502,6 +702,9 @@ function initWebSocket() {
             }
 
             // --- Normal Streaming Mode: append to MSE ---
+            const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
+            OFFLINE_MANAGER.saveBlob(STATE.currentBookId, currentMetadata.chapterIndex, currentMetadata.index, blob);
+
             STATE.appendQueue.push({
                 index: currentMetadata.index,
                 chapterIndex: currentMetadata.chapterIndex,
@@ -1372,20 +1575,22 @@ async function renderChapter(index) {
         }
     }
 
-    textContainer.innerHTML = '';
-    chapter.sentences.forEach((text, i) => {
-        const span = document.createElement('span');
-        span.id = `sentence-${i}`;
-        span.className = 'chunk-text';
-        span.innerText = text;
-        span.onclick = () => playFromSentence(i);
-        textContainer.appendChild(span);
-        textContainer.appendChild(document.createElement('br'));
-        textContainer.appendChild(document.createElement('br'));
-    });
+    await safeViewTransition(() => {
+        textContainer.innerHTML = '';
+        chapter.sentences.forEach((text, i) => {
+            const span = document.createElement('span');
+            span.id = `sentence-${i}`;
+            span.className = 'chunk-text';
+            span.innerText = text;
+            span.onclick = () => playFromSentence(i);
+            textContainer.appendChild(span);
+            textContainer.appendChild(document.createElement('br'));
+            textContainer.appendChild(document.createElement('br'));
+        });
 
-    textContainer.scrollTop = 0;
-    renderMinimap(index);
+        textContainer.scrollTop = 0;
+        renderMinimap(index);
+    });
 }
 
 function renderMinimap(index) {
@@ -1966,6 +2171,28 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
                 continue;
             }
 
+            // --- OFFLINE CACHE CHECK ---
+            const cachedBlob = await OFFLINE_MANAGER.getBlob(STATE.currentBookId, currentChapIdx, currentSentIdx);
+            if (cachedBlob) {
+                console.log(`[Offline] Using cached audio for ${key}`);
+                const arrayBuffer = await cachedBlob.arrayBuffer();
+                
+                // Simulate a metadata arrival if needed, or just push directly
+                // For simplified logic, we assume metadata for cached blobs is not strictly needed for basic playback
+                // But normally we'd want the 'metadata' (word timings) too.
+                // For now, let's just push with empty metadata to allow fluid playback.
+                STATE.appendQueue.push({
+                    index: currentSentIdx,
+                    chapterIndex: currentChapIdx,
+                    sessionId: STATE.sessionId,
+                    data: arrayBuffer,
+                    metadata: [] // Cached blobs might not have word timings saved yet
+                });
+                processAppendQueue();
+                currentSentIdx++;
+                continue;
+            }
+
             STATE.fetchingSet.add(key);
             const text = applySkipDictionary(STATE.currentBook.chapters[currentChapIdx].sentences[currentSentIdx]);
             const { voice, speed, pitch, volume } = STATE.settings;
@@ -2064,19 +2291,34 @@ async function playFromSentence(index) {
     const { voice, speed, pitch, volume } = STATE.settings;
     const rate = `${Math.round((speed - 1) * 100) >= 0 ? '+' : ''}${Math.round((speed - 1) * 100)}%`;
 
-    // Request the new starting sentence
-    STATE.ws.send(JSON.stringify({
-        type: "PREFETCH",
-        index: index,
-        chapterIndex: STATE.currentChapterIndex,
-        text: applySkipDictionary(sentences[index]),
-        voice: voice,
-        rate: rate,
-        pitch: pitch,
-        volume: volume,
-        numWorkers: STATE.settings.numWorkers,
-        sessionId: currentSessionId
-    }));
+    // --- OFFLINE CACHE CHECK ---
+    const cachedBlob = await OFFLINE_MANAGER.getBlob(STATE.currentBookId, STATE.currentChapterIndex, index);
+    if (cachedBlob) {
+        console.log(`[Offline] Using cached audio for ${STATE.currentChapterIndex}_${index}`);
+        const arrayBuffer = await cachedBlob.arrayBuffer();
+        STATE.appendQueue.push({
+            index: index,
+            chapterIndex: STATE.currentChapterIndex,
+            sessionId: currentSessionId,
+            data: arrayBuffer,
+            metadata: []
+        });
+        processAppendQueue();
+    } else {
+        // Request the new starting sentence
+        STATE.ws.send(JSON.stringify({
+            type: "PREFETCH",
+            index: index,
+            chapterIndex: STATE.currentChapterIndex,
+            text: applySkipDictionary(sentences[index]),
+            voice: voice,
+            rate: rate,
+            pitch: pitch,
+            volume: volume,
+            numWorkers: STATE.settings.numWorkers,
+            sessionId: currentSessionId
+        }));
+    }
 
     // Wait for the first chunk to be appended so we can start playback
     console.log(`Waiting for first chunk of session ${currentSessionId}...`);
@@ -2671,6 +2913,10 @@ function applySettingsToUI() {
         if (s.textColor !== "default") {
             document.getElementById('font-color-picker').value = s.textColor;
         }
+    }
+    
+    if (s.theme) {
+        applyTheme(s.theme);
     }
 
     applyTypographySettings();
@@ -3297,3 +3543,70 @@ async function saveChapterEdit() {
 document.getElementById('close-edit-modal')?.addEventListener('click', closeEditModal);
 document.getElementById('cancel-edit-btn')?.addEventListener('click', closeEditModal);
 document.getElementById('save-edit-btn')?.addEventListener('click', saveChapterEdit);
+
+// --- Stats & Offline UI Event Listeners ---
+const statsModal = document.getElementById('stats-modal');
+const statsToggleBtn = document.getElementById('stats-toggle-btn');
+const closeStatsBtn = document.getElementById('close-stats-modal');
+const statsOverlay = document.getElementById('stats-modal-overlay');
+const clearCacheBtn = document.getElementById('clear-offline-cache');
+
+statsToggleBtn?.addEventListener('click', () => {
+    if (statsModal) {
+        STATS_MANAGER.load(); // Refresh data from Firebase
+        OFFLINE_MANAGER.updateUsageUI();
+        statsModal.classList.remove('hidden');
+        statsModal.classList.add('flex');
+    }
+});
+
+const hideStatsModal = () => {
+    if (statsModal) {
+        statsModal.classList.add('hidden');
+        statsModal.classList.remove('flex');
+    }
+};
+
+closeStatsBtn?.addEventListener('click', hideStatsModal);
+statsOverlay?.addEventListener('click', hideStatsModal);
+
+clearCacheBtn?.addEventListener('click', async () => {
+    if (confirm('Are you sure you want to clear all offline audio cache?')) {
+        await OFFLINE_MANAGER.clearCache();
+        alert('Cache cleared successfully!');
+    }
+});
+
+// --- Theme Management ---
+function applyTheme(themeId) {
+    safeViewTransition(() => {
+        document.documentElement.setAttribute('data-theme', themeId);
+        STATE.settings.theme = themeId;
+
+        // Update UI swatches
+        document.querySelectorAll('.theme-swatch').forEach(sw => {
+            const isActive = sw.dataset.theme === themeId;
+            sw.classList.toggle('active', isActive);
+            if (isActive) {
+                document.getElementById('current-theme-name').innerText = sw.getAttribute('title');
+            }
+        });
+    });
+}
+
+document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
+    const panel = document.getElementById('theme-picker-panel');
+    const chevron = document.getElementById('theme-chevron');
+    if (panel) {
+        panel.classList.toggle('active');
+        chevron?.classList.toggle('rotate-180');
+    }
+});
+
+document.querySelectorAll('.theme-swatch').forEach(sw => {
+    sw.addEventListener('click', () => {
+        const theme = sw.dataset.theme;
+        applyTheme(theme);
+        saveProgress(false); // Proactive save
+    });
+});
