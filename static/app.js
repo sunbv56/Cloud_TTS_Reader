@@ -106,11 +106,11 @@ const STATS_MANAGER = {
     },
 
     async track() {
-        if (!STATE.isPlaying || !STATE.user) return;
-        
         const now = Date.now();
         const deltaMs = now - this._lastActiveTime;
         this._lastActiveTime = now;
+
+        if (!STATE.isPlaying || !STATE.user) return;
 
         // Add to local state
         STATE.stats.totalTime += Math.floor(deltaMs / 1000);
@@ -1386,6 +1386,9 @@ async function loadBook(bookData, bookId, filename) {
         await saveProgress(true);
     }
 
+    // Dọn dẹp IndexedDB cũ để nhường chỗ cho sách mới - "Dọn dẹp sạch cho cái mới đi vào"
+    await OFFLINE_MANAGER.clearCache();
+
     STATE.currentBook = bookData;
     STATE.currentBookId = bookId || ("book_" + bookData.title.replace(/[^a-zA-Z0-9]/g, "_"));
     STATE.currentFilename = filename || (STATE.currentBook.title + ".txt");
@@ -2457,6 +2460,7 @@ audio.onpause = () => {
     }
     if (!STATE.isTransitioning && !audio.ended) {
         saveProgress(true);
+        if (STATE.user) STATS_MANAGER.syncToFirestore();
     }
 };
 
@@ -2980,6 +2984,7 @@ function updateMediaSession() {
 window.addEventListener('pagehide', () => {
     if (STATE.currentBookId) {
         saveProgress(true);
+        if (STATE.user) STATS_MANAGER.syncToFirestore();
     }
 });
 
@@ -3267,7 +3272,10 @@ async function handlePlaybackStall() {
     STATE.fetchingSet.clear();
     STATE.metadataQueue = [];
 
-    // 3. Clear ROM (MSE Buffer)
+    // 3. Clear IndexedDB (Offline Storage) - "Dọn dẹp sạch cho cái mới đi vào"
+    await OFFLINE_MANAGER.clearCache();
+
+    // 4. Clear ROM (MSE Buffer)
     if (STATE.sourceBuffer && !STATE.sourceBuffer.updating) {
         try {
             if (STATE.sourceBuffer.buffered.length > 0) {
