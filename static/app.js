@@ -237,6 +237,9 @@ function toggleDiscoveryMode(isActive) {
     const sidebarContainer = document.getElementById('sidebar-container');
 
     if (isActive) {
+        // If entering Discovery, reset engine to stop background audio/queues
+        resetAudioEngine();
+        
         if (discoveryMode) discoveryMode.classList.remove('hidden');
         if (sidebarContainer) sidebarContainer.classList.add('hidden');
         if (readerContainer) readerContainer.classList.add('hidden');
@@ -513,6 +516,91 @@ let STATE = {
         booksCompleted: 0
     }
 };
+
+const DEFAULT_SETTINGS = JSON.parse(JSON.stringify(STATE.settings));
+
+/**
+ * Robustly resets the audio engine state to ensure a clean transition
+ * between chapters or books. This handles pausing, clearing queues,
+ * and resetting the SourceBuffer.
+ */
+async function resetAudioEngine() {
+    console.log("Resetting Audio Engine for new session...");
+    
+    // 1. Explicitly stop playback
+    audio.pause();
+    STATE.isPlaying = false;
+    STATE.isTransitioning = true; // Block stall detector during reset
+
+    // 2. Increment Session ID to invalidate all pending WebSocket messages
+    STATE.sessionId++;
+    
+    // 3. Clear RAM State (Queues & Metadata)
+    STATE.appendQueue = [];
+    STATE.chunkTimings = [];
+    STATE.fetchingSet.clear();
+    STATE.metadataQueue = [];
+    STATE.downloadBuffer.clear();
+    
+    // 4. Reset Session markers
+    STATE.lastAppendedIndex = -1;
+    STATE.lastAppendedChapter = -1;
+    STATE.isFirstChunkOfSession = true;
+    STATE.lastOntimeUpdateTick = 0;
+    STATE.lastProgressWidth = null;
+    STATE.lastCurrentMock = null;
+    STATE.lastTimeStr = null;
+
+    // 5. Robust SourceBuffer Cleanup
+    if (STATE.sourceBuffer) {
+        try {
+            // Abort any active operations first
+            if (STATE.sourceBuffer.updating) {
+                console.log("Aborting active SourceBuffer operation...");
+                STATE.sourceBuffer.abort();
+            }
+
+            // Wait for SourceBuffer to be ready for removal
+            await new Promise(resolve => {
+                const check = () => {
+                    if (!STATE.sourceBuffer.updating) resolve();
+                    else setTimeout(check, 30);
+                };
+                check();
+            });
+
+            // Remove all buffered data
+            if (STATE.sourceBuffer.buffered.length > 0) {
+                const end = STATE.sourceBuffer.buffered.end(STATE.sourceBuffer.buffered.length - 1);
+                console.log(`Clearing SourceBuffer: 0 to ${end + 10}s`);
+                STATE.sourceBuffer.remove(0, end + 10);
+                
+                await new Promise(resolve => {
+                    const check = () => {
+                        if (!STATE.sourceBuffer.updating) resolve();
+                        else setTimeout(check, 30);
+                    };
+                    check();
+                });
+            }
+            
+            STATE.sourceBuffer.timestampOffset = 0;
+        } catch (e) {
+            console.warn("SourceBuffer reset error:", e);
+        }
+    }
+
+    // 6. Reset UI indicators
+    document.getElementById('status-indicator').innerText = "Ready";
+    const playBtn = document.getElementById('play-btn');
+    if (playBtn) playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
+    
+    // 7. Reset stall counters
+    STATE.stallCount = 0;
+    STATE.pauseCount = 0;
+    STATE.isStalled = false;
+    STATE.isTransitioning = false; // Re-enable playback tracking
+}
 
 // Initialize Managers
 STATS_MANAGER.init();
@@ -1377,18 +1465,19 @@ const discoveryFileInput = document.getElementById('discovery-file-input');
 if (discoveryFileInput) discoveryFileInput.onchange = handleFileUpload;
 
 async function loadBook(bookData, bookId, filename) {
+    // 0. Robust Engine Reset - "Dừng và dọn sạch mọi thứ cũ trước khi vào cái mới"
+    await resetAudioEngine();
+
     // Auto-close sidebar on mobile after selection
     toggleSidebar(false);
     toggleDiscoveryMode(false);
 
-    // Save progress of the current book before switching to the new one
-    if (STATE.currentBookId) {
-        console.log(`Switching book from ${STATE.currentBookId}...`);
-        // await saveProgress(true); // DISABLED: Strict Sync Mode
-    }
-
     // Dọn dẹp IndexedDB cũ để nhường chỗ cho sách mới - "Dọn dẹp sạch cho cái mới đi vào"
     await OFFLINE_MANAGER.clearCache();
+
+    // Reset settings to Defaults before loading potential book-specific ones
+    STATE.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    applySettingsToUI();
 
     STATE.currentBook = bookData;
     STATE.currentBookId = bookId || ("book_" + bookData.title.replace(/[^a-zA-Z0-9]/g, "_"));
@@ -2229,6 +2318,9 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
 async function playFromSentence(index) {
     if (!STATE.currentBook) return;
 
+    // 0. Robust Engine Reset - Dọn dẹp triệt để phiên cũ (dừng audio, xóa buffer, reset sessionId)
+    await resetAudioEngine();
+
     // Dọn dẹp cache cũ khi nhảy tới vị trí mới (jump) - "Dọn dẹp sạch cho cái mới đi vào"
     await OFFLINE_MANAGER.clearCache();
 
@@ -2237,64 +2329,18 @@ async function playFromSentence(index) {
     const chapter = STATE.currentBook.chapters[STATE.currentChapterIndex];
     if (!chapter.sentences) {
         await fetchChapterSentences(STATE.currentChapterIndex);
-        // Chapter might have changed or sentences loaded
     }
 
-    STATE.isStalled = false; // FIX #2: Reset isStalled on play resume so reconnect works
     STATE.currentSentenceIndex = index;
     const sentences = STATE.currentBook.chapters[STATE.currentChapterIndex].sentences;
 
-    // Increment session ID to invalidate pending requests
-    STATE.sessionId++;
+    // Use the sessionId incremented by resetAudioEngine
     const currentSessionId = STATE.sessionId;
     STATE.lastAppendedIndex = index - 1; // Restart sequence from the target index
     STATE.lastAppendedChapter = STATE.currentChapterIndex;
     console.log(`Starting new audio session: ${currentSessionId} (Jump to chunk ${index})`);
 
-    // --- MSE Seek/Reset Logic ---
-    // If we are jumping (not sequential append), we need to clear everything
-    audio.pause();
-    STATE.isTransitioning = true;
-    STATE.appendQueue = [];
-    STATE.chunkTimings = [];
-    STATE.fetchingSet.clear();
-    STATE.metadataQueue = [];
     updatePrefetchUI();
-
-    if (STATE.sourceBuffer) {
-        try {
-            if (STATE.sourceBuffer.updating) {
-                console.log("SourceBuffer updating, aborting...");
-                STATE.sourceBuffer.abort();
-            }
-
-            // Clear all buffered data
-            if (STATE.sourceBuffer.buffered.length > 0) {
-                const start = STATE.sourceBuffer.buffered.start(0);
-                const end = STATE.sourceBuffer.buffered.end(STATE.sourceBuffer.buffered.length - 1);
-                console.log(`Removing buffer from ${start} to ${end}`);
-                STATE.sourceBuffer.remove(0, end + 10); // Plus buffer
-
-                // Wait for remove to complete
-                await new Promise(r => {
-                    const check = () => {
-                        if (!STATE.sourceBuffer.updating) r();
-                        else setTimeout(check, 50);
-                    };
-                    check();
-                });
-            }
-
-            // Reset offset so new data starts at 0
-            STATE.sourceBuffer.timestampOffset = 0;
-            // Mark for first chunk handling
-            STATE.isFirstChunkOfSession = true;
-            console.log("MSE ready for new session (buffer cleared)");
-        } catch (e) {
-            console.error("MSE Reset Error:", e);
-        }
-    }
-
     document.getElementById('status-indicator').innerText = "Buffering...";
     const { voice, speed, pitch, volume } = STATE.settings;
     const rate = `${Math.round((speed - 1) * 100) >= 0 ? '+' : ''}${Math.round((speed - 1) * 100)}%`;
