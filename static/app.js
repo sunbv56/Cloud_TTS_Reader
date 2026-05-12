@@ -463,9 +463,9 @@ let STATE = {
         volume: "+0%",
         numWorkers: 5,
         fontSize: 20,
-        textColor: "default",
-        theme: "default"
+        textColor: "default"
     },
+    theme: localStorage.getItem('reader-theme') || 'default',
     isTransitioning: false,
     // MSE State
     mediaSource: null,
@@ -1049,12 +1049,13 @@ async function saveProgress(force = false) {
 
     try {
         const progressRef = doc(db, "users", STATE.user.uid, "progress", STATE.currentBookId);
+        const { theme, ...persistedSettings } = STATE.settings;
         await setDoc(progressRef, {
             title: STATE.currentBook.title,
             filename: STATE.currentFilename,
             last_read_chunk: currentGlobalIndex,
             total_chunks: getTotalChunks(),
-            settings: STATE.settings, // Save current settings
+            settings: persistedSettings, // Save current settings (excluding global theme)
             updated_at: serverTimestamp()
         }, { merge: true });
 
@@ -1482,7 +1483,6 @@ async function loadBook(bookData, bookId, filename) {
 
     // Capture UI Preferences to maintain global consistency
     const currentUI = {
-        theme: STATE.settings.theme,
         fontSize: STATE.settings.fontSize,
         textColor: STATE.settings.textColor
     };
@@ -1508,8 +1508,10 @@ async function loadBook(bookData, bookId, filename) {
 
         // Restore book-specific voice settings
         if (progress.settings) {
-            STATE.settings = { ...STATE.settings, ...progress.settings };
-            console.log("Restored saved book settings from Firestore.");
+            // Restore voice settings but preserve the current global theme
+            const { theme, ...bookSettings } = progress.settings;
+            STATE.settings = { ...STATE.settings, ...bookSettings };
+            console.log("Restored saved book settings from Firestore (Theme preserved from LocalStorage).");
         }
         console.log(`Resuming from global chunk ${progress.last_read_chunk}`);
     } else {
@@ -2982,8 +2984,8 @@ function applySettingsToUI() {
         }
     }
 
-    if (s.theme) {
-        applyTheme(s.theme);
+    if (STATE.theme) {
+        applyTheme(STATE.theme);
     }
 
     applyTypographySettings();
@@ -3669,7 +3671,8 @@ function applyTheme(themeId) {
 
     safeViewTransition(() => {
         document.documentElement.setAttribute('data-theme', themeId);
-        STATE.settings.theme = themeId;
+        STATE.theme = themeId;
+        localStorage.setItem('reader-theme', themeId);
 
         // Update UI swatches
         document.querySelectorAll('.theme-swatch').forEach(sw => {
