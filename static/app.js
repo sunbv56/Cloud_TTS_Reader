@@ -1479,9 +1479,15 @@ async function loadBook(bookData, bookId, filename) {
     // Dọn dẹp IndexedDB cũ để nhường chỗ cho sách mới - "Dọn dẹp sạch cho cái mới đi vào"
     await OFFLINE_MANAGER.clearCache();
 
-    // Reset settings to Defaults before loading potential book-specific ones
-    STATE.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
-    applySettingsToUI();
+    // Capture UI Preferences to maintain global consistency
+    const currentUI = {
+        theme: STATE.settings.theme,
+        fontSize: STATE.settings.fontSize,
+        textColor: STATE.settings.textColor
+    };
+
+    // Reset settings to Defaults (Voice/Speed/Pitch)
+    STATE.settings = { ...JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), ...currentUI };
 
     STATE.currentBook = bookData;
     STATE.currentBookId = bookId || ("book_" + bookData.title.replace(/[^a-zA-Z0-9]/g, "_"));
@@ -1502,16 +1508,17 @@ async function loadBook(bookData, bookId, filename) {
         // Restore book-specific voice settings
         if (progress.settings) {
             STATE.settings = { ...STATE.settings, ...progress.settings };
-            applySettingsToUI();
-            console.log("Restored saved voice settings from Firestore.");
+            console.log("Restored saved book settings from Firestore.");
         }
-
         console.log(`Resuming from global chunk ${progress.last_read_chunk}`);
     } else {
         STATE.currentChapterIndex = 0;
         STATE.currentSentenceIndex = 0;
         STATE.lastSavedChunkIndex = -1;
     }
+
+    // Apply all settings (UI + Voice) once at the end
+    applySettingsToUI();
 
     const currentTitleEl = document.getElementById('current-title');
     currentTitleEl.innerText = bookData.title;
@@ -3642,6 +3649,20 @@ clearCacheBtn?.addEventListener('click', async () => {
 
 // --- Theme Management ---
 function applyTheme(themeId) {
+    // Optimization: Skip transition if theme is already active
+    if (document.documentElement.getAttribute('data-theme') === themeId) {
+        // Still update swatches just in case
+        document.querySelectorAll('.theme-swatch').forEach(sw => {
+            const isActive = sw.dataset.theme === themeId;
+            sw.classList.toggle('active', isActive);
+            if (isActive) {
+                const nameEl = document.getElementById('current-theme-name');
+                if (nameEl) nameEl.innerText = sw.getAttribute('title');
+            }
+        });
+        return;
+    }
+
     safeViewTransition(() => {
         document.documentElement.setAttribute('data-theme', themeId);
         STATE.settings.theme = themeId;
