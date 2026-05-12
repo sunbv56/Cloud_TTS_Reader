@@ -7,6 +7,88 @@ import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "http
 // Firebase placeholders (Initialized via API)
 let app, auth, db, storage, provider;
 
+// App State
+let STATE = {
+    user: null,
+    currentBook: null,
+    currentBookId: null,
+    currentFilename: null,
+    currentChapterIndex: 0,
+    currentSentenceIndex: 0,
+    lastSavedChunkIndex: -1,
+    strictSyncMode: false, // Automatic sync triggers enabled
+    isPlaying: false,
+    isStalled: false, // Emergency stop flag
+    pendingClockReset: false, // Hardware clock sync flag
+    metadata: [],
+    fetchingSet: new Set(), // indices being fetched
+    ws: null,
+    metadataQueue: [], // Temporary store for metadata before binary arrive
+    settings: {
+        voice: "vi-VN-HoaiMyNeural",
+        speed: 1.0,
+        pitch: "+0Hz",
+        volume: "+0%",
+        numWorkers: 5,
+        fontSize: 20,
+        textColor: "default"
+    },
+    theme: localStorage.getItem('reader-theme') || 'default',
+    isTransitioning: false,
+    // MSE State
+    mediaSource: null,
+    sourceBuffer: null,
+    appendQueue: [],
+    chunkTimings: [], // { index, startTime, duration }
+    isAppending: false,
+    sessionId: 0,
+    lastAppendedIndex: -1,
+    lastAppendedChapter: 0,
+    isFirstChunkOfSession: false,
+    prefetchTimeout: null,
+    prefetchBatchStatus: {
+        completed: 0,
+        total: 0
+    },
+    wakeLockEnabled: localStorage.getItem('wakeLockEnabled') === 'true',
+    wakeLockSentinel: null,
+    // Sleep Timer & Stall Detection
+    sleepTimer: null,
+    sleepTimerEnd: 0,
+    lastPlaybackTime: 0,
+    lastPlaybackTick: 0,
+    stallCount: 0,
+    pauseCount: 0,
+    // Offline Download
+    isDownloading: false,
+    downloadBuffer: new Map(),
+    downloadExpected: 0,
+    downloadResolve: null,
+    downloadReject: null,
+    downloadChunkMeta: new Map(), // key -> { chapterIndex, index, text, voice, rate, pitch, volume } for retry
+    downloadRetryCount: new Map(), // key -> retry attempt count
+    tocAutoMinimized: false,
+    // Performance Optimization State
+    heartbeatInterval: null,
+    lastHighlightedIndex: -1,
+    lastOntimeUpdateTick: 0,
+    // Lite Mode: JS-level flag (avoids repeated DOM class checks)
+    isLiteMode: false,
+    // UI render cache: prevents redundant DOM writes
+    lastProgressWidth: null,
+    lastCurrentMock: null,
+    lastTimeStr: null,
+    // Statistics
+    stats: {
+        streak: 0,
+        totalTime: 0,
+        lastReadDate: 'never',
+        booksCompleted: 0
+    }
+};
+
+const DEFAULT_SETTINGS = JSON.parse(JSON.stringify(STATE.settings));
+
 // --- Offline & Cache Manager (IndexedDB) ---
 const OFFLINE_MANAGER = {
     dbName: 'CloudTTSReaderDB',
@@ -256,7 +338,9 @@ function toggleDiscoveryMode(isActive) {
 
 const logoBtn = document.getElementById('logo-btn');
 if (logoBtn) {
-    logoBtn.onclick = () => {
+    logoBtn.onclick = (e) => {
+        // Block discovery mode if Easter Egg was just activated
+        if (window._lastEasterEggAt && Date.now() - window._lastEasterEggAt < 1000) return;
         toggleDiscoveryMode(true);
     };
 }
@@ -439,87 +523,7 @@ function safeViewTransition(callback) {
     }
 }
 
-// App State
-let STATE = {
-    user: null,
-    currentBook: null,
-    currentBookId: null,
-    currentFilename: null,
-    currentChapterIndex: 0,
-    currentSentenceIndex: 0,
-    lastSavedChunkIndex: -1,
-    strictSyncMode: false, // Automatic sync triggers enabled
-    isPlaying: false,
-    isStalled: false, // Emergency stop flag
-    pendingClockReset: false, // Hardware clock sync flag
-    metadata: [],
-    fetchingSet: new Set(), // indices being fetched
-    ws: null,
-    metadataQueue: [], // Temporary store for metadata before binary arrive
-    settings: {
-        voice: "vi-VN-HoaiMyNeural",
-        speed: 1.0,
-        pitch: "+0Hz",
-        volume: "+0%",
-        numWorkers: 5,
-        fontSize: 20,
-        textColor: "default"
-    },
-    theme: localStorage.getItem('reader-theme') || 'default',
-    isTransitioning: false,
-    // MSE State
-    mediaSource: null,
-    sourceBuffer: null,
-    appendQueue: [],
-    chunkTimings: [], // { index, startTime, duration }
-    isAppending: false,
-    sessionId: 0,
-    lastAppendedIndex: -1,
-    lastAppendedChapter: 0,
-    isFirstChunkOfSession: false,
-    prefetchTimeout: null,
-    prefetchBatchStatus: {
-        completed: 0,
-        total: 0
-    },
-    wakeLockEnabled: localStorage.getItem('wakeLockEnabled') === 'true',
-    wakeLockSentinel: null,
-    // Sleep Timer & Stall Detection
-    sleepTimer: null,
-    sleepTimerEnd: 0,
-    lastPlaybackTime: 0,
-    lastPlaybackTick: 0,
-    stallCount: 0,
-    pauseCount: 0,
-    // Offline Download
-    isDownloading: false,
-    downloadBuffer: new Map(),
-    downloadExpected: 0,
-    downloadResolve: null,
-    downloadReject: null,
-    downloadChunkMeta: new Map(), // key -> { chapterIndex, index, text, voice, rate, pitch, volume } for retry
-    downloadRetryCount: new Map(), // key -> retry attempt count
-    tocAutoMinimized: false,
-    // Performance Optimization State
-    heartbeatInterval: null,
-    lastHighlightedIndex: -1,
-    lastOntimeUpdateTick: 0,
-    // Lite Mode: JS-level flag (avoids repeated DOM class checks)
-    isLiteMode: false,
-    // UI render cache: prevents redundant DOM writes
-    lastProgressWidth: null,
-    lastCurrentMock: null,
-    lastTimeStr: null,
-    // Statistics
-    stats: {
-        streak: 0,
-        totalTime: 0,
-        lastReadDate: 'never',
-        booksCompleted: 0
-    }
-};
-
-const DEFAULT_SETTINGS = JSON.parse(JSON.stringify(STATE.settings));
+// --- Utilities ---
 
 /**
  * Robustly resets the audio engine state to ensure a clean transition
@@ -3703,12 +3707,12 @@ document.querySelectorAll('.theme-swatch').forEach(sw => {
 });
 
 // --- Easter Egg: Crawler Script Copy (5s Hold on Logo) ---
-(function() {
+(function () {
     const logoBtn = document.getElementById('logo-btn');
     if (!logoBtn) return;
 
     let holdTimer;
-    const holdDuration = 5000; // 5 seconds
+    const holdDuration = 3000; // 3 seconds
 
     const startHold = (e) => {
         holdTimer = setTimeout(activateEasterEgg, holdDuration);
@@ -3739,16 +3743,17 @@ document.querySelectorAll('.theme-swatch').forEach(sw => {
     }
 })();`;
 
+        window._lastEasterEggAt = Date.now();
         navigator.clipboard.writeText(crawlerScript).then(() => {
             const indicator = document.getElementById('status-indicator');
             if (indicator) {
                 const oldText = indicator.innerText;
                 indicator.innerText = "Crawler Script Copied!";
-                
+
                 // Visual feedback on logo
                 logoBtn.style.transition = "transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)";
                 logoBtn.style.transform = "scale(1.2) rotate(10deg)";
-                
+
                 setTimeout(() => {
                     indicator.innerText = oldText;
                     logoBtn.style.transform = "scale(1) rotate(0deg)";
