@@ -3701,3 +3701,68 @@ document.querySelectorAll('.theme-swatch').forEach(sw => {
         saveProgress(true); // Persist theme change immediately
     });
 });
+
+// --- Easter Egg: Crawler Script Copy (5s Hold on Logo) ---
+(function() {
+    const logoBtn = document.getElementById('logo-btn');
+    if (!logoBtn) return;
+
+    let holdTimer;
+    const holdDuration = 5000; // 5 seconds
+
+    const startHold = (e) => {
+        holdTimer = setTimeout(activateEasterEgg, holdDuration);
+    };
+
+    const cancelHold = () => {
+        clearTimeout(holdTimer);
+    };
+
+    const activateEasterEgg = () => {
+        const crawlerScript = `(function() {
+    let titleElement = document.getElementById('bookchapnameholder');
+    let chapterTitle = titleElement ? titleElement.innerText.trim() : "";
+    let box = document.getElementById('content-container').cloneNode(true);
+    let span = box.querySelector('span');
+    if(span) span.remove();
+    box.querySelectorAll('br').forEach(br => br.replaceWith('\\n'));
+    let rawText = box.textContent;
+    let contentText = rawText.split('\\n')
+                           .map(line => line.trim().replace(/\\s+/g, ' '))
+                           .join('\\n');
+    let finalResult = chapterTitle + "\\n\\n" + contentText.trim();
+    if (typeof copy === 'function') {
+        copy(finalResult);
+        console.log("Chapter copied to clipboard using DevTools copy()!");
+    } else {
+        console.log("Result computed, but copy() is only available in DevTools Console. Result:\\n" + finalResult);
+    }
+})();`;
+
+        navigator.clipboard.writeText(crawlerScript).then(() => {
+            const indicator = document.getElementById('status-indicator');
+            if (indicator) {
+                const oldText = indicator.innerText;
+                indicator.innerText = "Crawler Script Copied!";
+                
+                // Visual feedback on logo
+                logoBtn.style.transition = "transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)";
+                logoBtn.style.transform = "scale(1.2) rotate(10deg)";
+                
+                setTimeout(() => {
+                    indicator.innerText = oldText;
+                    logoBtn.style.transform = "scale(1) rotate(0deg)";
+                }, 3000);
+            }
+        }).catch(err => {
+            console.error('Failed to copy Easter Egg script:', err);
+        });
+    };
+
+    logoBtn.addEventListener('mousedown', startHold);
+    logoBtn.addEventListener('touchstart', startHold, { passive: true });
+    logoBtn.addEventListener('mouseup', cancelHold);
+    logoBtn.addEventListener('mouseleave', cancelHold);
+    logoBtn.addEventListener('touchend', cancelHold);
+    logoBtn.addEventListener('touchcancel', cancelHold);
+})();
