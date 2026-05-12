@@ -450,6 +450,8 @@ let STATE = {
     lastSavedChunkIndex: -1,
     strictSyncMode: true, // Only 10-sentence batch sync and manual sync allowed
     isPlaying: false,
+    isStalled: false, // Emergency stop flag
+    pendingClockReset: false, // Hardware clock sync flag
     metadata: [],
     fetchingSet: new Set(), // indices being fetched
     ws: null,
@@ -527,9 +529,11 @@ const DEFAULT_SETTINGS = JSON.parse(JSON.stringify(STATE.settings));
 async function resetAudioEngine() {
     console.log("Resetting Audio Engine for new session...");
     
-    // 1. Explicitly stop playback
+    // 1. Explicitly stop playback and reset clock
     audio.pause();
+    audio.currentTime = 0; // Immediate UI reset
     STATE.isPlaying = false;
+    STATE.isStalled = false; 
     STATE.isTransitioning = true; // Block stall detector during reset
 
     // 2. Increment Session ID to invalidate all pending WebSocket messages
@@ -544,7 +548,7 @@ async function resetAudioEngine() {
     
     // 4. Reset Session markers
     STATE.lastAppendedIndex = -1;
-    STATE.lastAppendedChapter = -1;
+    STATE.lastAppendedChapter = 0;
     STATE.isFirstChunkOfSession = true;
     STATE.lastOntimeUpdateTick = 0;
     STATE.lastProgressWidth = null;
@@ -922,7 +926,7 @@ function initMSE() {
 }
 
 function processAppendQueue() {
-    if (!STATE.sourceBuffer || STATE.sourceBuffer.updating || STATE.appendQueue.length === 0 || STATE.isAppending) return;
+    if (!STATE.sourceBuffer || STATE.sourceBuffer.updating || STATE.appendQueue.length === 0 || STATE.isAppending || STATE.isTransitioning) return;
 
     // 1. Thay đổi logic sắp xếp: Ưu tiên Chapter trước, rồi mới tới Index
     STATE.appendQueue.sort((a, b) => {
@@ -3568,11 +3572,8 @@ async function saveChapterEdit() {
             if (STATE.currentChapterIndex === editingChapterIndex) {
                 renderChapter(editingChapterIndex);
                 // Also reset playback session to reflect changes in chunks
-                STATE.sessionId++;
-                STATE.appendQueue = [];
-                STATE.chunkTimings = [];
-                STATE.fetchingSet.clear();
-                STATE.metadataQueue = [];
+                await resetAudioEngine();
+
                 // If it was playing, restart from current sentence or start
                 if (STATE.isPlaying) {
                     playFromSentence(STATE.currentSentenceIndex);
