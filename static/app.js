@@ -159,7 +159,7 @@ const STATS_MANAGER = {
     },
 
     async syncToFirestore() {
-        if (!STATE.user) return;
+        if (!STATE.user || STATE.strictSyncMode) return;
         try {
             const statsRef = doc(db, 'users', STATE.user.uid, 'stats', 'reading');
             await setDoc(statsRef, STATE.stats, { merge: true });
@@ -445,6 +445,7 @@ let STATE = {
     currentChapterIndex: 0,
     currentSentenceIndex: 0,
     lastSavedChunkIndex: -1,
+    strictSyncMode: true, // Only 10-sentence batch sync and manual sync allowed
     isPlaying: false,
     metadata: [],
     fetchingSet: new Set(), // indices being fetched
@@ -1328,7 +1329,7 @@ async function loadBookFromStorage(bookId, bookData) {
 
         await loadBook(data, bookId, filename);
         document.getElementById('status-indicator').innerText = "Ready";
-        saveProgress(true); // Force save to sync local state
+        // saveProgress(true); // DISABLED: Strict Sync Mode
     } catch (err) {
         console.error("Load from Storage Error:", err);
         alert("Failed to load book from storage. Make sure the file still exists.");
@@ -1382,8 +1383,8 @@ async function loadBook(bookData, bookId, filename) {
 
     // Save progress of the current book before switching to the new one
     if (STATE.currentBookId) {
-        console.log(`Saving progress for ${STATE.currentBookId} before switching...`);
-        await saveProgress(true);
+        console.log(`Switching book from ${STATE.currentBookId}...`);
+        // await saveProgress(true); // DISABLED: Strict Sync Mode
     }
 
     // Dọn dẹp IndexedDB cũ để nhường chỗ cho sách mới - "Dọn dẹp sạch cho cái mới đi vào"
@@ -1433,7 +1434,7 @@ async function loadBook(bookData, bookId, filename) {
     }
 
     // Immediately sync to register the book and filename in the library (Forced)
-    saveProgress(true);
+    // saveProgress(true); // DISABLED: Strict Sync Mode
 
     // Auto-play from current position
     playFromSentence(STATE.currentSentenceIndex);
@@ -2463,8 +2464,8 @@ audio.onpause = () => {
         navigator.mediaSession.playbackState = 'paused';
     }
     if (!STATE.isTransitioning && !audio.ended) {
-        saveProgress(true);
-        if (STATE.user) STATS_MANAGER.syncToFirestore();
+        // saveProgress(true); // DISABLED: Strict Sync Mode
+        if (STATE.user && !STATE.strictSyncMode) STATS_MANAGER.syncToFirestore();
     }
 };
 
@@ -2478,7 +2479,7 @@ async function editTitle() {
         updateUI(); // Keep player and author tokens in sync
 
         // Force save with new title
-        await saveProgress(true);
+        // await saveProgress(true); // DISABLED: Strict Sync Mode
         await refreshLibrary(); // Wait for library update to reflect new title
     }
 }
@@ -2986,10 +2987,13 @@ function updateMediaSession() {
 }
 
 window.addEventListener('pagehide', () => {
+    // DISABLED: Strict Sync Mode
+    /*
     if (STATE.currentBookId) {
         saveProgress(true);
         if (STATE.user) STATS_MANAGER.syncToFirestore();
     }
+    */
 });
 
 // --- Screen Wake Lock API ---
@@ -3244,8 +3248,8 @@ async function handlePauseTimeout() {
 
     // 1. Save Progress
     if (STATE.user && STATE.currentBookId) {
-        document.getElementById('status-indicator').innerText = "Auto-Saving...";
-        await saveProgress(true);
+        document.getElementById('status-indicator').innerText = "Session Expired...";
+        // await saveProgress(true); // DISABLED: Strict Sync Mode
     }
 
     // 2. Cleanup (Disconnect & Clear RAM/ROM)
@@ -3619,6 +3623,6 @@ document.querySelectorAll('.theme-swatch').forEach(sw => {
     sw.addEventListener('click', () => {
         const theme = sw.dataset.theme;
         applyTheme(theme);
-        saveProgress(false); // Proactive save
+        // saveProgress(false); // DISABLED: Strict Sync Mode
     });
 });
