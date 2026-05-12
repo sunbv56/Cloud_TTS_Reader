@@ -114,14 +114,14 @@ const STATS_MANAGER = {
 
         // Add to local state
         STATE.stats.totalTime += Math.floor(deltaMs / 1000);
-        
+
         // Update Streak
         const today = new Date().toDateString();
         if (STATE.stats.lastReadDate !== today) {
             const lastDate = new Date(STATE.stats.lastReadDate);
             const yesterday = new Date();
             yesterday.setDate(yesterday.getDate() - 1);
-            
+
             if (lastDate.toDateString() === yesterday.toDateString()) {
                 STATE.stats.streak += 1;
             } else if (STATE.stats.lastReadDate === 'never') {
@@ -141,11 +141,11 @@ const STATS_MANAGER = {
         const streakEl = document.getElementById('stat-streak');
         const timeEl = document.getElementById('stat-total-time');
         const streakDot = document.getElementById('streak-dot');
-        
+
         if (streakEl) streakEl.innerText = STATE.stats.streak;
         if (timeEl) {
             const mins = Math.floor(STATE.stats.totalTime / 60);
-            timeEl.innerText = mins > 60 ? `${(mins/60).toFixed(1)}h` : `${mins}m`;
+            timeEl.innerText = mins > 60 ? `${(mins / 60).toFixed(1)}h` : `${mins}m`;
         }
         if (streakDot && STATE.stats.streak > 0) streakDot.classList.remove('hidden');
     },
@@ -158,8 +158,8 @@ const STATS_MANAGER = {
         }, 30000); // Sync every 30s
     },
 
-    async syncToFirestore() {
-        if (!STATE.user || STATE.strictSyncMode) return;
+    async syncToFirestore(force = false) {
+        if (!STATE.user || (STATE.strictSyncMode && !force)) return;
         try {
             const statsRef = doc(db, 'users', STATE.user.uid, 'stats', 'reading');
             await setDoc(statsRef, STATE.stats, { merge: true });
@@ -239,7 +239,7 @@ function toggleDiscoveryMode(isActive) {
     if (isActive) {
         // If entering Discovery, reset engine to stop background audio/queues
         resetAudioEngine();
-        
+
         if (discoveryMode) discoveryMode.classList.remove('hidden');
         if (sidebarContainer) sidebarContainer.classList.add('hidden');
         if (readerContainer) readerContainer.classList.add('hidden');
@@ -448,7 +448,7 @@ let STATE = {
     currentChapterIndex: 0,
     currentSentenceIndex: 0,
     lastSavedChunkIndex: -1,
-    strictSyncMode: true, // Only 10-sentence batch sync and manual sync allowed
+    strictSyncMode: false, // Automatic sync triggers enabled
     isPlaying: false,
     isStalled: false, // Emergency stop flag
     pendingClockReset: false, // Hardware clock sync flag
@@ -528,24 +528,24 @@ const DEFAULT_SETTINGS = JSON.parse(JSON.stringify(STATE.settings));
  */
 async function resetAudioEngine() {
     console.log("Resetting Audio Engine for new session...");
-    
+
     // 1. Explicitly stop playback and reset clock
     audio.pause();
     audio.currentTime = 0; // Immediate UI reset
     STATE.isPlaying = false;
-    STATE.isStalled = false; 
+    STATE.isStalled = false;
     STATE.isTransitioning = true; // Block stall detector during reset
 
     // 2. Increment Session ID to invalidate all pending WebSocket messages
     STATE.sessionId++;
-    
+
     // 3. Clear RAM State (Queues & Metadata)
     STATE.appendQueue = [];
     STATE.chunkTimings = [];
     STATE.fetchingSet.clear();
     STATE.metadataQueue = [];
     STATE.downloadBuffer.clear();
-    
+
     // 4. Reset Session markers
     STATE.lastAppendedIndex = -1;
     STATE.lastAppendedChapter = 0;
@@ -578,7 +578,7 @@ async function resetAudioEngine() {
                 const end = STATE.sourceBuffer.buffered.end(STATE.sourceBuffer.buffered.length - 1);
                 console.log(`Clearing SourceBuffer: 0 to ${end + 10}s`);
                 STATE.sourceBuffer.remove(0, end + 10);
-                
+
                 await new Promise(resolve => {
                     const check = () => {
                         if (!STATE.sourceBuffer.updating) resolve();
@@ -587,7 +587,7 @@ async function resetAudioEngine() {
                     check();
                 });
             }
-            
+
             STATE.sourceBuffer.timestampOffset = 0;
         } catch (e) {
             console.warn("SourceBuffer reset error:", e);
@@ -598,7 +598,7 @@ async function resetAudioEngine() {
     document.getElementById('status-indicator').innerText = "Ready";
     const playBtn = document.getElementById('play-btn');
     if (playBtn) playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
-    
+
     // 7. Reset stall counters
     STATE.stallCount = 0;
     STATE.pauseCount = 0;
@@ -1040,8 +1040,9 @@ async function saveProgress(force = false) {
 
     const currentGlobalIndex = getGlobalIndex(STATE.currentChapterIndex, STATE.currentSentenceIndex);
 
-    // Batching: only save if forced OR distance >= 10
-    if (!force && Math.abs(currentGlobalIndex - STATE.lastSavedChunkIndex) < 10) {
+    // Batching: only save if forced OR distance >= 10 OR first time registration
+    const isFirstSave = STATE.lastSavedChunkIndex === -1;
+    if (!force && !isFirstSave && Math.abs(currentGlobalIndex - STATE.lastSavedChunkIndex) < 10) {
         console.log(`Skipping Firestore sync (Batching): Current ${currentGlobalIndex}, Last Saved ${STATE.lastSavedChunkIndex}`);
         return;
     }
@@ -1414,14 +1415,14 @@ async function loadBookFromStorage(bookId, bookData) {
 
         const parseRes = await fetch('/api/parse-book', { method: 'POST', body: formData });
         const data = await parseRes.json();
-        
+
         // Cập nhật trạng thái Highlight trước khi loadBook (để UI phản hồi nhanh)
         STATE.currentBookId = bookId;
         updateLibraryHighlight();
 
         await loadBook(data, bookId, filename);
         document.getElementById('status-indicator').innerText = "Ready";
-        // saveProgress(true); // DISABLED: Strict Sync Mode
+        saveProgress(true); // Register the book in library immediately
     } catch (err) {
         console.error("Load from Storage Error:", err);
         alert("Failed to load book from storage. Make sure the file still exists.");
@@ -1534,7 +1535,7 @@ async function loadBook(bookData, bookId, filename) {
     }
 
     // Immediately sync to register the book and filename in the library (Forced)
-    // saveProgress(true); // DISABLED: Strict Sync Mode
+    saveProgress(true); // Register the book/resume progress immediately
 
     // Auto-play from current position
     playFromSentence(STATE.currentSentenceIndex);
@@ -2280,7 +2281,7 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
             if (cachedBlob) {
                 console.log(`[Offline] Using cached audio for ${key}`);
                 const arrayBuffer = await cachedBlob.arrayBuffer();
-                
+
                 // Simulate a metadata arrival if needed, or just push directly
                 // For simplified logic, we assume metadata for cached blobs is not strictly needed for basic playback
                 // But normally we'd want the 'metadata' (word timings) too.
@@ -2521,7 +2522,7 @@ audio.onpause = () => {
         navigator.mediaSession.playbackState = 'paused';
     }
     if (!STATE.isTransitioning && !audio.ended) {
-        // saveProgress(true); // DISABLED: Strict Sync Mode
+        saveProgress(true); // Checkpoint progress on manual pause or buffer wait
         if (STATE.user && !STATE.strictSyncMode) STATS_MANAGER.syncToFirestore();
     }
 };
@@ -2536,7 +2537,7 @@ async function editTitle() {
         updateUI(); // Keep player and author tokens in sync
 
         // Force save with new title
-        // await saveProgress(true); // DISABLED: Strict Sync Mode
+        await saveProgress(true); // Persist title change immediately
         await refreshLibrary(); // Wait for library update to reflect new title
     }
 }
@@ -2980,7 +2981,7 @@ function applySettingsToUI() {
             document.getElementById('font-color-picker').value = s.textColor;
         }
     }
-    
+
     if (s.theme) {
         applyTheme(s.theme);
     }
@@ -3045,12 +3046,10 @@ function updateMediaSession() {
 
 window.addEventListener('pagehide', () => {
     // DISABLED: Strict Sync Mode
-    /*
     if (STATE.currentBookId) {
         saveProgress(true);
         if (STATE.user) STATS_MANAGER.syncToFirestore();
     }
-    */
 });
 
 // --- Screen Wake Lock API ---
@@ -3249,7 +3248,12 @@ async function triggerManualSave() {
     icon.className = "fas fa-sync-alt fa-spin text-primary";
 
     try {
-        await saveProgress(true);
+        // Force sync both progress and statistics
+        await Promise.all([
+            saveProgress(true),
+            STATS_MANAGER.syncToFirestore(true)
+        ]);
+
         icon.className = "fas fa-check text-green-400";
         setTimeout(() => {
             icon.className = "fas fa-cloud-upload-alt text-lg";
@@ -3306,7 +3310,7 @@ async function handlePauseTimeout() {
     // 1. Save Progress
     if (STATE.user && STATE.currentBookId) {
         document.getElementById('status-indicator').innerText = "Session Expired...";
-        // await saveProgress(true); // DISABLED: Strict Sync Mode
+        await saveProgress(true); // Save current progress before session expiration
     }
 
     // 2. Cleanup (Disconnect & Clear RAM/ROM)
@@ -3691,6 +3695,6 @@ document.querySelectorAll('.theme-swatch').forEach(sw => {
     sw.addEventListener('click', () => {
         const theme = sw.dataset.theme;
         applyTheme(theme);
-        // saveProgress(false); // DISABLED: Strict Sync Mode
+        saveProgress(true); // Persist theme change immediately
     });
 });
