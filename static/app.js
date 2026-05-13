@@ -67,6 +67,8 @@ let STATE = {
     downloadReject: null,
     downloadChunkMeta: new Map(), // key -> { chapterIndex, index, text, voice, rate, pitch, volume } for retry
     downloadRetryCount: new Map(), // key -> retry attempt count
+    streamingRetryCount: new Map(), // key -> retry attempt count for streaming
+    _stallRecoveryCount: 0, // tracking recovery attempts
     tocAutoMinimized: false,
     // Performance Optimization State
     heartbeatInterval: null,
@@ -706,6 +708,46 @@ function initWebSocket() {
 
                 if (data.type === "PREFETCH_FAILED") {
                     console.error(`Chunk fetch failed: ${data.chapterIndex}-${data.index} - ${data.error || "Unknown"}`);
+                    const failKey = `${data.chapterIndex}_${data.index}`;
+                    STATE.fetchingSet.delete(failKey);
+
+                    // --- [TASK 2] Streaming Mode Retry Logic ---
+                    if (!STATE.isDownloading && STATE.currentBook) {
+                        const MAX_RETRIES = 3;
+                        const retries = (STATE.streamingRetryCount.get(failKey) || 0) + 1;
+                        STATE.streamingRetryCount.set(failKey, retries);
+
+                        if (retries <= MAX_RETRIES) {
+                            const delay = retries * 2000;
+                            console.warn(`[Streaming] Retrying chunk ${failKey} (attempt ${retries}/${MAX_RETRIES}) in ${delay}ms...`);
+                            document.getElementById('status-indicator').innerText = `Retrying chunk... (${retries})`;
+
+                            setTimeout(() => {
+                                if (STATE.isDownloading || !STATE.ws || STATE.ws.readyState !== WebSocket.OPEN) return;
+                                const chapter = STATE.currentBook.chapters[data.chapterIndex];
+                                if (!chapter || !chapter.sentences) return;
+
+                                const text = applySkipDictionary(chapter.sentences[data.index]);
+                                const { voice, speed, pitch, volume } = STATE.settings;
+                                const rate = `${Math.round((speed - 1) * 100) >= 0 ? '+' : ''}${Math.round((speed - 1) * 100)}%`;
+
+                                STATE.fetchingSet.add(failKey);
+                                STATE.ws.send(JSON.stringify({
+                                    type: "PREFETCH",
+                                    index: data.index,
+                                    chapterIndex: data.chapterIndex,
+                                    text: text,
+                                    voice: voice,
+                                    rate: rate,
+                                    pitch: pitch,
+                                    volume: volume,
+                                    numWorkers: STATE.settings.numWorkers,
+                                    sessionId: STATE.sessionId
+                                }));
+                            }, delay);
+                            return; // Wait for the retry
+                        }
+                    }
 
                     // --- Download Mode Retry Logic ---
                     if (STATE.isDownloading && STATE.downloadChunkMeta.has(failKey)) {
@@ -971,6 +1013,26 @@ function processAppendQueue() {
 
     STATE.isAppending = true;
     const chunk = STATE.appendQueue.shift();
+
+    // [TASK 1: BUFFER CLEANUP] Before appending, check if we need to free space
+    if (STATE.sourceBuffer.buffered.length > 0) {
+        const playedEnd = audio.currentTime - 60; // Keep 60s of history
+        if (playedEnd > 30) { // Only clean if we have at least 30s to remove
+            try {
+                const firstBufferedEnd = STATE.sourceBuffer.buffered.end(0);
+                if (firstBufferedEnd < playedEnd) {
+                    console.log(`[MSE] Cleaning up old buffer: 0 to ${playedEnd.toFixed(2)}s (Current: ${audio.currentTime.toFixed(2)}s)`);
+                    STATE.isAppending = false; // Reset flag as we're aborting this append for now
+                    STATE.appendQueue.unshift(chunk); // Put chunk back
+                    STATE.sourceBuffer.remove(0, playedEnd);
+                    // updateend listener will trigger processAppendQueue again
+                    return;
+                }
+            } catch (err) {
+                console.warn("Buffer cleanup failed:", err);
+            }
+        }
+    }
 
     try {
         // Calculate start time for this chunk
@@ -2592,6 +2654,11 @@ playBtn.onclick = () => togglePlayback();
 audio.onplay = async () => {
     STATE.isTransitioning = false;
     STATE.isPlaying = true;
+
+    // [TASK 3] Reset stall recovery counters on successful play
+    STATE._stallRecoveryCount = 0;
+    STATE.streamingRetryCount.clear();
+
     enableNoSleepAudio();
     playBtn.innerHTML = '<i class="fas fa-pause"></i>';
     document.getElementById('status-indicator').innerText = "Streaming";
@@ -3413,18 +3480,60 @@ async function handlePauseTimeout() {
     // 1. Save Progress
     if (STATE.user && STATE.currentBookId) {
         document.getElementById('status-indicator').innerText = "Session Expired...";
-        await saveProgress(true); // Save current progress before session expiration
+        await saveProgress(true);
     }
 
-    // 2. Cleanup (Disconnect & Clear RAM/ROM)
-    await handlePlaybackStall();
+    // 2. [TASK 3] Disconnect WebSocket ONLY (Preserve Buffer & Cache)
+    if (STATE.ws) {
+        if (STATE.heartbeatInterval) {
+            clearInterval(STATE.heartbeatInterval);
+            STATE.heartbeatInterval = null;
+        }
+        STATE.ws.close();
+    }
+
+    STATE.isPlaying = false;
+    const playBtn = document.getElementById('play-btn');
+    if (playBtn) playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
 
     document.getElementById('status-indicator').innerText = "Session Expired (1m Inactivity)";
     document.getElementById('status-indicator').style.color = "#FFB347";
 }
 
 async function handlePlaybackStall() {
-    console.error("Playback Stalled/Inactivity triggered Emergency Cleanup...");
+    STATE.stallCount = 0;
+    const currentAttempt = (STATE._stallRecoveryCount || 0) + 1;
+    STATE._stallRecoveryCount = currentAttempt;
+
+    // [TASK 3] Graduated Recovery Strategy
+    if (currentAttempt <= 2) {
+        // --- STAGE 1: SOFT RESET (Reconnect & Re-fetch) ---
+        console.warn(`[Stall Stage 1] Soft Reset Attempt #${currentAttempt}...`);
+        document.getElementById('status-indicator').innerText = `Stalled - Recovering (${currentAttempt})...`;
+        document.getElementById('status-indicator').style.color = "#FFD700";
+
+        // Reconnect WebSocket
+        if (STATE.ws) STATE.ws.close();
+        STATE.fetchingSet.clear();
+        STATE.metadataQueue = [];
+        STATE.appendQueue = [];
+
+        // Attempt to trigger fresh prefetch from current position
+        setTimeout(() => {
+            if (STATE.isPlaying) {
+                initWebSocket();
+                // Check if we need to re-fetch the next chunk
+                const lastAppendIdx = STATE.lastAppendedIndex;
+                const lastAppendChap = STATE.lastAppendedChapter;
+                prefetchNext(lastAppendChap, lastAppendIdx, null, true);
+            }
+        }, 1500);
+        return;
+    }
+
+    // --- STAGE 2: HARD RESET (Emergency Cleanup) ---
+    console.error("[Stall Stage 2] Hard Reset triggered. Clearing Cache/Buffer.");
+    STATE._stallRecoveryCount = 0; // Reset for next time
     STATE.isStalled = true;
     STATE.isPlaying = false;
     audio.pause();
@@ -3443,6 +3552,7 @@ async function handlePlaybackStall() {
     STATE.chunkTimings = [];
     STATE.fetchingSet.clear();
     STATE.metadataQueue = [];
+    STATE.streamingRetryCount.clear();
 
     // 3. Clear IndexedDB (Offline Storage) - "Dọn dẹp sạch cho cái mới đi vào"
     await OFFLINE_MANAGER.clearCache();
@@ -3460,15 +3570,13 @@ async function handlePlaybackStall() {
     }
 
     if (!document.getElementById('status-indicator').innerText.startsWith("Session Expired")) {
-        document.getElementById('status-indicator').innerText = "Stalled - Clear RAM/ROM";
+        document.getElementById('status-indicator').innerText = "Stalled - RAM/ROM Cleared";
         document.getElementById('status-indicator').style.color = "#FF5252";
     }
 
-    // reset counters
     STATE.stallCount = 0;
     STATE.pauseCount = 0;
 
-    // Inform user via UI
     const playBtn = document.getElementById('play-btn');
     if (playBtn) playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
 }
