@@ -108,13 +108,14 @@ def parse_chapters_from_file(file_path: str):
 
 def split_text_into_chunks(text: str, max_chars: int = 500):
     chunks = []
-    lines = text.replace('\r\n', '\n').split('\n')
-    for line in lines:
+    # Optimization: Use splitlines() to avoid unnecessary string copies
+    for line in text.splitlines():
         line = line.strip()
         if not line: continue
         if len(line) <= max_chars:
             chunks.append(line)
         else:
+            # Keep regex for sentence splitting
             sentences = re.split(r'(?<=[.!?])\s+', line)
             temp_chunk = ""
             for sentence in sentences:
@@ -125,7 +126,9 @@ def split_text_into_chunks(text: str, max_chars: int = 500):
                     temp_chunk += " " + sentence if temp_chunk else sentence
             if temp_chunk: chunks.append(temp_chunk.strip())
     
-    valid_chunks = [c for c in chunks if any(char.isalnum() for char in c)]
+    # Optimization: Use regex search instead of manual iteration for alphanumeric check
+    alnum_regex = re.compile(r'\w')
+    valid_chunks = [c for c in chunks if alnum_regex.search(c)]
     return valid_chunks
 
 # API Endpoints
@@ -167,14 +170,8 @@ async def parse_book(file: UploadFile = File(...)):
 
     try:
         chapters = parse_chapters_from_file(tmp_path)
-        processed_chapters = []
-        for chap in chapters:
-            sentences = split_text_into_chunks(chap['content'])
-            processed_chapters.append({
-                "title": chap['title'],
-                "sentences": sentences
-            })
-            
+        
+        # Optimization: Generate metadata in a single pass and remove redundant processed_chapters loop
         chapters_metadata = []
         for chap in chapters:
             sentences = split_text_into_chunks(chap['content'])
