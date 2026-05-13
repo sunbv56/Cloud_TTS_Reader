@@ -693,6 +693,10 @@
                 opacity: 0;
             }
         }
+        .drag-over {
+            @apply !border-primary !bg-primary/10 !shadow-[0_0_30px_rgba(0,229,255,0.2)];
+            transform: scale(1.02) !important;
+        }
     </style>
 </head>
 
@@ -727,8 +731,10 @@
             <button id="stats-toggle-btn"
                 class="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary transition-all relative group">
                 <i class="fas fa-chart-line"></i>
-                <span class="absolute -top-1 -right-1 w-3 h-3 bg-orange-500 rounded-full border-2 border-bg-dark hidden" id="streak-dot"></span>
-                <div class="absolute top-full right-0 mt-2 p-2 bg-surface-high rounded-lg text-[10px] font-bold opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[100]">
+                <span class="absolute -top-1 -right-1 w-3 h-3 bg-orange-500 rounded-full border-2 border-bg-dark hidden"
+                    id="streak-dot"></span>
+                <div
+                    class="absolute top-full right-0 mt-2 p-2 bg-surface-high rounded-lg text-[10px] font-bold opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[100]">
                     Reading Stats
                 </div>
             </button>
@@ -963,7 +969,8 @@
                                 <p><code class="text-primary/80">"phrase, with comma"</code> → skip exact phrase (commas
                                     OK inside quotes)</p>
                                 <p><code class="text-primary/80">"A"="B"</code> &nbsp;→ replace <em>A</em> with
-                                    <em>B</em> (quotes optional)</p>
+                                    <em>B</em> (quotes optional)
+                                </p>
                             </div>
                             <textarea id="dict-input" rows="5"
                                 placeholder='"chào bạn nhé, tôi tên là","chào, tạm biệt"="hi, bye",one,...'
@@ -1405,7 +1412,7 @@
                     <h2 class="text-xl font-bold text-white flex items-center gap-2 mb-6"><i
                             class="fas fa-cloud-upload-alt text-primary"></i> <span data-i18n="import-book">Import
                             Book</span></h2>
-                    <label
+                    <label id="discovery-drop-zone"
                         class="glass flex flex-col items-center justify-center h-80 rounded-3xl border-2 border-dashed border-white/20 hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer group relative overflow-hidden">
                         <div
                             class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity glow-pulse">
@@ -1433,13 +1440,15 @@
     <!-- Reading Stats Modal -->
     <div id="stats-modal" class="fixed inset-0 z-[150] hidden items-center justify-center p-4">
         <div class="absolute inset-0 bg-black/60 backdrop-blur-md" id="stats-modal-overlay"></div>
-        <div class="glass w-full max-w-md rounded-[2.5rem] overflow-hidden relative animate-in fade-in zoom-in duration-300">
+        <div
+            class="glass w-full max-w-md rounded-[2.5rem] overflow-hidden relative animate-in fade-in zoom-in duration-300">
             <div class="p-8 border-b border-glass-border bg-white/5 relative">
                 <h3 class="text-2xl font-black flex items-center gap-4">
                     <i class="fas fa-fire streak-fire" id="streak-icon-big"></i>
                     <span data-i18n="reading-insights">Reading Insights</span>
                 </h3>
-                <button id="close-stats-modal" class="absolute top-8 right-8 text-slate-500 hover:text-white transition-colors">
+                <button id="close-stats-modal"
+                    class="absolute top-8 right-8 text-slate-500 hover:text-white transition-colors">
                     <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
@@ -1465,8 +1474,10 @@
 
                 <div class="p-6 rounded-3xl bg-primary/5 border border-primary/10">
                     <div class="flex items-center justify-between mb-4">
-                        <span class="text-xs font-bold uppercase tracking-widest text-slate-400" data-i18n="offline-storage">Offline Storage</span>
-                        <button id="clear-offline-cache" class="text-[10px] font-bold text-red-400 hover:text-red-300 transition-colors uppercase tracking-widest">
+                        <span class="text-xs font-bold uppercase tracking-widest text-slate-400"
+                            data-i18n="offline-storage">Offline Storage</span>
+                        <button id="clear-offline-cache"
+                            class="text-[10px] font-bold text-red-400 hover:text-red-300 transition-colors uppercase tracking-widest">
                             <i class="fas fa-trash-alt mr-1"></i> <span data-i18n="clear-cache">Clear Cache</span>
                         </button>
                     </div>

@@ -1172,6 +1172,7 @@ async function refreshLibrary() {
             mergeInput.className = 'hidden';
             mergeInput.id = `merge-input-${bookId}`;
             mergeInput.onchange = (e) => mergeChapterFile(e, bookId, data);
+            mergeInput.onclick = (e) => e.stopPropagation(); // Stop bubble when triggered by .click()
 
             // ── Kebab (⋮) button ──────────────────────────────────────────────
             const kebabBtn = document.createElement('button');
@@ -1192,7 +1193,8 @@ async function refreshLibrary() {
             const mergeBtn = document.createElement('button');
             mergeBtn.className = 'w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-slate-300';
             mergeBtn.innerHTML = '<i class="fas fa-file-import w-4 text-center"></i> Nối chương';
-            mergeBtn.onclick = () => {
+            mergeBtn.onclick = (e) => {
+                e.stopPropagation();
                 toggleKebabMenu(bookId);
                 document.getElementById(`merge-input-${bookId}`).click();
             };
@@ -1200,7 +1202,10 @@ async function refreshLibrary() {
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 hover:bg-red-500/10 hover:text-red-400 transition-colors text-slate-300';
             deleteBtn.innerHTML = '<i class="fas fa-trash-alt w-4 text-center"></i> Xóa truyện';
-            deleteBtn.onclick = () => deleteBook(bookId, filename, data.title);
+            deleteBtn.onclick = (e) => {
+                e.stopPropagation();
+                deleteBook(bookId, filename, data.title);
+            };
 
             dropdown.appendChild(mergeBtn);
             dropdown.appendChild(deleteBtn);
@@ -1216,15 +1221,61 @@ async function refreshLibrary() {
                 const discCard = document.createElement('div');
                 const isActive = bookId === STATE.currentBookId;
                 discCard.dataset.bookId = bookId;
-                discCard.className = `glass p-6 rounded-3xl flex flex-col gap-4 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 transition-all border group relative overflow-hidden ${isActive ? 'border-primary bg-primary/10 ring-2 ring-primary/20 shadow-2xl shadow-primary/20' : 'border-white/5 border-t-white/10'}`;
+                discCard.className = `glass p-6 rounded-3xl flex flex-col gap-4 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 transition-all border group relative ${isActive ? 'border-primary bg-primary/10 ring-2 ring-primary/20 shadow-2xl shadow-primary/20' : 'border-white/5 border-t-white/10'}`;
                 discCard.dataset.title = removeVietnameseTones(data.title.toLowerCase()) + " " + data.title.toLowerCase();
+
+                // ── Hidden file input for merge ────────────────────────────────────
+                const mergeInput = document.createElement('input');
+                mergeInput.type = 'file';
+                mergeInput.accept = '.txt';
+                mergeInput.className = 'hidden';
+                mergeInput.id = `merge-input-discovery-${bookId}`;
+                mergeInput.onchange = (e) => mergeChapterFile(e, bookId, data);
+                mergeInput.onclick = (e) => e.stopPropagation(); // Stop bubble when triggered by .click()
+
+                // ── Kebab (⋮) button ──────────────────────────────────────────────
+                const kebabBtn = document.createElement('button');
+                kebabBtn.className = 'absolute top-4 right-4 w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:text-primary hover:bg-white/10 transition-all z-20';
+                kebabBtn.title = 'Tùy chọn';
+                kebabBtn.innerHTML = '<i class="fas fa-ellipsis-v text-sm"></i>';
+                kebabBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    toggleKebabMenu(bookId, true);
+                };
+
+                // ── Dropdown menu ─────────────────────────────────────────────────
+                const dropdown = document.createElement('div');
+                dropdown.id = `discovery-kebab-menu-${bookId}`;
+                dropdown.className = 'hidden absolute right-4 top-16 w-48 bg-surface-high/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden py-1';
+                dropdown.onclick = (e) => e.stopPropagation();
+
+                const mergeBtn = document.createElement('button');
+                mergeBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-slate-300 font-bold';
+                mergeBtn.innerHTML = '<i class="fas fa-file-import w-4 text-center"></i> Nối chương';
+                mergeBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    toggleKebabMenu(bookId, true);
+                    document.getElementById(`merge-input-discovery-${bookId}`).click();
+                };
+
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-red-500/10 hover:text-red-400 transition-colors text-slate-300 font-bold';
+                deleteBtn.innerHTML = '<i class="fas fa-trash-alt w-4 text-center"></i> Xóa truyện';
+                deleteBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    deleteBook(bookId, filename, data.title);
+                };
+
+                dropdown.appendChild(mergeBtn);
+                dropdown.appendChild(deleteBtn);
+
                 discCard.innerHTML = `
                     <div class="absolute inset-0 bg-primary/0 group-hover:bg-primary/5 transition-colors duration-500"></div>
                     <div class="flex items-center gap-4 relative z-10">
                         <div class="w-12 h-12 rounded-xl ${isActive ? 'bg-primary text-black shadow-lg shadow-primary/30' : 'bg-white/5 border border-white/10 text-primary'} flex items-center justify-center shrink-0">
                             <i class="fas ${isActive ? 'fa-volume-up' : 'fa-book'} text-xl"></i>
                         </div>
-                        <div class="flex-1 min-w-0">
+                        <div class="flex-1 min-w-0 pr-8">
                             <h3 class="${isActive ? 'text-primary' : 'text-white'} font-bold truncate group-hover:text-primary transition-colors" title="${data.title}">${data.title}</h3>
                             <div class="text-xs ${isActive ? 'text-primary/70' : 'text-slate-400'} flex items-center gap-2 mt-1">
                                 <i class="fas ${isActive ? 'fa-play' : 'fa-bookmark'} text-[10px]"></i> ${isActive ? 'Currently Reading' : 'Continue Reading'}
@@ -1243,6 +1294,11 @@ async function refreshLibrary() {
                     </div>
                 `;
                 discCard.onclick = () => loadBookFromStorage(bookId, data);
+
+                discCard.appendChild(mergeInput);
+                discCard.appendChild(kebabBtn);
+                discCard.appendChild(dropdown);
+
                 discoveryGrid.appendChild(discCard);
             }
         });
@@ -1258,18 +1314,22 @@ async function refreshLibrary() {
 /**
  * Toggles a kebab dropdown menu. Closes all other open menus first.
  */
-function toggleKebabMenu(bookId) {
-    const targetId = `kebab-menu-${bookId}`;
-    document.querySelectorAll('[id^="kebab-menu-"]').forEach(menu => {
+function toggleKebabMenu(bookId, isDiscovery = false) {
+    const prefix = isDiscovery ? 'discovery-kebab-menu-' : 'kebab-menu-';
+    const targetId = prefix + bookId;
+
+    // Hide ALL open menus (sidebar and discovery)
+    document.querySelectorAll('[id*="kebab-menu-"]').forEach(menu => {
         if (menu.id !== targetId) menu.classList.add('hidden');
     });
+
     const menu = document.getElementById(targetId);
     if (menu) menu.classList.toggle('hidden');
 }
 
 // Close all kebab menus when clicking anywhere outside
 document.addEventListener('click', () => {
-    document.querySelectorAll('[id^="kebab-menu-"]').forEach(menu => menu.classList.add('hidden'));
+    document.querySelectorAll('[id*="kebab-menu-"]').forEach(menu => menu.classList.add('hidden'));
 });
 
 // ── Feature 1: Delete Book ───────────────────────────────────────────────────
@@ -1458,10 +1518,10 @@ const handleFileUpload = async (e) => {
         const data = await parseRes.json();
         // Use book_ prefix and numeric-like ID to match screenshot
         const bookId = "book_" + file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, "_");
-        loadBook(data, bookId, file.name);
+        await loadBook(data, bookId, file.name);
 
-        // Refresh library sidebar
-        refreshLibrary();
+        // Auto-sync via UI button click for visual feedback
+        document.getElementById('sync-btn')?.click();
     } catch (err) {
         console.error(err);
         alert("Error parsing book.");
@@ -1473,6 +1533,43 @@ const handleFileUpload = async (e) => {
 fileInput.onchange = handleFileUpload;
 const discoveryFileInput = document.getElementById('discovery-file-input');
 if (discoveryFileInput) discoveryFileInput.onchange = handleFileUpload;
+
+/**
+ * Sets up drag and drop functionality for the upload zone.
+ */
+function setupDragAndDrop() {
+    const dropZone = document.getElementById('discovery-drop-zone');
+    if (!dropZone) return;
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        }, false);
+    });
+
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => {
+            dropZone.classList.add('drag-over');
+        }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => {
+            dropZone.classList.remove('drag-over');
+        }, false);
+    });
+
+    dropZone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files && files.length > 0) {
+            handleFileUpload({ target: { files: files } });
+        }
+    }, false);
+}
+
+setupDragAndDrop();
 
 async function loadBook(bookData, bookId, filename) {
     // 0. Robust Engine Reset - "Dừng và dọn sạch mọi thứ cũ trước khi vào cái mới"
