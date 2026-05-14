@@ -70,6 +70,11 @@ let STATE = {
     streamingRetryCount: new Map(), // key -> retry attempt count for streaming
     _stallRecoveryCount: 0, // tracking recovery attempts
     tocAutoMinimized: false,
+    // Segmentation & Pagination
+    isSegmented: false,
+    segmentsCount: 0,
+    currentSegmentIndex: -1,
+    loadedSegments: new Set(), // indices of segments currently in memory
     // Performance Optimization State
     heartbeatInterval: null,
     lastHighlightedIndex: -1,
@@ -1519,37 +1524,52 @@ async function mergeChapterFile(event, bookId, bookData) {
 }
 
 async function loadBookFromStorage(bookId, bookData) {
-    // Close sidebar immediately on selection (don't wait for loading to finish)
+    // Close sidebar immediately on selection
     toggleSidebar(false);
 
     showLoading("Fetching " + bookData.title + "...");
-    document.getElementById('status-indicator').innerText = "Loading from Storage...";
+    document.getElementById('status-indicator').innerText = "Loading Metadata...";
     const currentTitleEl = document.getElementById('current-title');
     currentTitleEl.innerText = "Fetching " + bookData.title + "...";
     currentTitleEl.title = bookData.title;
 
     try {
-        const filename = bookData.filename || (bookId.replace("book_", "") + ".txt");
-        const fileRef = ref(storage, `users/${STATE.user.uid}/files/${filename}`);
-        const url = await getDownloadURL(fileRef);
+        // Check if book is segmented in the new stories collection
+        const storyRef = doc(db, "users", STATE.user.uid, "stories", bookId);
+        const storySnap = await getDoc(storyRef);
 
-        const response = await fetch(url);
-        const blob = await response.blob();
-        const file = new File([blob], filename, { type: "text/plain" });
+        let bookInfo = null;
+        if (storySnap.exists()) {
+            bookInfo = storySnap.data();
+            console.log("Found segmented story info:", bookInfo);
+        }
 
-        const formData = new FormData();
-        formData.append('file', file);
+        if (bookInfo && bookInfo.isSegmented) {
+            // Segmented Load Flow
+            await loadBook(bookInfo, bookId, bookInfo.filename);
+        } else {
+            // Traditional Load Flow
+            const filename = bookData.filename || (bookId.replace("book_", "") + ".txt");
+            const fileRef = ref(storage, `users/${STATE.user.uid}/files/${filename}`);
+            const url = await getDownloadURL(fileRef);
 
-        const parseRes = await fetch('/api/parse-book', { method: 'POST', body: formData });
-        const data = await parseRes.json();
+            const response = await fetch(url);
+            const blob = await response.blob();
+            const file = new File([blob], filename, { type: "text/plain" });
 
-        // Cập nhật trạng thái Highlight trước khi loadBook (để UI phản hồi nhanh)
-        STATE.currentBookId = bookId;
-        updateLibraryHighlight();
+            const formData = new FormData();
+            formData.append('file', file);
 
-        await loadBook(data, bookId, filename);
+            const parseRes = await fetch('/api/parse-book', { method: 'POST', body: formData });
+            const data = await parseRes.json();
+
+            STATE.currentBookId = bookId;
+            updateLibraryHighlight();
+
+            await loadBook(data, bookId, filename);
+        }
         document.getElementById('status-indicator').innerText = "Ready";
-        saveProgress(true); // Register the book in library immediately
+        saveProgress(true);
     } catch (err) {
         console.error("Load from Storage Error:", err);
         alert("Failed to load book from storage. Make sure the file still exists.");
@@ -1565,28 +1585,37 @@ const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
-    showLoading("Uploading & Parsing " + file.name + "...");
+    if (!STATE.user) {
+        alert("Please login first to upload books.");
+        return;
+    }
+
+    showLoading("Uploading & Partitioning " + file.name + "...");
     const formData = new FormData();
+    formData.append('userId', STATE.user.uid);
     formData.append('file', file);
 
-    document.getElementById('status-indicator').innerText = "Uploading & Parsing...";
+    document.getElementById('status-indicator').innerText = "Processing Story...";
     try {
-        // Parallel: Upload to Firebase Storage and Parse via FastAPI
-        const [uploadRes, parseRes] = await Promise.all([
-            uploadToStorage(file),
-            fetch('/api/parse-book', { method: 'POST', body: formData })
-        ]);
+        const response = await fetch('/api/upload-story', {
+            method: 'POST',
+            body: formData
+        });
 
-        const data = await parseRes.json();
-        // Use book_ prefix and numeric-like ID to match screenshot
-        const bookId = "book_" + file.name.replace(/\.[^/.]+$/, "").replace(/[^a-zA-Z0-9]/g, "_");
-        await loadBook(data, bookId, file.name);
+        if (!response.ok) throw new Error("Upload failed");
+        const data = await response.json();
+
+        // Fetch fresh metadata
+        const metaRes = await fetch(`/api/stories/${STATE.user.uid}/${data.storyId}/metadata`);
+        const bookInfo = await metaRes.json();
+
+        await loadBook(bookInfo, data.storyId, file.name);
 
         // Auto-sync via UI button click for visual feedback
         document.getElementById('sync-btn')?.click();
     } catch (err) {
         console.error(err);
-        alert("Error parsing book.");
+        alert("Error uploading story: " + err.message);
     } finally {
         hideLoading();
     }
@@ -1634,79 +1663,114 @@ function setupDragAndDrop() {
 setupDragAndDrop();
 
 async function loadBook(bookData, bookId, filename) {
-    // 0. Robust Engine Reset - "Dừng và dọn sạch mọi thứ cũ trước khi vào cái mới"
+    // 0. Robust Engine Reset
     await resetAudioEngine();
 
-    // Auto-close sidebar on mobile after selection
     toggleSidebar(false);
     toggleDiscoveryMode(false);
 
-    // Dọn dẹp IndexedDB cũ để nhường chỗ cho sách mới - "Dọn dẹp sạch cho cái mới đi vào"
     await OFFLINE_MANAGER.clearCache();
 
-    // Capture UI Preferences to maintain global consistency
     const currentUI = {
         fontSize: STATE.settings.fontSize,
         textColor: STATE.settings.textColor
     };
 
-    // Reset settings to Defaults (Voice/Speed/Pitch)
     STATE.settings = { ...JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), ...currentUI };
 
-    STATE.currentBook = bookData;
+    // Segmentation Logic
+    STATE.isSegmented = bookData.isSegmented || false;
+    STATE.segmentsCount = bookData.segmentsCount || 0;
+    STATE.currentSegmentIndex = -1;
+    STATE.loadedSegments.clear();
+
+    if (STATE.isSegmented) {
+        // For segmented books, bookData is the metadata from Firestore
+        STATE.currentBook = {
+            title: bookData.title,
+            chapters: new Array(bookData.totalChapters).fill(null).map((_, i) => ({
+                title: `Chapter ${i + 1}`, // Placeholder until segment loads
+                sentences: null
+            }))
+        };
+    } else {
+        STATE.currentBook = bookData;
+    }
+
     STATE.currentBookId = bookId || ("book_" + bookData.title.replace(/[^a-zA-Z0-9]/g, "_"));
     STATE.currentFilename = filename || (STATE.currentBook.title + ".txt");
 
     // Check for existing progress
     const progress = await loadProgress(STATE.currentBookId);
     if (progress && progress.last_read_chunk !== undefined) {
-        // Restore user-edited title and correct filename
         if (progress.title) STATE.currentBook.title = progress.title;
         if (progress.filename) STATE.currentFilename = progress.filename;
 
+        const totalChunks = bookData.totalChapters ? 999999 : getTotalChunks(); // Hack for segmented jump
         const indices = getLocalIndices(progress.last_read_chunk);
         STATE.currentChapterIndex = indices.chapterIndex;
         STATE.currentSentenceIndex = indices.sentenceIndex;
         STATE.lastSavedChunkIndex = progress.last_read_chunk;
 
-        // Restore book-specific voice settings
         if (progress.settings) {
-            // Restore voice settings but preserve the current global theme
             const { theme, ...bookSettings } = progress.settings;
             STATE.settings = { ...STATE.settings, ...bookSettings };
-            console.log("Restored saved book settings from Firestore (Theme preserved from LocalStorage).");
         }
-        console.log(`Resuming from global chunk ${progress.last_read_chunk}`);
     } else {
         STATE.currentChapterIndex = 0;
         STATE.currentSentenceIndex = 0;
         STATE.lastSavedChunkIndex = -1;
     }
 
-    // Apply all settings (UI + Voice) once at the end
+    // If segmented, we MUST load the segment containing currentChapterIndex
+    if (STATE.isSegmented) {
+        const segIdx = Math.floor(STATE.currentChapterIndex / 100);
+        await fetchSegment(segIdx);
+    }
+
     applySettingsToUI();
 
     const currentTitleEl = document.getElementById('current-title');
-    currentTitleEl.innerText = bookData.title;
-    currentTitleEl.title = bookData.title;
+    currentTitleEl.innerText = STATE.currentBook.title;
+    currentTitleEl.title = STATE.currentBook.title;
     document.getElementById('edit-title-btn').classList.remove('hidden');
-    renderChapter(STATE.currentChapterIndex);
+
+    await renderChapter(STATE.currentChapterIndex);
     renderTOC();
     updateUI();
 
     if (progress) {
-        // If resuming, highlight the sentence
         highlightSentence(STATE.currentSentenceIndex);
     }
 
-    // Immediately sync to register the book and filename in the library (Forced)
-    saveProgress(true); // Register the book/resume progress immediately
-
-    // Auto-play from current position
+    saveProgress(true);
     playFromSentence(STATE.currentSentenceIndex);
-
-    // Sync library highlight
     updateLibraryHighlight();
+}
+
+async function fetchSegment(segmentIndex) {
+    if (STATE.loadedSegments.has(segmentIndex)) return;
+
+    console.log(`[Segmentation] Fetching segment ${segmentIndex}...`);
+    try {
+        const res = await fetch(`/api/stories/${STATE.user.uid}/${STATE.currentBookId}/segments/${segmentIndex}`);
+        const data = await res.json();
+
+        // Update chapters in currentBook
+        const startOffset = segmentIndex * 100;
+        data.chapters.forEach((chap, i) => {
+            const chapIdx = startOffset + i;
+            if (STATE.currentBook.chapters[chapIdx]) {
+                STATE.currentBook.chapters[chapIdx] = chap;
+            }
+        });
+
+        STATE.loadedSegments.add(segmentIndex);
+        STATE.currentSegmentIndex = segmentIndex;
+        console.log(`[Segmentation] Segment ${segmentIndex} loaded.`);
+    } catch (err) {
+        console.error("Failed to fetch segment:", err);
+    }
 }
 
 /**
@@ -1787,6 +1851,15 @@ function updateLibraryHighlight() {
 async function fetchChapterSentences(index) {
     if (!STATE.user || !STATE.currentFilename) return;
 
+    // If segmented, we should already have sentences from fetchSegment
+    if (STATE.isSegmented) {
+        const segIdx = Math.floor(index / 100);
+        if (!STATE.loadedSegments.has(segIdx)) {
+            await fetchSegment(segIdx);
+        }
+        return;
+    }
+
     const formData = new FormData();
     formData.append('userId', STATE.user.uid);
     formData.append('filename', STATE.currentFilename);
@@ -1816,6 +1889,13 @@ async function fetchChapterSentences(index) {
 
 async function renderChapter(index) {
     STATE.currentChapterIndex = index;
+
+    // If segmented, ensure chapter data exists
+    if (STATE.isSegmented) {
+        const segIdx = Math.floor(index / 100);
+        await fetchSegment(segIdx);
+    }
+
     const chapter = STATE.currentBook.chapters[index];
     document.getElementById('current-chapter').innerText = chapter.title;
     document.getElementById('current-chapter').title = chapter.title;
@@ -1958,9 +2038,10 @@ function renderTOC() {
                 updateDownloadBar();
                 return;
             }
-            renderChapter(i);
-            playFromSentence(0);
-            closeTOC();
+            renderChapter(i).then(() => {
+                playFromSentence(0);
+                closeTOC();
+            });
         };
         tocList.appendChild(div);
     });
@@ -2334,7 +2415,7 @@ async function deleteSelectedChapters() {
         if (STATE.currentChapterIndex >= data.chapters.length) {
             STATE.currentChapterIndex = 0;
         }
-        renderChapter(STATE.currentChapterIndex);
+        await renderChapter(STATE.currentChapterIndex);
 
     } catch (err) {
         console.error('Delete Error:', err);
@@ -2747,7 +2828,7 @@ audio.onwaiting = () => {
     }
 };
 
-audio.ontimeupdate = () => {
+audio.ontimeupdate = async () => {
     const curTime = audio.currentTime || 0;
 
     // --- OPTIMIZATION: Throttle execution frequency ---
@@ -2772,7 +2853,7 @@ audio.ontimeupdate = () => {
             // Chapter Change Detection
             if (currentChunk.chapterIndex !== STATE.currentChapterIndex) {
                 console.log(`Transitioning to Chapter ${currentChunk.chapterIndex}`);
-                renderChapter(currentChunk.chapterIndex);
+                await renderChapter(currentChunk.chapterIndex);
 
                 // [FIX]: Chỉ cập nhật Mục lục nếu nó đang mở, tránh lỗi tự động trượt ra trên di động do hàm scrollIntoView
                 const tocOverlay = document.getElementById('toc-overlay');
@@ -2792,6 +2873,18 @@ audio.ontimeupdate = () => {
             prefetchNext(currentChunk.chapterIndex, STATE.currentSentenceIndex);
             saveProgress(false);
             updateUI(); // Keep player display in sync
+        }
+    }
+
+    // --- Segmentation: 80% Proactive Fetching ---
+    if (STATE.isSegmented) {
+        const chaptersInSegment = 100;
+        const currentRelativeIdx = STATE.currentChapterIndex % chaptersInSegment;
+        const nextSegmentIdx = Math.floor(STATE.currentChapterIndex / chaptersInSegment) + 1;
+
+        if (currentRelativeIdx >= 80 && nextSegmentIdx < STATE.segmentsCount && !STATE.loadedSegments.has(nextSegmentIdx)) {
+            console.log(`[Segmentation] 80% mark reached in segment. Prefetching segment ${nextSegmentIdx}...`);
+            fetchSegment(nextSegmentIdx); // Background fetch
         }
     }
 
@@ -2937,18 +3030,18 @@ function applyTypographySettings() {
 }
 
 // --- UI Interactions ---
-document.getElementById('prev-btn').onclick = () => {
+document.getElementById('prev-btn').onclick = async () => {
     if (STATE.currentChapterIndex > 0) {
         const prevChap = STATE.currentChapterIndex - 1;
-        renderChapter(prevChap);
+        await renderChapter(prevChap);
         playFromSentence(0);
     }
 };
 
-document.getElementById('next-btn').onclick = () => {
+document.getElementById('next-btn').onclick = async () => {
     if (STATE.currentBook && STATE.currentChapterIndex < STATE.currentBook.chapters.length - 1) {
         const nextChap = STATE.currentChapterIndex + 1;
-        renderChapter(nextChap);
+        await renderChapter(nextChap);
         playFromSentence(0);
     }
 };

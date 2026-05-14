@@ -58,6 +58,35 @@ except Exception as e:
 app = FastAPI()
 NUM_WORKERS = 3  # Tăng số lượng worker nếu muốn nạp song song nhanh hơn
 
+def sanitize_slug(text: str):
+    """Convert Vietnamese text to clean ASCII slug."""
+    # Convert to lowercase
+    text = text.lower()
+    
+    # Vietnamese character mapping
+    patterns = {
+        '[àáảãạăằắẳẵặâầấẩẫậ]': 'a',
+        '[èéẻẽẹêềếểễệ]': 'e',
+        '[ìíỉĩị]': 'i',
+        '[òóỏõọôồốổỗộơờớởỡợ]': 'o',
+        '[ùúủũụưừứửữự]': 'u',
+        '[ỳýỷỹỵ]': 'y',
+        'đ': 'd'
+    }
+    for pattern, replacement in patterns.items():
+        text = re.sub(pattern, replacement, text)
+    
+    # Remove special characters, keep only a-z, 0-9 and spaces
+    text = re.sub(r'[^a-z0-9\s-]', '', text)
+    
+    # Replace spaces with single dash
+    text = re.sub(r'\s+', '-', text).strip('-')
+    
+    # Remove multiple dashes
+    text = re.sub(r'-+', '-', text)
+    
+    return text
+
 # Mount static files
 static_dir = os.path.join(os.path.dirname(__file__), "static")
 if not os.path.exists(static_dir):
@@ -131,6 +160,28 @@ def split_text_into_chunks(text: str, max_chars: int = 500):
     valid_chunks = [c for c in chunks if alnum_regex.search(c)]
     return valid_chunks
 
+def partition_chapters(chapters: List[dict], segment_size: int = 100):
+    """Partition chapters into segments of 100."""
+    segments = []
+    for i in range(0, len(chapters), segment_size):
+        segment = chapters[i : i + segment_size]
+        segments.append(segment)
+    return segments
+
+def convert_firestore_data(data: dict):
+    """Convert Firestore-specific types (like DatetimeWithNanoseconds) to JSON serializable formats."""
+    if not data:
+        return data
+    for key, value in data.items():
+        # Handle Firestore Timestamps
+        if hasattr(value, 'isoformat'):
+            data[key] = value.isoformat()
+        elif isinstance(value, list):
+            data[key] = [convert_firestore_data(i) if isinstance(i, dict) else i for i in value]
+        elif isinstance(value, dict):
+            data[key] = convert_firestore_data(value)
+    return data
+
 # API Endpoints
 @app.get("/stream/audio")
 async def stream_audio(text: str, voice: str, rate: str = "+0%", pitch: str = "+0Hz", volume: str = "+0%"):
@@ -187,6 +238,121 @@ async def parse_book(file: UploadFile = File(...)):
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+@app.post("/api/upload-story")
+async def upload_story(
+    userId: str = Form(...),
+    file: UploadFile = File(...)
+):
+    """
+    Advanced upload with chunking logic.
+    If chapters > 200, splits into 100-chapter segments.
+    """
+    if not firebase_admin_initialized:
+        return JSONResponse({"error": "Firebase Admin not initialized"}, status_code=500)
+
+    # Sanitize title
+    story_title = file.filename.replace(".txt", "")
+    story_id = sanitize_slug(story_title)
+    if not story_id:
+        story_id = "story"
+    story_id += "_" + str(int(asyncio.get_event_loop().time()))
+    
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+        while chunk := await file.read(1024 * 1024):
+            tmp.write(chunk)
+        tmp_path = tmp.name
+
+    try:
+        chapters = parse_chapters_from_file(tmp_path)
+        total_chapters = len(chapters)
+        
+        # Metadata for Firestore
+        story_metadata = {
+            "id": story_id,
+            "title": story_title,
+            "totalChapters": total_chapters,
+            "isSegmented": total_chapters > 200,
+            "createdAt": firestore.SERVER_TIMESTAMP,
+            "filename": file.filename
+        }
+
+        bucket = storage.bucket()
+        
+        if story_metadata["isSegmented"]:
+            segments = partition_chapters(chapters)
+            story_metadata["segmentsCount"] = len(segments)
+            
+            # Upload each segment as a JSON file
+            for i, seg_chapters in enumerate(segments):
+                seg_data = []
+                for chap in seg_chapters:
+                    sentences = split_text_into_chunks(chap['content'])
+                    seg_data.append({
+                        "title": chap['title'],
+                        "sentences": sentences
+                    })
+                
+                seg_blob_path = f"users/{userId}/stories/{story_id}/segments/seg_{i}.json"
+                blob = bucket.blob(seg_blob_path)
+                blob.upload_from_string(json.dumps(seg_data), content_type="application/json")
+        else:
+            # Traditional upload for smaller books (keep existing .txt behavior or JSON?)
+            # User said: "199 chương thì cũng vẫn giữ nguyên txt"
+            # But we need a way to fetch chapters easily. Let's still upload the .txt
+            # and maybe a small JSON metadata for chapters.
+            blob_path = f"users/{userId}/files/{file.filename}"
+            blob = bucket.blob(blob_path)
+            blob.upload_from_filename(tmp_path)
+            
+            # Store chapter titles/counts in metadata for TOC
+            chapters_summary = []
+            for chap in chapters:
+                sentences = split_text_into_chunks(chap['content'])
+                chapters_summary.append({
+                    "title": chap['title'],
+                    "count": len(sentences)
+                })
+            story_metadata["chaptersSummary"] = chapters_summary
+
+        # Save metadata to Firestore
+        db_admin.collection("users").document(userId).collection("stories").document(story_id).set(story_metadata)
+
+        return JSONResponse({
+            "status": "ok",
+            "storyId": story_id,
+            "isSegmented": story_metadata["isSegmented"]
+        })
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+@app.get("/api/stories/{userId}/{storyId}/metadata")
+async def get_story_metadata(userId: str, storyId: str):
+    if not firebase_admin_initialized:
+        return JSONResponse({"error": "Firebase Admin not initialized"}, status_code=500)
+    
+    doc_ref = db_admin.collection("users").document(userId).collection("stories").document(storyId)
+    doc = doc_ref.get()
+    if not doc.exists:
+        return JSONResponse({"error": "Story not found"}, status_code=404)
+    
+    return JSONResponse(convert_firestore_data(doc.to_dict()))
+
+@app.get("/api/stories/{userId}/{storyId}/segments/{segmentIndex}")
+async def get_segment_data(userId: str, storyId: str, segmentIndex: int):
+    if not firebase_admin_initialized:
+        return JSONResponse({"error": "Firebase Admin not initialized"}, status_code=500)
+    
+    bucket = storage.bucket()
+    blob_path = f"users/{userId}/stories/{storyId}/segments/seg_{segmentIndex}.json"
+    blob = bucket.blob(blob_path)
+    
+    if not blob.exists():
+        return JSONResponse({"error": "Segment not found"}, status_code=404)
+    
+    data = json.loads(blob.download_as_text())
+    return JSONResponse({"chapters": data})
 
 @app.post("/api/get-chapter-sentences")
 async def get_chapter_sentences(
@@ -276,11 +442,57 @@ async def append_chapter(
                 while chunk := await file.read(1024 * 1024):
                     f.write(chunk)
                     
-            # 3. Re-upload merged file
-            blob.upload_from_filename(tmp_path)
-            
-            # 4. Parse the merged result to get new metadata
+            # 3. Parse result
             chapters = parse_chapters_from_file(tmp_path)
+            total_chapters = len(chapters)
+            is_segmented = total_chapters > 200
+
+            # 4. Handle Segmentation Transition
+            if is_segmented:
+                # If it's becoming segmented or already is, we use the story_id structure
+                story_id = bookId if bookId else (sanitize_slug(filename.replace(".txt", "")) + "_" + str(int(asyncio.get_event_loop().time())))
+                
+                segments = partition_chapters(chapters)
+                story_metadata = {
+                    "id": story_id,
+                    "title": filename.replace(".txt", ""),
+                    "totalChapters": total_chapters,
+                    "isSegmented": True,
+                    "segmentsCount": len(segments),
+                    "updatedAt": firestore.SERVER_TIMESTAMP
+                }
+
+                # Upload segments
+                for i, seg_chapters in enumerate(segments):
+                    seg_data = []
+                    for chap in seg_chapters:
+                        sentences = split_text_into_chunks(chap['content'])
+                        seg_data.append({"title": chap['title'], "sentences": sentences})
+                    
+                    seg_blob_path = f"users/{userId}/stories/{story_id}/segments/seg_{i}.json"
+                    bucket.blob(seg_blob_path).upload_from_string(json.dumps(seg_data), content_type="application/json")
+                
+                # Update Firestore
+                db_admin.collection("users").document(userId).collection("stories").document(story_id).set(story_metadata, merge=True)
+            else:
+                # 5. Traditional Re-upload
+                blob.upload_from_filename(tmp_path)
+                
+                # Update Firestore metadata even for non-segmented (if document exists)
+                story_id = bookId
+                if story_id:
+                    chapters_summary = []
+                    for chap in chapters:
+                        sentences = split_text_into_chunks(chap['content'])
+                        chapters_summary.append({"title": chap['title'], "count": len(sentences)})
+                    
+                    db_admin.collection("users").document(userId).collection("stories").document(story_id).update({
+                        "totalChapters": total_chapters,
+                        "chaptersSummary": chapters_summary,
+                        "updatedAt": firestore.SERVER_TIMESTAMP
+                    })
+
+            # Re-generate summary for the frontend response
             chapters_metadata = []
             for chap in chapters:
                 sentences = split_text_into_chunks(chap['content'])
@@ -291,7 +503,8 @@ async def append_chapter(
                 
             return JSONResponse({
                 "title": filename.replace(".txt", ""),
-                "chapters": chapters_metadata
+                "chapters": chapters_metadata,
+                "isSegmented": is_segmented
             })
         except Exception as e:
             print(f"Error in append_chapter processing: {e}")
