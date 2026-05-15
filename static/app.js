@@ -1753,7 +1753,7 @@ async function fetchSegment(segmentIndex) {
 
     console.log(`[Segmentation] Fetching segment ${segmentIndex}...`);
     try {
-        const res = await fetch(`/api/stories/${STATE.user.uid}/${STATE.currentBookId}/segments/${segmentIndex}`);
+        const res = await fetch(`/api/stories/${STATE.user.uid}/${STATE.currentBookId}/segments/${segmentIndex}?t=${Date.now()}`);
         const data = await res.json();
 
         // Update chapters in currentBook
@@ -2392,7 +2392,17 @@ async function deleteSelectedChapters() {
         const newTotalChunks = data.chapters.reduce((sum, ch) => sum + (ch.count || 0), 0);
 
         // Update local state
-        STATE.currentBook.chapters = data.chapters;
+        if (STATE.isSegmented) {
+            // Re-allocate placeholders because chapters shifted
+            STATE.currentBook.chapters = new Array(data.chapters.length).fill(null).map((_, i) => ({
+                title: data.chapters[i].title,
+                count: data.chapters[i].count,
+                sentences: null
+            }));
+            STATE.loadedSegments.clear();
+        } else {
+            STATE.currentBook.chapters = data.chapters;
+        }
 
         // Update Firestore total_chunks (to keep library in sync)
         const bookRef = doc(db, "users", STATE.user.uid, "progress", STATE.currentBookId);
@@ -3821,6 +3831,7 @@ async function openEditChapterModal(index) {
     try {
         const formData = new FormData();
         formData.append('userId', STATE.user.uid);
+        formData.append('bookId', STATE.currentBookId);
         formData.append('filename', STATE.currentFilename);
         formData.append('chapterIndex', index);
 
@@ -3879,9 +3890,17 @@ async function saveChapterEdit() {
         if (response.ok) {
             // Update local state
             const chapter = STATE.currentBook.chapters[editingChapterIndex];
-            chapter.title = data.title;
-            chapter.count = data.count;
-            chapter.sentences = data.sentences;
+            if (chapter) {
+                chapter.title = data.title;
+                chapter.count = data.count;
+                chapter.sentences = data.sentences;
+            }
+
+            // Invalidate the segment cache to force a fresh fetch from the server
+            if (STATE.isSegmented) {
+                const segIdx = Math.floor(editingChapterIndex / 100);
+                STATE.loadedSegments.delete(segIdx);
+            }
 
             // If we're currently viewing this chapter, re-render it
             if (STATE.currentChapterIndex === editingChapterIndex) {

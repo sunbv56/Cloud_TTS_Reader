@@ -168,6 +168,31 @@ def partition_chapters(chapters: List[dict], segment_size: int = 100):
         segments.append(segment)
     return segments
 
+def reconstruct_text_from_segments(userId: str, story_id: str, segments_count: int):
+    """
+    Reconstruct full text from JSON segments if the master .txt is missing.
+    Ensures '===' separators are restored between chapters.
+    """
+    bucket = storage.bucket()
+    full_text = ""
+    for i in range(segments_count):
+        blob_path = f"users/{userId}/stories/{story_id}/segments/seg_{i}.json"
+        blob = bucket.blob(blob_path)
+        if blob.exists():
+            try:
+                data = json.loads(blob.download_as_text())
+                for chapter in data:
+                    # Add separator if this is NOT the first chapter of the WHOLE book
+                    if full_text:
+                        full_text += "\n\n===\n\n"
+                    
+                    # Reconstruct chapter: Title + Content (sentences)
+                    # We assume title is the first line
+                    full_text += chapter['title'] + "\n" + "\n".join(chapter['sentences'])
+            except Exception as e:
+                print(f"[Recovery] Error downloading segment {i}: {e}")
+    return full_text
+
 def convert_firestore_data(data: dict):
     """Convert Firestore-specific types (like DatetimeWithNanoseconds) to JSON serializable formats."""
     if not data:
@@ -279,6 +304,11 @@ async def upload_story(
 
         bucket = storage.bucket()
         
+        # ── 1. Always upload the master .txt file (used for future appends/edits) ──
+        master_blob_path = f"users/{userId}/files/{file.filename}"
+        master_blob = bucket.blob(master_blob_path)
+        master_blob.upload_from_filename(tmp_path)
+        
         if story_metadata["isSegmented"]:
             segments = partition_chapters(chapters)
             story_metadata["segmentsCount"] = len(segments)
@@ -297,14 +327,7 @@ async def upload_story(
                 blob = bucket.blob(seg_blob_path)
                 blob.upload_from_string(json.dumps(seg_data), content_type="application/json")
         else:
-            # Traditional upload for smaller books (keep existing .txt behavior or JSON?)
-            # User said: "199 chương thì cũng vẫn giữ nguyên txt"
-            # But we need a way to fetch chapters easily. Let's still upload the .txt
-            # and maybe a small JSON metadata for chapters.
-            blob_path = f"users/{userId}/files/{file.filename}"
-            blob = bucket.blob(blob_path)
-            blob.upload_from_filename(tmp_path)
-            
+            # Traditional upload metadata
             # Store chapter titles/counts in metadata for TOC
             chapters_summary = []
             for chap in chapters:
@@ -430,24 +453,39 @@ async def append_chapter(
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
         tmp_path = tmp.name
         try:
-            # 1. Download existing if it exists
-            if blob.exists():
+            # 1. Check if we need to recover text from segments (for already split books missing master .txt)
+            is_recovered = False
+            if not blob.exists() and bookId:
+                story_ref = db_admin.collection("users").document(userId).collection("stories").document(bookId)
+                story_doc = story_ref.get()
+                if story_doc.exists:
+                    meta = story_doc.to_dict()
+                    if meta.get("isSegmented") and meta.get("segmentsCount"):
+                        print(f"[Append] Source .txt missing but segments found for {bookId}. Reconstructing...")
+                        recovered_text = reconstruct_text_from_segments(userId, bookId, meta["segmentsCount"])
+                        if recovered_text:
+                            with open(tmp_path, "w", encoding="utf-8") as f:
+                                f.write(recovered_text + "\n\n")
+                            is_recovered = True
+
+            # 2. Download existing .txt if it exists (traditional or newly uploaded segmented)
+            if not is_recovered and blob.exists():
                 blob.download_to_filename(tmp_path)
                 # Ensure there's a newline separator
                 with open(tmp_path, "a", encoding="utf-8") as f:
                     f.write("\n\n")
             
-            # 2. Append new content
+            # 3. Append new content
             with open(tmp_path, "ab") as f:
                 while chunk := await file.read(1024 * 1024):
                     f.write(chunk)
                     
-            # 3. Parse result
+            # 4. Parse result
             chapters = parse_chapters_from_file(tmp_path)
             total_chapters = len(chapters)
             is_segmented = total_chapters > 200
 
-            # 4. Handle Segmentation Transition
+            # 5. Handle Segmentation Transition
             if is_segmented:
                 # If it's becoming segmented or already is, we use the story_id structure
                 story_id = bookId if bookId else (sanitize_slug(filename.replace(".txt", "")) + "_" + str(int(asyncio.get_event_loop().time())))
@@ -474,11 +512,14 @@ async def append_chapter(
                 
                 # Update Firestore
                 db_admin.collection("users").document(userId).collection("stories").document(story_id).set(story_metadata, merge=True)
+                
+                # Also upload the updated .txt for future appends
+                blob.upload_from_filename(tmp_path)
             else:
-                # 5. Traditional Re-upload
+                # 6. Traditional Re-upload
                 blob.upload_from_filename(tmp_path)
                 
-                # Update Firestore metadata even for non-segmented (if document exists)
+                # Update Firestore metadata even for non-segmented
                 story_id = bookId
                 if story_id:
                     chapters_summary = []
@@ -486,11 +527,15 @@ async def append_chapter(
                         sentences = split_text_into_chunks(chap['content'])
                         chapters_summary.append({"title": chap['title'], "count": len(sentences)})
                     
-                    db_admin.collection("users").document(userId).collection("stories").document(story_id).update({
+                    # Use .set(merge=True) instead of .update() to avoid 404 if document is missing in 'stories'
+                    db_admin.collection("users").document(userId).collection("stories").document(story_id).set({
+                        "id": story_id,
+                        "title": filename.replace(".txt", ""),
                         "totalChapters": total_chapters,
                         "chaptersSummary": chapters_summary,
+                        "isSegmented": False,
                         "updatedAt": firestore.SERVER_TIMESTAMP
-                    })
+                    }, merge=True)
 
             # Re-generate summary for the frontend response
             chapters_metadata = []
@@ -535,9 +580,6 @@ async def delete_chapters(
     blob_path = f"users/{userId}/files/{filename}"
     blob = bucket.blob(blob_path)
 
-    if not blob.exists():
-        return JSONResponse({"error": "File not found"}, status_code=404)
-
     try:
         target_indices = json.loads(indices)
         if not isinstance(target_indices, list):
@@ -550,31 +592,84 @@ async def delete_chapters(
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
         tmp_path = tmp.name
         try:
-            blob.download_to_filename(tmp_path)
+            # 1. Check if we need to recover text from segments
+            is_recovered = False
+            if not blob.exists() and bookId:
+                story_ref = db_admin.collection("users").document(userId).collection("stories").document(bookId)
+                story_doc = story_ref.get()
+                if story_doc.exists:
+                    meta = story_doc.to_dict()
+                    if meta.get("isSegmented") and meta.get("segmentsCount"):
+                        print(f"[Delete] Source .txt missing but segments found for {bookId}. Reconstructing...")
+                        recovered_text = reconstruct_text_from_segments(userId, bookId, meta["segmentsCount"])
+                        if recovered_text:
+                            with open(tmp_path, "w", encoding="utf-8") as f:
+                                f.write(recovered_text)
+                            is_recovered = True
+
+            if not is_recovered:
+                if not blob.exists():
+                    return JSONResponse({"error": "File not found"}, status_code=404)
+                blob.download_to_filename(tmp_path)
             
-            # 1. Parse into chapters
+            # 2. Parse into chapters
             chapters = parse_chapters_from_file(tmp_path)
             
-            # 2. Remove chapters
+            # 3. Remove chapters
             for idx in target_indices:
                 if 0 <= idx < len(chapters):
                     chapters.pop(idx)
                 else:
                     print(f"Warning: Index {idx} out of range for deletion.")
             
-            # 3. Reconstruct file
+            # 4. Reconstruct file
             with open(tmp_path, "w", encoding="utf-8") as f:
                 for i, chap in enumerate(chapters):
                     if i > 0:
                         f.write("\n\n===\n\n")
                     f.write(chap['content'])
                     
-            # 4. Re-upload
+            # 5. Re-upload master .txt
             blob.upload_from_filename(tmp_path)
             
+            # ── SYNC SEGMENTS IF NEEDED ──
+            total_chapters = len(chapters)
+            is_segmented = total_chapters > 200
+            
+            if is_segmented:
+                segments = partition_chapters(chapters)
+                for i, seg_chapters in enumerate(segments):
+                    seg_data = []
+                    for chap in seg_chapters:
+                        sentences = split_text_into_chunks(chap['content'])
+                        seg_data.append({"title": chap['title'], "sentences": sentences})
+                    
+                    seg_blob_path = f"users/{userId}/stories/{bookId}/segments/seg_{i}.json"
+                    bucket.blob(seg_blob_path).upload_from_string(json.dumps(seg_data), content_type="application/json")
+                
+                # Update Firestore
+                db_admin.collection("users").document(userId).collection("stories").document(bookId).set({
+                    "totalChapters": total_chapters,
+                    "segmentsCount": len(segments),
+                    "isSegmented": True,
+                    "updatedAt": firestore.SERVER_TIMESTAMP
+                }, merge=True)
+            else:
+                # Update chaptersSummary in Firestore
+                chapters_summary = []
+                for chap in chapters:
+                    sentences = split_text_into_chunks(chap['content'])
+                    chapters_summary.append({"title": chap['title'], "count": len(sentences)})
+                
+                db_admin.collection("users").document(userId).collection("stories").document(bookId).set({
+                    "totalChapters": total_chapters,
+                    "chaptersSummary": chapters_summary,
+                    "isSegmented": False,
+                    "updatedAt": firestore.SERVER_TIMESTAMP
+                }, merge=True)
+
             chapters_metadata = []
             for chap in chapters:
-                # We need counts for progress tracking
                 sentences = split_text_into_chunks(chap['content'])
                 chapters_metadata.append({
                     "title": chap['title'],
@@ -598,6 +693,7 @@ async def delete_chapters(
 @app.post("/api/get-chapter-content")
 async def get_chapter_content(
     userId: str = Form(...),
+    bookId: str = Form(None),
     filename: str = Form(...),
     chapterIndex: int = Form(...)
 ):
@@ -610,12 +706,28 @@ async def get_chapter_content(
         blob_path = f"users/{userId}/files/{filename}"
         blob = bucket.blob(blob_path)
         
-        if not blob.exists():
-            return JSONResponse({"error": "File not found"}, status_code=404)
-
         with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
             tmp_path = tmp.name
-            blob.download_to_filename(tmp_path)
+            
+            # 1. Check if we need to recover text from segments
+            is_recovered = False
+            if not blob.exists() and bookId:
+                story_ref = db_admin.collection("users").document(userId).collection("stories").document(bookId)
+                story_doc = story_ref.get()
+                if story_doc.exists:
+                    meta = story_doc.to_dict()
+                    if meta.get("isSegmented") and meta.get("segmentsCount"):
+                        print(f"[Content] Source .txt missing but segments found for {bookId}. Reconstructing...")
+                        recovered_text = reconstruct_text_from_segments(userId, bookId, meta["segmentsCount"])
+                        if recovered_text:
+                            with open(tmp_path, "w", encoding="utf-8") as f:
+                                f.write(recovered_text)
+                            is_recovered = True
+
+            if not is_recovered:
+                if not blob.exists():
+                    return JSONResponse({"error": "File not found"}, status_code=404)
+                blob.download_to_filename(tmp_path)
         
         try:
             chapters = parse_chapters_from_file(tmp_path)
@@ -646,12 +758,28 @@ async def update_chapter(
         blob_path = f"users/{userId}/files/{filename}"
         blob = bucket.blob(blob_path)
         
-        if not blob.exists():
-            return JSONResponse({"error": "File not found"}, status_code=404)
-
         with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
             tmp_path = tmp.name
-            blob.download_to_filename(tmp_path)
+            
+            # 1. Check if we need to recover text from segments
+            is_recovered = False
+            if not blob.exists() and bookId:
+                story_ref = db_admin.collection("users").document(userId).collection("stories").document(bookId)
+                story_doc = story_ref.get()
+                if story_doc.exists:
+                    meta = story_doc.to_dict()
+                    if meta.get("isSegmented") and meta.get("segmentsCount"):
+                        print(f"[Edit] Source .txt missing but segments found for {bookId}. Reconstructing...")
+                        recovered_text = reconstruct_text_from_segments(userId, bookId, meta["segmentsCount"])
+                        if recovered_text:
+                            with open(tmp_path, "w", encoding="utf-8") as f:
+                                f.write(recovered_text)
+                            is_recovered = True
+
+            if not is_recovered:
+                if not blob.exists():
+                    return JSONResponse({"error": "File not found"}, status_code=404)
+                blob.download_to_filename(tmp_path)
         
         try:
             chapters = parse_chapters_from_file(tmp_path)
@@ -666,8 +794,44 @@ async def update_chapter(
                             f.write("\n\n===\n\n")
                         f.write(chap['content'])
                 
-                # Re-upload
+                # Re-upload master .txt
                 blob.upload_from_filename(tmp_path)
+                
+                # ── SYNC SEGMENTS IF NEEDED ──
+                total_chapters = len(chapters)
+                is_segmented = total_chapters > 200
+                
+                if is_segmented:
+                    segments = partition_chapters(chapters)
+                    for i, seg_chapters in enumerate(segments):
+                        seg_data = []
+                        for chap in seg_chapters:
+                            sentences = split_text_into_chunks(chap['content'])
+                            seg_data.append({"title": chap['title'], "sentences": sentences})
+                        
+                        seg_blob_path = f"users/{userId}/stories/{bookId}/segments/seg_{i}.json"
+                        bucket.blob(seg_blob_path).upload_from_string(json.dumps(seg_data), content_type="application/json")
+                    
+                    # Update Firestore
+                    db_admin.collection("users").document(userId).collection("stories").document(bookId).set({
+                        "totalChapters": total_chapters,
+                        "segmentsCount": len(segments),
+                        "isSegmented": True,
+                        "updatedAt": firestore.SERVER_TIMESTAMP
+                    }, merge=True)
+                else:
+                    # Update chaptersSummary in Firestore
+                    chapters_summary = []
+                    for chap in chapters:
+                        sentences = split_text_into_chunks(chap['content'])
+                        chapters_summary.append({"title": chap['title'], "count": len(sentences)})
+                    
+                    db_admin.collection("users").document(userId).collection("stories").document(bookId).set({
+                        "totalChapters": total_chapters,
+                        "chaptersSummary": chapters_summary,
+                        "isSegmented": False,
+                        "updatedAt": firestore.SERVER_TIMESTAMP
+                    }, merge=True)
                 
                 # Return updated metadata for this chapter
                 # Re-parse the updated content to get new title and sentences
