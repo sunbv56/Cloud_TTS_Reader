@@ -172,25 +172,43 @@ def reconstruct_text_from_segments(userId: str, story_id: str, segments_count: i
     """
     Reconstruct full text from JSON segments if the master .txt is missing.
     Ensures '===' separators are restored between chapters.
+    Uses parallel downloading for speed while maintaining order.
     """
     bucket = storage.bucket()
-    full_text = ""
-    for i in range(segments_count):
+    from concurrent.futures import ThreadPoolExecutor
+    
+    def fetch_segment_text(i):
         blob_path = f"users/{userId}/stories/{story_id}/segments/seg_{i}.json"
         blob = bucket.blob(blob_path)
         if blob.exists():
             try:
                 data = json.loads(blob.download_as_text())
+                seg_text = ""
                 for chapter in data:
-                    # Add separator if this is NOT the first chapter of the WHOLE book
-                    if full_text:
-                        full_text += "\n\n===\n\n"
-                    
-                    # Reconstruct chapter: Title + Content (sentences)
-                    # We assume title is the first line
-                    full_text += chapter['title'] + "\n" + "\n".join(chapter['sentences'])
+                    chapter_text = chapter['title'] + "\n" + "\n".join(chapter['sentences'])
+                    if seg_text:
+                        seg_text += "\n\n===\n\n"
+                    seg_text += chapter_text
+                return i, seg_text
             except Exception as e:
                 print(f"[Recovery] Error downloading segment {i}: {e}")
+        return i, ""
+
+    # Download segments in parallel
+    results = {}
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        # map ensures results are handled, but we use a dict to be extra safe with order
+        for i, text in executor.map(fetch_segment_text, range(segments_count)):
+            results[i] = text
+            
+    # Combine in strict order
+    full_text = ""
+    for i in range(segments_count):
+        if results.get(i):
+            if full_text:
+                full_text += "\n\n===\n\n"
+            full_text += results[i]
+            
     return full_text
 
 def convert_firestore_data(data: dict):
@@ -313,8 +331,9 @@ async def upload_story(
             segments = partition_chapters(chapters)
             story_metadata["segmentsCount"] = len(segments)
             
-            # Upload each segment as a JSON file
-            for i, seg_chapters in enumerate(segments):
+            from concurrent.futures import ThreadPoolExecutor
+            
+            def upload_segment(i, seg_chapters):
                 seg_data = []
                 for chap in seg_chapters:
                     sentences = split_text_into_chunks(chap['content'])
@@ -326,6 +345,11 @@ async def upload_story(
                 seg_blob_path = f"users/{userId}/stories/{story_id}/segments/seg_{i}.json"
                 blob = bucket.blob(seg_blob_path)
                 blob.upload_from_string(json.dumps(seg_data), content_type="application/json")
+                return i
+
+            # Parallel upload to avoid timeout
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                list(executor.map(lambda p: upload_segment(*p), enumerate(segments)))
         else:
             # Traditional upload metadata
             # Store chapter titles/counts in metadata for TOC
@@ -500,8 +524,9 @@ async def append_chapter(
                     "updatedAt": firestore.SERVER_TIMESTAMP
                 }
 
-                # Upload segments
-                for i, seg_chapters in enumerate(segments):
+                from concurrent.futures import ThreadPoolExecutor
+
+                def upload_segment(i, seg_chapters):
                     seg_data = []
                     for chap in seg_chapters:
                         sentences = split_text_into_chunks(chap['content'])
@@ -509,6 +534,10 @@ async def append_chapter(
                     
                     seg_blob_path = f"users/{userId}/stories/{story_id}/segments/seg_{i}.json"
                     bucket.blob(seg_blob_path).upload_from_string(json.dumps(seg_data), content_type="application/json")
+
+                # Parallel upload
+                with ThreadPoolExecutor(max_workers=5) as executor:
+                    list(executor.map(lambda p: upload_segment(*p), enumerate(segments)))
                 
                 # Update Firestore
                 db_admin.collection("users").document(userId).collection("stories").document(story_id).set(story_metadata, merge=True)
@@ -638,7 +667,10 @@ async def delete_chapters(
             
             if is_segmented:
                 segments = partition_chapters(chapters)
-                for i, seg_chapters in enumerate(segments):
+                
+                from concurrent.futures import ThreadPoolExecutor
+
+                def upload_segment(i, seg_chapters):
                     seg_data = []
                     for chap in seg_chapters:
                         sentences = split_text_into_chunks(chap['content'])
@@ -646,6 +678,9 @@ async def delete_chapters(
                     
                     seg_blob_path = f"users/{userId}/stories/{bookId}/segments/seg_{i}.json"
                     bucket.blob(seg_blob_path).upload_from_string(json.dumps(seg_data), content_type="application/json")
+
+                with ThreadPoolExecutor(max_workers=5) as executor:
+                    list(executor.map(lambda p: upload_segment(*p), enumerate(segments)))
                 
                 # Update Firestore
                 db_admin.collection("users").document(userId).collection("stories").document(bookId).set({
@@ -803,7 +838,10 @@ async def update_chapter(
                 
                 if is_segmented:
                     segments = partition_chapters(chapters)
-                    for i, seg_chapters in enumerate(segments):
+                    
+                    from concurrent.futures import ThreadPoolExecutor
+
+                    def upload_segment(i, seg_chapters):
                         seg_data = []
                         for chap in seg_chapters:
                             sentences = split_text_into_chunks(chap['content'])
@@ -811,6 +849,9 @@ async def update_chapter(
                         
                         seg_blob_path = f"users/{userId}/stories/{bookId}/segments/seg_{i}.json"
                         bucket.blob(seg_blob_path).upload_from_string(json.dumps(seg_data), content_type="application/json")
+
+                    with ThreadPoolExecutor(max_workers=5) as executor:
+                        list(executor.map(lambda p: upload_segment(*p), enumerate(segments)))
                     
                     # Update Firestore
                     db_admin.collection("users").document(userId).collection("stories").document(bookId).set({
