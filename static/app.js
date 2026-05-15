@@ -306,7 +306,18 @@ async function startFirebase() {
                 authInfo.innerHTML = `<span class="text-slate-500">Guest Mode</span>`;
                 authBtn.innerHTML = '<i class="fab fa-google"></i>';
                 authBtn.onclick = () => signInWithPopup(auth, provider);
+                
+                // --- Reset UI on Logout ---
                 document.getElementById('book-list').innerHTML = '<div class="text-center p-8 text-slate-500 italic text-sm">Login to see your library.</div>';
+                
+                const discoveryGrid = document.getElementById('discovery-grid');
+                if (discoveryGrid) {
+                    discoveryGrid.innerHTML = '<div class="col-span-full text-center p-20 text-slate-500 italic">Login to discover your library.</div>';
+                }
+                
+                // Clear any search query
+                const discoverySearch = document.getElementById('discovery-search');
+                if (discoverySearch) discoverySearch.value = '';
             }
         });
 

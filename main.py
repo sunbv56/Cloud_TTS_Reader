@@ -7,6 +7,7 @@ import json
 import asyncio
 import edge_tts
 import tempfile
+import gc
 import firebase_admin
 from firebase_admin import credentials, storage, firestore
 from fastapi import FastAPI, Request, Response, Form, UploadFile, File, WebSocket, WebSocketDisconnect
@@ -175,13 +176,14 @@ def reconstruct_text_from_segments(userId: str, story_id: str, segments_count: i
     Uses parallel downloading for speed while maintaining order.
     """
     bucket = storage.bucket()
-    from concurrent.futures import ThreadPoolExecutor
-    
-    def fetch_segment_text(i):
+    # Download segments sequentially to save RAM on 256MB servers
+    results = {}
+    for i in range(segments_count):
         blob_path = f"users/{userId}/stories/{story_id}/segments/seg_{i}.json"
         blob = bucket.blob(blob_path)
         if blob.exists():
             try:
+                print(f"[Recovery] Downloading segment {i}/{segments_count-1}...")
                 data = json.loads(blob.download_as_text())
                 seg_text = ""
                 for chapter in data:
@@ -189,17 +191,14 @@ def reconstruct_text_from_segments(userId: str, story_id: str, segments_count: i
                     if seg_text:
                         seg_text += "\n\n===\n\n"
                     seg_text += chapter_text
-                return i, seg_text
+                results[i] = seg_text
+                # Cleanup local variables
+                del data
+                gc.collect()
             except Exception as e:
                 print(f"[Recovery] Error downloading segment {i}: {e}")
-        return i, ""
-
-    # Download segments in parallel
-    results = {}
-    with ThreadPoolExecutor(max_workers=10) as executor:
-        # map ensures results are handled, but we use a dict to be extra safe with order
-        for i, text in executor.map(fetch_segment_text, range(segments_count)):
-            results[i] = text
+        else:
+            results[i] = ""
             
     # Combine in strict order
     full_text = ""
@@ -331,9 +330,9 @@ async def upload_story(
             segments = partition_chapters(chapters)
             story_metadata["segmentsCount"] = len(segments)
             
-            from concurrent.futures import ThreadPoolExecutor
-            
-            def upload_segment(i, seg_chapters):
+            # Sequential upload to save RAM on 256MB servers (Fly.io)
+            for i, seg_chapters in enumerate(segments):
+                print(f"[Upload] Processing segment {i}/{len(segments)-1}...")
                 seg_data = []
                 for chap in seg_chapters:
                     sentences = split_text_into_chunks(chap['content'])
@@ -345,11 +344,10 @@ async def upload_story(
                 seg_blob_path = f"users/{userId}/stories/{story_id}/segments/seg_{i}.json"
                 blob = bucket.blob(seg_blob_path)
                 blob.upload_from_string(json.dumps(seg_data), content_type="application/json")
-                return i
-
-            # Parallel upload to avoid timeout
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                list(executor.map(lambda p: upload_segment(*p), enumerate(segments)))
+                
+                # Critical Memory Cleanup
+                del seg_data
+                gc.collect()
         else:
             # Traditional upload metadata
             # Store chapter titles/counts in metadata for TOC
@@ -524,9 +522,9 @@ async def append_chapter(
                     "updatedAt": firestore.SERVER_TIMESTAMP
                 }
 
-                from concurrent.futures import ThreadPoolExecutor
-
-                def upload_segment(i, seg_chapters):
+                # Sequential segment upload to prevent OOM
+                for i, seg_chapters in enumerate(segments):
+                    print(f"[Append] Syncing segment {i}/{len(segments)-1}...")
                     seg_data = []
                     for chap in seg_chapters:
                         sentences = split_text_into_chunks(chap['content'])
@@ -534,10 +532,10 @@ async def append_chapter(
                     
                     seg_blob_path = f"users/{userId}/stories/{story_id}/segments/seg_{i}.json"
                     bucket.blob(seg_blob_path).upload_from_string(json.dumps(seg_data), content_type="application/json")
-
-                # Parallel upload
-                with ThreadPoolExecutor(max_workers=5) as executor:
-                    list(executor.map(lambda p: upload_segment(*p), enumerate(segments)))
+                    
+                    # Memory cleanup
+                    del seg_data
+                    gc.collect()
                 
                 # Update Firestore
                 db_admin.collection("users").document(userId).collection("stories").document(story_id).set(story_metadata, merge=True)
@@ -668,9 +666,9 @@ async def delete_chapters(
             if is_segmented:
                 segments = partition_chapters(chapters)
                 
-                from concurrent.futures import ThreadPoolExecutor
-
-                def upload_segment(i, seg_chapters):
+                # Sequential segment upload to prevent OOM
+                for i, seg_chapters in enumerate(segments):
+                    print(f"[Delete] Syncing segment {i}/{len(segments)-1}...")
                     seg_data = []
                     for chap in seg_chapters:
                         sentences = split_text_into_chunks(chap['content'])
@@ -678,9 +676,10 @@ async def delete_chapters(
                     
                     seg_blob_path = f"users/{userId}/stories/{bookId}/segments/seg_{i}.json"
                     bucket.blob(seg_blob_path).upload_from_string(json.dumps(seg_data), content_type="application/json")
-
-                with ThreadPoolExecutor(max_workers=5) as executor:
-                    list(executor.map(lambda p: upload_segment(*p), enumerate(segments)))
+                    
+                    # Memory cleanup
+                    del seg_data
+                    gc.collect()
                 
                 # Update Firestore
                 db_admin.collection("users").document(userId).collection("stories").document(bookId).set({
@@ -839,9 +838,9 @@ async def update_chapter(
                 if is_segmented:
                     segments = partition_chapters(chapters)
                     
-                    from concurrent.futures import ThreadPoolExecutor
-
-                    def upload_segment(i, seg_chapters):
+                    # Sequential segment upload to prevent OOM
+                    for i, seg_chapters in enumerate(segments):
+                        print(f"[Update] Syncing segment {i}/{len(segments)-1}...")
                         seg_data = []
                         for chap in seg_chapters:
                             sentences = split_text_into_chunks(chap['content'])
@@ -849,9 +848,10 @@ async def update_chapter(
                         
                         seg_blob_path = f"users/{userId}/stories/{bookId}/segments/seg_{i}.json"
                         bucket.blob(seg_blob_path).upload_from_string(json.dumps(seg_data), content_type="application/json")
-
-                    with ThreadPoolExecutor(max_workers=5) as executor:
-                        list(executor.map(lambda p: upload_segment(*p), enumerate(segments)))
+                        
+                        # Memory cleanup
+                        del seg_data
+                        gc.collect()
                     
                     # Update Firestore
                     db_admin.collection("users").document(userId).collection("stories").document(bookId).set({
