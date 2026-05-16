@@ -329,6 +329,7 @@ async def upload_story(
         if story_metadata["isSegmented"]:
             segments = partition_chapters(chapters)
             story_metadata["segmentsCount"] = len(segments)
+            chapter_counts = []  # Collect per-chapter counts for accurate global index
             
             # Sequential upload to save RAM on 256MB servers (Fly.io)
             for i, seg_chapters in enumerate(segments):
@@ -336,6 +337,7 @@ async def upload_story(
                 seg_data = []
                 for chap in seg_chapters:
                     sentences = split_text_into_chunks(chap['content'])
+                    chapter_counts.append(len(sentences))  # Store count before cleanup
                     seg_data.append({
                         "title": chap['title'],
                         "sentences": sentences
@@ -348,6 +350,7 @@ async def upload_story(
                 # Critical Memory Cleanup
                 del seg_data
                 gc.collect()
+            story_metadata["chapterCounts"] = chapter_counts
         else:
             # Traditional upload metadata
             # Store chapter titles/counts in metadata for TOC
@@ -366,7 +369,11 @@ async def upload_story(
         return JSONResponse({
             "status": "ok",
             "storyId": story_id,
-            "isSegmented": story_metadata["isSegmented"]
+            "title": story_title,
+            "isSegmented": story_metadata["isSegmented"],
+            "totalChapters": total_chapters,
+            "chapters": chapters_summary if not story_metadata["isSegmented"] else [],
+            "chaptersSummary": chapters_summary if not story_metadata["isSegmented"] else []
         })
     finally:
         if os.path.exists(tmp_path):
@@ -513,6 +520,7 @@ async def append_chapter(
                 story_id = bookId if bookId else (sanitize_slug(filename.replace(".txt", "")) + "_" + str(int(asyncio.get_event_loop().time())))
                 
                 segments = partition_chapters(chapters)
+                chapter_counts = []  # Collect per-chapter counts
                 story_metadata = {
                     "id": story_id,
                     "title": filename.replace(".txt", ""),
@@ -528,6 +536,7 @@ async def append_chapter(
                     seg_data = []
                     for chap in seg_chapters:
                         sentences = split_text_into_chunks(chap['content'])
+                        chapter_counts.append(len(sentences))  # Store count before cleanup
                         seg_data.append({"title": chap['title'], "sentences": sentences})
                     
                     seg_blob_path = f"users/{userId}/stories/{story_id}/segments/seg_{i}.json"
@@ -537,6 +546,7 @@ async def append_chapter(
                     del seg_data
                     gc.collect()
                 
+                story_metadata["chapterCounts"] = chapter_counts
                 # Update Firestore
                 db_admin.collection("users").document(userId).collection("stories").document(story_id).set(story_metadata, merge=True)
                 
@@ -665,6 +675,7 @@ async def delete_chapters(
             
             if is_segmented:
                 segments = partition_chapters(chapters)
+                chapter_counts = []  # Collect per-chapter counts
                 
                 # Sequential segment upload to prevent OOM
                 for i, seg_chapters in enumerate(segments):
@@ -672,6 +683,7 @@ async def delete_chapters(
                     seg_data = []
                     for chap in seg_chapters:
                         sentences = split_text_into_chunks(chap['content'])
+                        chapter_counts.append(len(sentences))  # Store count before cleanup
                         seg_data.append({"title": chap['title'], "sentences": sentences})
                     
                     seg_blob_path = f"users/{userId}/stories/{bookId}/segments/seg_{i}.json"
@@ -685,6 +697,7 @@ async def delete_chapters(
                 db_admin.collection("users").document(userId).collection("stories").document(bookId).set({
                     "totalChapters": total_chapters,
                     "segmentsCount": len(segments),
+                    "chapterCounts": chapter_counts,
                     "isSegmented": True,
                     "updatedAt": firestore.SERVER_TIMESTAMP
                 }, merge=True)
@@ -837,6 +850,7 @@ async def update_chapter(
                 
                 if is_segmented:
                     segments = partition_chapters(chapters)
+                    chapter_counts = []  # Collect per-chapter counts
                     
                     # Sequential segment upload to prevent OOM
                     for i, seg_chapters in enumerate(segments):
@@ -844,6 +858,7 @@ async def update_chapter(
                         seg_data = []
                         for chap in seg_chapters:
                             sentences = split_text_into_chunks(chap['content'])
+                            chapter_counts.append(len(sentences))  # Store count before cleanup
                             seg_data.append({"title": chap['title'], "sentences": sentences})
                         
                         seg_blob_path = f"users/{userId}/stories/{bookId}/segments/seg_{i}.json"
@@ -857,6 +872,7 @@ async def update_chapter(
                     db_admin.collection("users").document(userId).collection("stories").document(bookId).set({
                         "totalChapters": total_chapters,
                         "segmentsCount": len(segments),
+                        "chapterCounts": chapter_counts,
                         "isSegmented": True,
                         "updatedAt": firestore.SERVER_TIMESTAMP
                     }, merge=True)

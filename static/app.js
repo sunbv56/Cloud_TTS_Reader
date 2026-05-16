@@ -1164,23 +1164,35 @@ async function loadProgress(bookId) {
 
 function getTotalChunks() {
     if (!STATE.currentBook) return 0;
-    return STATE.currentBook.chapters.reduce((acc, chap) => acc + (chap.count || 0), 0);
+    // --- FIX BUG 2: Use precomputed total for segmented/metadata-only books ---
+    if (STATE.currentBook._totalChunks) return STATE.currentBook._totalChunks;
+    return STATE.currentBook.chapters.reduce((acc, chap) => acc + (chap.count || (chap.sentences && chap.sentences.length) || 0), 0);
 }
 
 function getGlobalIndex(chapIdx, sentIdx) {
     if (!STATE.currentBook) return 0;
+    const counts = STATE.currentBook._chapterCounts;
     let total = 0;
     for (let i = 0; i < chapIdx; i++) {
-        total += (STATE.currentBook.chapters[i].count || 0);
+        if (counts && counts[i] !== undefined) {
+            total += counts[i];
+        } else {
+            const chap = STATE.currentBook.chapters[i];
+            total += chap ? (chap.count || (chap.sentences && chap.sentences.length) || 0) : 0;
+        }
     }
     return total + sentIdx;
 }
 
 function getLocalIndices(globalIdx) {
     if (!STATE.currentBook) return { chapterIndex: 0, sentenceIndex: 0 };
+    const counts = STATE.currentBook._chapterCounts;
     let remaining = globalIdx;
     for (let i = 0; i < STATE.currentBook.chapters.length; i++) {
-        const len = (STATE.currentBook.chapters[i].count || 0);
+        const chap = STATE.currentBook.chapters[i];
+        const len = (counts && counts[i] !== undefined)
+            ? counts[i]
+            : (chap ? (chap.count || (chap.sentences && chap.sentences.length) || 0) : 0);
         if (remaining < len) {
             return { chapterIndex: i, sentenceIndex: remaining };
         }
@@ -1618,12 +1630,21 @@ const handleFileUpload = async (e) => {
 
         // Fetch fresh metadata
         const metaRes = await fetch(`/api/stories/${STATE.user.uid}/${data.storyId}/metadata`);
-        const bookInfo = await metaRes.json();
+        let bookInfo = await metaRes.json();
 
+        // --- FIX BUG 1 & 5: Normalize bookInfo for non-segmented upload flow ---
+        // Ensure STATE.currentBook.chapters is correctly populated from metadata
+        if (!bookInfo.isSegmented && bookInfo.chaptersSummary) {
+            bookInfo.chapters = bookInfo.chaptersSummary.map(ch => ({
+                title: ch.title,
+                count: ch.count,
+                sentences: null // lazy-loaded
+            }));
+        }
+
+        // --- FIX BUG 6: Await loadBook and call refreshLibrary directly ---
         await loadBook(bookInfo, data.storyId, file.name);
-
-        // Auto-sync via UI button click for visual feedback
-        document.getElementById('sync-btn')?.click();
+        await refreshLibrary();
     } catch (err) {
         console.error(err);
         alert("Error uploading story: " + err.message);
@@ -1708,6 +1729,18 @@ async function loadBook(bookData, bookId, filename) {
         STATE.currentBook = bookData;
     }
 
+    // --- FIX: Store chapterCounts from metadata for accurate cross-segment position tracking ---
+    if (bookData.chapterCounts && bookData.chapterCounts.length > 0) {
+        STATE.currentBook._chapterCounts = bookData.chapterCounts;
+        STATE.currentBook._totalChunks = bookData.chapterCounts.reduce((a, b) => a + b, 0);
+    } else if (bookData.chaptersSummary) {
+        // Non-segmented: build from chaptersSummary
+        STATE.currentBook._chapterCounts = bookData.chaptersSummary.map(ch => ch.count || 0);
+        STATE.currentBook._totalChunks = STATE.currentBook._chapterCounts.reduce((a, b) => a + b, 0);
+    } else if (bookData.total_chunks) {
+        STATE.currentBook._totalChunks = bookData.total_chunks;
+    }
+
     STATE.currentBookId = bookId || ("book_" + bookData.title.replace(/[^a-zA-Z0-9]/g, "_"));
     STATE.currentFilename = filename || (STATE.currentBook.title + ".txt");
 
@@ -1754,7 +1787,8 @@ async function loadBook(bookData, bookId, filename) {
         highlightSentence(STATE.currentSentenceIndex);
     }
 
-    saveProgress(true);
+    // --- FIX BUG 3: Await progress save to ensure Firestore is consistent before UI refresh ---
+    await saveProgress(true);
     playFromSentence(STATE.currentSentenceIndex);
     updateLibraryHighlight();
 }
@@ -1771,8 +1805,16 @@ async function fetchSegment(segmentIndex) {
         const startOffset = segmentIndex * 100;
         data.chapters.forEach((chap, i) => {
             const chapIdx = startOffset + i;
-            if (STATE.currentBook.chapters[chapIdx]) {
-                STATE.currentBook.chapters[chapIdx] = chap;
+            if (STATE.currentBook.chapters[chapIdx] !== undefined) {
+                // Set .count so getGlobalIndex works for loaded segments
+                const count = chap.sentences ? chap.sentences.length : 0;
+                STATE.currentBook.chapters[chapIdx] = { ...chap, count };
+
+                // Update _chapterCounts in case backend didn't provide it
+                if (!STATE.currentBook._chapterCounts) STATE.currentBook._chapterCounts = [];
+                if (STATE.currentBook._chapterCounts[chapIdx] === undefined) {
+                    STATE.currentBook._chapterCounts[chapIdx] = count;
+                }
             }
         });
 
