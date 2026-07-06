@@ -86,18 +86,10 @@
         bridge.audio.addEventListener('pause', updatePlayIcon);
     }
 
-    // Adds "pop-out" and "PiP" buttons onto the existing full-size player.
-    // PiP is one click away — no need to go through the floating widget first.
+    // Adds the one-click PiP button onto the existing full-size player.
     function injectPopoutButton() {
         const mediaPlayer = document.getElementById('media-player');
-        if (!mediaPlayer || document.getElementById('mpw-popout-btn')) return;
-
-        const btn = document.createElement('button');
-        btn.id = 'mpw-popout-btn';
-        btn.title = 'Pop out mini player';
-        btn.innerHTML = '<i class="fas fa-compress-alt"></i>';
-        btn.addEventListener('click', () => show('manual'));
-        mediaPlayer.appendChild(btn);
+        if (!mediaPlayer || document.getElementById('mpw-player-pip-btn')) return;
 
         if ('documentPictureInPicture' in window) {
             const pipBtn = document.createElement('button');
@@ -303,8 +295,8 @@
         pipReturnReason = floatReason;
 
         pipWindow = await window.documentPictureInPicture.requestWindow({
-            width: 380,
-            height: 120,
+            width: 480,
+            height: 148,
         });
 
         // Copy only the two sheets the PiP content needs: Font Awesome + our own.

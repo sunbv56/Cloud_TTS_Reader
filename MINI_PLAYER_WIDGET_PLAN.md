@@ -147,9 +147,10 @@ Chuyển trạng thái:
 
 ```
 full ⇄ compact        : nút minimize-btn hiện có (không đổi logic)
-full/compact → floating : (a) người dùng kéo player ra khỏi vị trí gốc, hoặc
-                          (b) tự động khi vào Discovery mode trong khi đang phát (Tier 2), hoặc
-                          (c) bấm 1 nút "pop-out" mới
+full/compact → floating : tự động khi vào Discovery mode trong khi đang phát (Tier 2).
+                          (Ghi chú 2026-07-06: nút "pop-out" thủ công đã bị loại bỏ theo
+                          yêu cầu — từ player chính, người dùng bấm thẳng nút PiP (1 click)
+                          để mở cửa sổ Document PiP, không đi qua widget nội bộ nữa.)
 floating → full        : bấm vào thân widget (trừ nút play/close)
 floating → (đóng hẳn)  : bấm nút X trên widget → resetAudioEngine() + ẩn widget
 ```
