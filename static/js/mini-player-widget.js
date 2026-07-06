@@ -25,6 +25,7 @@
     let syncTimer = null;
     let floatReason = null;     // 'manual' | 'discovery' | null
     let pipWindow = null;       // Document PiP window, if open
+    let pipReturnReason = null; // floatReason to restore when PiP closes
 
     // ---------------------------------------------------------
     // DOM creation
@@ -85,16 +86,29 @@
         bridge.audio.addEventListener('pause', updatePlayIcon);
     }
 
-    // Adds a "pop-out" button onto the existing full-size player (Tier 1 entry)
+    // Adds "pop-out" and "PiP" buttons onto the existing full-size player.
+    // PiP is one click away — no need to go through the floating widget first.
     function injectPopoutButton() {
         const mediaPlayer = document.getElementById('media-player');
         if (!mediaPlayer || document.getElementById('mpw-popout-btn')) return;
+
         const btn = document.createElement('button');
         btn.id = 'mpw-popout-btn';
         btn.title = 'Pop out mini player';
         btn.innerHTML = '<i class="fas fa-compress-alt"></i>';
         btn.addEventListener('click', () => show('manual'));
         mediaPlayer.appendChild(btn);
+
+        if ('documentPictureInPicture' in window) {
+            const pipBtn = document.createElement('button');
+            pipBtn.id = 'mpw-player-pip-btn';
+            pipBtn.title = 'Picture-in-Picture (floating window)';
+            pipBtn.innerHTML = '<i class="fas fa-window-restore"></i>';
+            pipBtn.addEventListener('click', () => {
+                openPiP().catch(err => console.error('[MPW] PiP failed:', err));
+            });
+            mediaPlayer.appendChild(pipBtn);
+        }
     }
 
     // ---------------------------------------------------------
@@ -284,9 +298,13 @@
         }
         if (!bridge.STATE.currentBook) return;
 
+        // Remember where we came from: opened straight from the full player
+        // (null) means closing PiP should NOT leave the in-page widget behind.
+        pipReturnReason = floatReason;
+
         pipWindow = await window.documentPictureInPicture.requestWindow({
-            width: 360,
-            height: 88,
+            width: 380,
+            height: 120,
         });
 
         // Copy only the two sheets the PiP content needs: Font Awesome + our own.
@@ -318,14 +336,16 @@
             // Return the card to the in-page widget when the PiP window closes.
             root.appendChild(card);
             pipWindow = null;
+            floatReason = pipReturnReason;
             if (floatReason) {
                 root.classList.add('mpw-visible');
                 applyCorner(loadCorner());
+            } else {
+                hide(); // opened from the full player: nothing to leave behind
             }
             syncNow();
         });
 
-        if (!floatReason) floatReason = 'manual';
         if (!syncTimer) syncTimer = setInterval(syncNow, SYNC_INTERVAL_MS);
         syncNow();
     }
