@@ -27,3 +27,4 @@ Thumbs.db
 *.txt
 !README.md
 !requirements.txt
+.gstack/

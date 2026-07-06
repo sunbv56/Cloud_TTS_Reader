@@ -337,20 +337,29 @@ function toggleDiscoveryMode(isActive) {
     const sidebarContainer = document.getElementById('sidebar-container');
 
     if (isActive) {
-        // If entering Discovery, reset engine to stop background audio/queues
-        resetAudioEngine();
+        // [MiniPlayer] Keep the TTS session alive while the user browses Discovery
+        // with an active book — the floating widget takes over playback controls.
+        // Opening another book still resets the engine (loadBook calls resetAudioEngine).
+        const keepAlive = !!(STATE.currentBook && (STATE.isPlaying || STATE.chunkTimings.length > 0));
+        if (!keepAlive) {
+            resetAudioEngine();
+        }
 
         if (discoveryMode) discoveryMode.classList.remove('hidden');
         if (sidebarContainer) sidebarContainer.classList.add('hidden');
         if (readerContainer) readerContainer.classList.add('hidden');
         // Homepage không được litemode
         document.body.classList.remove('lite-mode');
+
+        if (window.MiniPlayerWidget) window.MiniPlayerWidget.onDiscoveryEnter(keepAlive);
     } else {
         if (discoveryMode) discoveryMode.classList.add('hidden');
         if (sidebarContainer) sidebarContainer.classList.remove('hidden');
         if (readerContainer) readerContainer.classList.remove('hidden');
         // Restore lite-mode if enabled in settings
         if (STATE.isLiteMode) document.body.classList.add('lite-mode');
+
+        if (window.MiniPlayerWidget) window.MiniPlayerWidget.onDiscoveryExit();
     }
 }
 
@@ -3093,21 +3102,8 @@ function applyTypographySettings() {
 }
 
 // --- UI Interactions ---
-document.getElementById('prev-btn').onclick = async () => {
-    if (STATE.currentChapterIndex > 0) {
-        const prevChap = STATE.currentChapterIndex - 1;
-        await renderChapter(prevChap);
-        playFromSentence(0);
-    }
-};
-
-document.getElementById('next-btn').onclick = async () => {
-    if (STATE.currentBook && STATE.currentChapterIndex < STATE.currentBook.chapters.length - 1) {
-        const nextChap = STATE.currentChapterIndex + 1;
-        await renderChapter(nextChap);
-        playFromSentence(0);
-    }
-};
+document.getElementById('prev-btn').onclick = () => playPrevChapter();
+document.getElementById('next-btn').onclick = () => playNextChapter();
 
 document.getElementById('toc-btn').onclick = () => {
     // Tự động thu gọn trình phát nếu đang mở
@@ -3315,6 +3311,75 @@ function applySettingsToUI() {
     applyTypographySettings();
 }
 
+// --- Navigation helpers (Next/Prev Chunk) ---
+async function playNextChunk() {
+    if (!STATE.currentBook) return;
+    const chapters = STATE.currentBook.chapters;
+    const curChap = STATE.currentChapterIndex;
+    const curSent = STATE.currentSentenceIndex;
+
+    const curTimingIdx = STATE.chunkTimings.findIndex(
+        t => t.chapterIndex === curChap && t.index === curSent
+    );
+    if (curTimingIdx !== -1 && curTimingIdx < STATE.chunkTimings.length - 1) {
+        const nextChunk = STATE.chunkTimings[curTimingIdx + 1];
+        audio.currentTime = nextChunk.startTime + 0.01;
+        if (audio.paused) audio.play();
+    } else {
+        const sentenceCount = chapters[curChap]?.sentences?.length ?? 0;
+        if (sentenceCount > 0 && curSent < sentenceCount - 1) {
+            await playFromSentence(curSent + 1);
+        } else if (curChap < chapters.length - 1) {
+            await renderChapter(curChap + 1);
+            await playFromSentence(0);
+        }
+    }
+}
+
+async function playPrevChunk() {
+    if (!STATE.currentBook) return;
+    const chapters = STATE.currentBook.chapters;
+    const curChap = STATE.currentChapterIndex;
+    const curSent = STATE.currentSentenceIndex;
+
+    const curTimingIdx = STATE.chunkTimings.findIndex(
+        t => t.chapterIndex === curChap && t.index === curSent
+    );
+    if (curTimingIdx > 0) {
+        const prevChunk = STATE.chunkTimings[curTimingIdx - 1];
+        audio.currentTime = prevChunk.startTime + 0.01;
+        if (audio.paused) audio.play();
+    } else {
+        if (curSent > 0) {
+            await playFromSentence(curSent - 1);
+        } else if (curChap > 0) {
+            const prevChap = curChap - 1;
+            await renderChapter(prevChap);
+            const prevSentCount = STATE.currentBook.chapters[prevChap]?.sentences?.length ?? 1;
+            await playFromSentence(Math.max(0, prevSentCount - 1));
+        }
+    }
+}
+
+async function playNextChapter() {
+    if (!STATE.currentBook) return;
+    const curChap = STATE.currentChapterIndex;
+    const chapters = STATE.currentBook.chapters;
+    if (curChap < chapters.length - 1) {
+        await renderChapter(curChap + 1);
+        await playFromSentence(0);
+    }
+}
+
+async function playPrevChapter() {
+    if (!STATE.currentBook) return;
+    const curChap = STATE.currentChapterIndex;
+    if (curChap > 0) {
+        await renderChapter(curChap - 1);
+        await playFromSentence(0);
+    }
+}
+
 // --- Media Session API ---
 function updateMediaSession() {
     if ('mediaSession' in navigator && STATE.currentBook) {
@@ -3338,24 +3403,19 @@ function updateMediaSession() {
             if (!audio.paused) audio.pause();
         });
         navigator.mediaSession.setActionHandler('previoustrack', () => {
-            const prevIdx = STATE.currentSentenceIndex - 1;
-            if (prevIdx >= 0) playFromSentence(prevIdx);
+            playPrevChapter();
         });
         navigator.mediaSession.setActionHandler('nexttrack', () => {
-            const nextIdx = STATE.currentSentenceIndex + 1;
-            if (nextIdx < chapter.sentences.length) playFromSentence(nextIdx);
+            playNextChapter();
         });
 
-        // Skip Handlers (10s)
+        // Skip Handlers (10s mapped to Prev/Next Chunk)
         try {
-            navigator.mediaSession.setActionHandler('seekbackward', (details) => {
-                const skipTime = details.seekOffset || 10;
-                audio.currentTime = Math.max(audio.currentTime - skipTime, 0);
+            navigator.mediaSession.setActionHandler('seekbackward', () => {
+                playPrevChunk();
             });
-            navigator.mediaSession.setActionHandler('seekforward', (details) => {
-                const skipTime = details.seekOffset || 10;
-                // For MSE, seeking forward is safe if data is buffered
-                audio.currentTime = audio.currentTime + skipTime;
+            navigator.mediaSession.setActionHandler('seekforward', () => {
+                playNextChunk();
             });
         } catch (e) { console.warn("Seek handlers not supported"); }
 
@@ -3796,62 +3856,17 @@ document.addEventListener('keydown', async (e) => {
         togglePlayback();
     } else if (e.code === 'ArrowRight' && !e.shiftKey) {
         e.preventDefault();
-        // Tìm chunk hiện tại trong buffer
-        const curTimingIdx = STATE.chunkTimings.findIndex(
-            t => t.chapterIndex === curChap && t.index === curSent
-        );
-        if (curTimingIdx !== -1 && curTimingIdx < STATE.chunkTimings.length - 1) {
-            // Chunk tiếp theo đã có trong buffer → seek trực tiếp
-            const nextChunk = STATE.chunkTimings[curTimingIdx + 1];
-            audio.currentTime = nextChunk.startTime + 0.01;
-            if (audio.paused) audio.play();
-        } else {
-            // Chunk chưa được prefetch → fallback reset session
-            const sentenceCount = chapters[curChap]?.sentences?.length ?? 0;
-            if (sentenceCount > 0 && curSent < sentenceCount - 1) {
-                await playFromSentence(curSent + 1);
-            } else if (curChap < chapters.length - 1) {
-                await renderChapter(curChap + 1);
-                await playFromSentence(0);
-            }
-        }
-
+        await playNextChunk();
     } else if (e.code === 'ArrowLeft' && !e.shiftKey) {
         e.preventDefault();
-        // Tìm chunk hiện tại trong buffer
-        const curTimingIdx = STATE.chunkTimings.findIndex(
-            t => t.chapterIndex === curChap && t.index === curSent
-        );
-        if (curTimingIdx > 0) {
-            // Chunk trước đã có trong buffer → seek trực tiếp
-            const prevChunk = STATE.chunkTimings[curTimingIdx - 1];
-            audio.currentTime = prevChunk.startTime + 0.01;
-            if (audio.paused) audio.play();
-        } else {
-            // Chunk trước không có trong buffer → fallback reset session
-            if (curSent > 0) {
-                await playFromSentence(curSent - 1);
-            } else if (curChap > 0) {
-                const prevChap = curChap - 1;
-                await renderChapter(prevChap);
-                const prevSentCount = STATE.currentBook.chapters[prevChap]?.sentences?.length ?? 1;
-                await playFromSentence(Math.max(0, prevSentCount - 1));
-            }
-        }
+        await playPrevChunk();
 
     } else if (e.code === 'ArrowRight' && e.shiftKey) {
         e.preventDefault();
-        if (curChap < chapters.length - 1) {
-            await renderChapter(curChap + 1);
-            await playFromSentence(0);
-        }
-
+        await playNextChapter();
     } else if (e.code === 'ArrowLeft' && e.shiftKey) {
         e.preventDefault();
-        if (curChap > 0) {
-            await renderChapter(curChap - 1);
-            await playFromSentence(0);
-        }
+        await playPrevChapter();
     }
 });
 
@@ -4141,3 +4156,21 @@ document.querySelectorAll('.theme-swatch').forEach(sw => {
     logoBtn.addEventListener('touchend', cancelHold);
     logoBtn.addEventListener('touchcancel', cancelHold);
 })();
+
+// ============================================================
+// [MiniPlayer] Bridge for static/js/mini-player-widget.js
+// The widget lives outside this module, so expose the few
+// pieces of state/behavior it mirrors. It owns no audio logic.
+// ============================================================
+window.MPW_BRIDGE = {
+    get STATE() { return STATE; },
+    audio,
+    togglePlayback,
+    resetAudioEngine,
+    toggleDiscoveryMode,
+    playNextChunk,
+    playPrevChunk,
+    playNextChapter,
+    playPrevChapter,
+};
+document.dispatchEvent(new CustomEvent('mpw-bridge-ready'));
