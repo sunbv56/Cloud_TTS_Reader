@@ -337,20 +337,29 @@ function toggleDiscoveryMode(isActive) {
     const sidebarContainer = document.getElementById('sidebar-container');
 
     if (isActive) {
-        // If entering Discovery, reset engine to stop background audio/queues
-        resetAudioEngine();
+        // [MiniPlayer] Keep the TTS session alive while the user browses Discovery
+        // with an active book — the floating widget takes over playback controls.
+        // Opening another book still resets the engine (loadBook calls resetAudioEngine).
+        const keepAlive = !!(STATE.currentBook && (STATE.isPlaying || STATE.chunkTimings.length > 0));
+        if (!keepAlive) {
+            resetAudioEngine();
+        }
 
         if (discoveryMode) discoveryMode.classList.remove('hidden');
         if (sidebarContainer) sidebarContainer.classList.add('hidden');
         if (readerContainer) readerContainer.classList.add('hidden');
         // Homepage không được litemode
         document.body.classList.remove('lite-mode');
+
+        if (window.MiniPlayerWidget) window.MiniPlayerWidget.onDiscoveryEnter(keepAlive);
     } else {
         if (discoveryMode) discoveryMode.classList.add('hidden');
         if (sidebarContainer) sidebarContainer.classList.remove('hidden');
         if (readerContainer) readerContainer.classList.remove('hidden');
         // Restore lite-mode if enabled in settings
         if (STATE.isLiteMode) document.body.classList.add('lite-mode');
+
+        if (window.MiniPlayerWidget) window.MiniPlayerWidget.onDiscoveryExit();
     }
 }
 
@@ -4141,3 +4150,17 @@ document.querySelectorAll('.theme-swatch').forEach(sw => {
     logoBtn.addEventListener('touchend', cancelHold);
     logoBtn.addEventListener('touchcancel', cancelHold);
 })();
+
+// ============================================================
+// [MiniPlayer] Bridge for static/js/mini-player-widget.js
+// The widget lives outside this module, so expose the few
+// pieces of state/behavior it mirrors. It owns no audio logic.
+// ============================================================
+window.MPW_BRIDGE = {
+    get STATE() { return STATE; },
+    audio,
+    togglePlayback,
+    resetAudioEngine,
+    toggleDiscoveryMode,
+};
+document.dispatchEvent(new CustomEvent('mpw-bridge-ready'));

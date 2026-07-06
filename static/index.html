@@ -19,6 +19,8 @@
     <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
     <!-- Font Awesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <!-- Mini Player Widget (floating YouTube-style player) -->
+    <link rel="stylesheet" href="/static/css/mini-player.css">
     <!-- Google Fonts: Inter for editorial precision -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
         rel="stylesheet">
@@ -1499,6 +1501,8 @@
     </div>
 
     <script type="module" src="/static/app.js"></script>
+    <!-- Mini Player Widget (waits for MPW_BRIDGE from app.js) -->
+    <script src="/static/js/mini-player-widget.js"></script>
 
     <!-- PWA Registration -->
     <script>

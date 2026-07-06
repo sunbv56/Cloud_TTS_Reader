@@ -1,0 +1,209 @@
+/* ============================================================
+   Mini Player Widget (YouTube-style floating player)
+   Self-contained styles (no Tailwind dependency) so this sheet
+   can be copied verbatim into the Document PiP window (Tier 3).
+   ============================================================ */
+
+#mini-player-widget {
+    position: fixed;
+    z-index: 90; /* above #discovery-mode (z-80), below true modals (z-100+) */
+    display: none;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+}
+
+#mini-player-widget.mpw-visible {
+    display: block;
+}
+
+#mini-player-widget.mpw-snapping {
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+                top 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.mpw-card {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 23rem;
+    max-width: calc(100vw - 2rem);
+    padding: 0.5rem 0.75rem 0.5rem 0.5rem;
+    border-radius: 1.1rem;
+    background: rgba(15, 20, 30, 0.85);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-family: 'Inter', system-ui, sans-serif;
+    cursor: grab;
+    position: relative;
+    overflow: hidden;
+}
+
+.mpw-card:active {
+    cursor: grabbing;
+}
+
+.mpw-art {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: color-mix(in srgb, var(--theme-primary, #00E5FF) 60%, transparent);
+    font-size: 1rem;
+}
+
+.mpw-meta {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    flex: 1;
+}
+
+.mpw-title {
+    font-size: 0.72rem;
+    font-weight: 800;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    letter-spacing: -0.01em;
+}
+
+.mpw-subtitle {
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mpw-btn {
+    border: none;
+    background: transparent;
+    color: #94a3b8;
+    width: 1.9rem;
+    height: 1.9rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-size: 0.72rem;
+    transition: color 0.2s, transform 0.15s, background 0.2s;
+}
+
+.mpw-btn:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.mpw-btn:active {
+    transform: scale(0.88);
+}
+
+.mpw-play {
+    width: 2.3rem;
+    height: 2.3rem;
+    background: #fff;
+    color: #000;
+    font-size: 0.8rem;
+    box-shadow: 0 0 18px rgba(255, 255, 255, 0.25);
+}
+
+.mpw-play:hover {
+    background: #fff;
+    color: #000;
+    transform: scale(1.08);
+}
+
+.mpw-progress-track {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 3px;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.mpw-progress {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(to right,
+        color-mix(in srgb, var(--theme-primary, #00E5FF) 50%, transparent),
+        var(--theme-primary, #00E5FF));
+    transition: width 0.3s linear;
+}
+
+/* Pop-out trigger added next to the existing #minimize-btn on the full player */
+#mpw-popout-btn {
+    position: absolute;
+    top: -0.75rem;
+    right: 5.5rem;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 50%;
+    background: rgba(30, 38, 52, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    z-index: 10;
+    font-size: 0.6rem;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+    transition: color 0.2s, background 0.2s;
+}
+
+#mpw-popout-btn:hover {
+    color: var(--theme-primary, #00E5FF);
+    background: color-mix(in srgb, var(--theme-primary, #00E5FF) 15%, rgba(30, 38, 52, 0.9));
+}
+
+/* ---------- Mobile: full-width bar pinned above the bottom edge ---------- */
+@media (max-width: 640px) {
+    #mini-player-widget {
+        left: 0.75rem !important;
+        right: 0.75rem !important;
+        top: auto !important;
+        bottom: 1rem !important;
+        width: auto;
+    }
+
+    .mpw-card {
+        width: 100%;
+        max-width: none;
+    }
+}
+
+/* ---------- Inside the Document PiP window ---------- */
+body.mpw-pip-body {
+    margin: 0;
+    background: #0b0f17;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+}
+
+body.mpw-pip-body .mpw-card {
+    width: 100%;
+    max-width: none;
+    height: 100%;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    cursor: default;
+}
