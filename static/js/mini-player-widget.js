@@ -27,6 +27,17 @@
     let pipWindow = null;       // Document PiP window, if open
     let pipReturnReason = null; // floatReason to restore when PiP closes
 
+    // Borderless video PiP (canvas → captureStream). Unlike Document PiP,
+    // the classic video PiP window has NO origin bar; playback is driven by
+    // Chrome's native overlay buttons through the Media Session handlers
+    // that app.js already registers (play/pause/prev/next).
+    let pipCanvas = null;
+    let pipVideo = null;
+    let pipDrawTimer = null;
+    let isExitingPip = false;
+    let lastPipTime = 0;
+    const PIP_W = 480, PIP_H = 120, PIP_DPR = 2;
+
     // ---------------------------------------------------------
     // DOM creation
     // ---------------------------------------------------------
@@ -69,21 +80,31 @@
             closeAndStop();
         });
 
-        // Tier 3: Document PiP — only shown when the browser supports it
+        // Tier 3: PiP — only shown when the browser supports either flavor
         const pipBtn = root.querySelector('#mpw-pip-btn');
-        if ('documentPictureInPicture' in window) {
+        if (document.pictureInPictureEnabled || 'documentPictureInPicture' in window) {
             pipBtn.hidden = false;
             pipBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                openPiP().catch(err => console.error('[MPW] PiP failed:', err));
+                openBestPiP().catch(err => console.error('[MPW] PiP failed:', err));
             });
         }
 
         setupDrag();
 
-        // Instant play/pause icon updates (polling only covers slow data)
-        bridge.audio.addEventListener('play', updatePlayIcon);
-        bridge.audio.addEventListener('pause', updatePlayIcon);
+        // Instant play/pause icon updates & PiP video syncing
+        bridge.audio.addEventListener('play', () => {
+            updatePlayIcon();
+            if (pipVideo && document.pictureInPictureElement === pipVideo && pipVideo.paused) {
+                pipVideo.play().catch(e => console.warn('[MPW] failed to play pipVideo:', e));
+            }
+        });
+        bridge.audio.addEventListener('pause', () => {
+            updatePlayIcon();
+            if (pipVideo && document.pictureInPictureElement === pipVideo && !pipVideo.paused) {
+                pipVideo.pause();
+            }
+        });
     }
 
     // Adds the one-click PiP button onto the existing full-size player.
@@ -91,13 +112,13 @@
         const mediaPlayer = document.getElementById('media-player');
         if (!mediaPlayer || document.getElementById('mpw-player-pip-btn')) return;
 
-        if ('documentPictureInPicture' in window) {
+        if (document.pictureInPictureEnabled || 'documentPictureInPicture' in window) {
             const pipBtn = document.createElement('button');
             pipBtn.id = 'mpw-player-pip-btn';
             pipBtn.title = 'Picture-in-Picture (floating window)';
             pipBtn.innerHTML = '<i class="fas fa-window-restore"></i>';
             pipBtn.addEventListener('click', () => {
-                openPiP().catch(err => console.error('[MPW] PiP failed:', err));
+                openBestPiP().catch(err => console.error('[MPW] PiP failed:', err));
             });
             mediaPlayer.appendChild(pipBtn);
         }
@@ -124,8 +145,15 @@
         }
     }
 
+    function closeVideoPiPIfOpen() {
+        if (document.pictureInPictureElement) {
+            document.exitPictureInPicture().catch(() => { });
+        }
+    }
+
     function closeAndStop() {
         if (pipWindow) pipWindow.close();
+        closeVideoPiPIfOpen();
         bridge.resetAudioEngine();
         hide();
     }
@@ -133,6 +161,7 @@
     // Tapping the widget body expands back to the full player
     function expand() {
         if (pipWindow) pipWindow.close();
+        closeVideoPiPIfOpen();
         if (floatReason === 'discovery') {
             bridge.toggleDiscoveryMode(false); // calls back into onDiscoveryExit -> hide()
         } else {
@@ -281,7 +310,224 @@
     }
 
     // ---------------------------------------------------------
-    // Tier 3: Document Picture-in-Picture
+    // Tier 3a: Borderless video PiP (no origin bar)
+    // ---------------------------------------------------------
+    function ensureVideoPipElements() {
+        if (pipCanvas) return;
+        pipCanvas = document.createElement('canvas');
+        pipCanvas.width = PIP_W * PIP_DPR;
+        pipCanvas.height = PIP_H * PIP_DPR;
+        pipVideo = document.createElement('video');
+        pipVideo.muted = true;
+        pipVideo.playsInline = true;
+        pipVideo.setAttribute('aria-hidden', 'true');
+        pipVideo.style.cssText =
+            'position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none;';
+        
+        // Sync PiP video playback events back to main audio
+        pipVideo.addEventListener('play', () => {
+            if (isExitingPip) return;
+            if (document.pictureInPictureElement === pipVideo) {
+                if (bridge && bridge.audio && bridge.audio.paused) {
+                    bridge.togglePlayback();
+                }
+            }
+        });
+        pipVideo.addEventListener('pause', () => {
+            if (isExitingPip) return;
+            if (document.pictureInPictureElement === pipVideo) {
+                if (bridge && bridge.audio && !bridge.audio.paused) {
+                    bridge.audio.pause();
+                }
+            }
+        });
+
+        // Detect seek forward/backward from native PiP window controls
+        pipVideo.addEventListener('timeupdate', () => {
+            if (document.pictureInPictureElement === pipVideo) {
+                const curTime = pipVideo.currentTime;
+                if (Math.abs(curTime - lastPipTime) < 2.0) {
+                    lastPipTime = curTime;
+                }
+            }
+        });
+        pipVideo.addEventListener('seeking', () => {
+            if (isExitingPip) return;
+            if (document.pictureInPictureElement !== pipVideo) return;
+
+            const curTime = pipVideo.currentTime;
+            const diff = curTime - lastPipTime;
+
+            if (Math.abs(diff) >= 2.0) {
+                if (diff > 0) {
+                    console.log('[MPW] PiP seeking forward:', diff);
+                    if (bridge && bridge.playNextChunk) {
+                        bridge.playNextChunk();
+                    }
+                } else {
+                    console.log('[MPW] PiP seeking backward:', diff);
+                    if (bridge && bridge.playPrevChunk) {
+                        bridge.playPrevChunk();
+                    }
+                }
+                lastPipTime = curTime;
+            }
+        });
+
+        document.body.appendChild(pipVideo);
+    }
+
+    function wrapText(ctx, text, maxWidth, maxLines) {
+        const words = String(text || '').split(/\s+/);
+        const lines = [];
+        let line = '';
+        for (const word of words) {
+            const probe = line ? line + ' ' + word : word;
+            if (ctx.measureText(probe).width > maxWidth && line) {
+                lines.push(line);
+                line = word;
+                if (lines.length === maxLines) break;
+            } else {
+                line = probe;
+            }
+        }
+        if (lines.length < maxLines && line) lines.push(line);
+        if (lines.length === maxLines && line && lines[maxLines - 1] !== line) {
+            // Ran out of room: ellipsize the last kept line
+            let last = lines[maxLines - 1];
+            while (last && ctx.measureText(last + '…').width > maxWidth) {
+                last = last.slice(0, -1);
+            }
+            lines[maxLines - 1] = last + '…';
+        }
+        return lines;
+    }
+
+    // Current + upcoming sentence of the active chapter (karaoke style).
+    // Falls back to nulls when the segment's sentences aren't loaded yet.
+    function getSentencePair() {
+        const S = bridge.STATE;
+        const chapter = S.currentBook
+            && S.currentBook.chapters
+            && S.currentBook.chapters[S.currentChapterIndex];
+        const arr = chapter && chapter.sentences;
+        if (!arr || !arr.length) return null;
+        const i = Math.max(0, S.currentSentenceIndex || 0);
+        return { current: arr[i] || '', next: arr[i + 1] || '' };
+    }
+
+    function drawPipFrame() {
+        const ctx = pipCanvas.getContext('2d');
+        const primary = (getComputedStyle(document.documentElement)
+            .getPropertyValue('--theme-primary') || '#00E5FF').trim() || '#00E5FF';
+        const chapterTitle = (document.getElementById('player-title') || {}).textContent || '';
+        const progress = parseFloat(
+            ((document.getElementById('progress-bar') || {}).style || {}).width) || 0;
+        const pair = getSentencePair();
+
+        ctx.save();
+        ctx.scale(PIP_DPR, PIP_DPR);
+
+        // Background gradient
+        const bg = ctx.createLinearGradient(0, 0, PIP_W, PIP_H);
+        bg.addColorStop(0, '#10151f');
+        bg.addColorStop(0.6, '#0b0f17');
+        bg.addColorStop(1, '#0e1a22');
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, PIP_W, PIP_H);
+
+        const textX = 20;
+        const textW = PIP_W - textX * 2;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
+
+        // Chapter label (tiny, dimmed)
+        ctx.fillStyle = '#64748b';
+        ctx.font = '700 10px Inter, system-ui, sans-serif';
+        ctx.fillText(wrapText(ctx, chapterTitle.toUpperCase(), textW, 1)[0] || '', textX, 22);
+
+        if (pair) {
+            // Current sentence — bright, up to 2 lines
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '600 15px Inter, system-ui, sans-serif';
+            const curLines = wrapText(ctx, pair.current, textW, 2);
+            let ty = 46;
+            for (const l of curLines) {
+                ctx.fillText(l, textX, ty);
+                ty += 20;
+            }
+            // Next sentence — dimmed, single line
+            if (pair.next) {
+                ctx.fillStyle = '#64748b';
+                ctx.font = '400 12px Inter, system-ui, sans-serif';
+                const nextLine = wrapText(ctx, pair.next, textW - 14, 1)[0] || '';
+                ctx.fillStyle = primary;
+                ctx.fillText('▸', textX, 103);
+                ctx.fillStyle = '#64748b';
+                ctx.fillText(nextLine, textX + 14, 103);
+            }
+        } else {
+            // Sentences not loaded yet: show the chapter title big instead
+            ctx.fillStyle = '#ffffff';
+            ctx.font = '800 16px Inter, system-ui, sans-serif';
+            const lines = wrapText(ctx, chapterTitle, textW, 2);
+            let ty = 56;
+            for (const l of lines) {
+                ctx.fillText(l, textX, ty);
+                ty += 21;
+            }
+        }
+
+        // Progress bar
+        ctx.fillStyle = 'rgba(255,255,255,0.08)';
+        ctx.fillRect(0, PIP_H - 5, PIP_W, 5);
+        ctx.fillStyle = primary;
+        ctx.fillRect(0, PIP_H - 5, PIP_W * (progress / 100), 5);
+
+        ctx.restore();
+    }
+
+    async function openVideoPiP() {
+        if (!bridge.STATE.currentBook) return;
+        if (document.pictureInPictureElement) return; // already open
+        ensureVideoPipElements();
+        drawPipFrame();
+        if (!pipVideo.srcObject) pipVideo.srcObject = pipCanvas.captureStream(5);
+        if (bridge.audio.paused) {
+            pipVideo.pause();
+        } else {
+            await pipVideo.play();
+        }
+        lastPipTime = pipVideo.currentTime; // Align initial time
+        await pipVideo.requestPictureInPicture();
+        pipDrawTimer = setInterval(drawPipFrame, 500);
+        pipVideo.addEventListener('leavepictureinpicture', stopVideoPiP, { once: true });
+    }
+
+    function stopVideoPiP() {
+        isExitingPip = true;
+        if (pipDrawTimer) {
+            clearInterval(pipDrawTimer);
+            pipDrawTimer = null;
+        }
+        if (pipVideo) pipVideo.pause();
+        isExitingPip = false;
+    }
+
+    // Prefer the borderless video PiP; fall back to Document PiP.
+    function openBestPiP() {
+        const attempt = document.pictureInPictureEnabled
+            ? openVideoPiP()
+            : Promise.reject(new Error('video PiP unsupported'));
+        return attempt.catch(err => {
+            console.warn('[MPW] Video PiP failed, falling back to Document PiP:', err);
+            if ('documentPictureInPicture' in window) return openPiP();
+            throw err;
+        });
+    }
+
+    // ---------------------------------------------------------
+    // Tier 3b: Document Picture-in-Picture (fallback — has origin bar)
     // ---------------------------------------------------------
     async function openPiP() {
         if (pipWindow) {
