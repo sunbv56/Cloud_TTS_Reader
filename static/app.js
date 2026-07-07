@@ -30,7 +30,12 @@ let STATE = {
         pitch: "+0Hz",
         volume: "+0%",
         numWorkers: 5,
-        fontSize: 20,
+        fontSize: (function() {
+            const saved = localStorage.getItem('reader-font-size');
+            if (saved) return parseInt(saved, 10);
+            const isAndroid = /Android/i.test(navigator.userAgent);
+            return isAndroid ? 10 : 20;
+        })(),
         textColor: "default"
     },
     theme: localStorage.getItem('reader-theme') || 'default',
@@ -1140,13 +1145,13 @@ async function saveProgress(force = false) {
 
     try {
         const progressRef = doc(db, "users", STATE.user.uid, "progress", STATE.currentBookId);
-        const { theme, ...persistedSettings } = STATE.settings;
+        const { theme, fontSize, ...persistedSettings } = STATE.settings;
         await setDoc(progressRef, {
             title: STATE.currentBook.title,
             filename: STATE.currentFilename,
             last_read_chunk: currentGlobalIndex,
             total_chunks: getTotalChunks(),
-            settings: persistedSettings, // Save current settings (excluding global theme)
+            settings: persistedSettings, // Save current settings (excluding global theme and device font size)
             updated_at: serverTimestamp()
         }, { merge: true });
 
@@ -1766,7 +1771,7 @@ async function loadBook(bookData, bookId, filename) {
         STATE.lastSavedChunkIndex = progress.last_read_chunk;
 
         if (progress.settings) {
-            const { theme, ...bookSettings } = progress.settings;
+            const { theme, fontSize, ...bookSettings } = progress.settings;
             STATE.settings = { ...STATE.settings, ...bookSettings };
         }
     } else {
@@ -3051,6 +3056,7 @@ const debouncedApplyTypography = debounce(() => {
 document.getElementById('font-size-range').oninput = (e) => {
     const val = parseInt(e.target.value);
     STATE.settings.fontSize = val;
+    localStorage.setItem('reader-font-size', val);
     document.getElementById('font-size-val').innerText = `${val}px`;
 
     // Instant preview via CSS variable
@@ -4173,4 +4179,7 @@ window.MPW_BRIDGE = {
     playNextChapter,
     playPrevChapter,
 };
+// Apply initial settings to UI on startup
+applySettingsToUI();
+
 document.dispatchEvent(new CustomEvent('mpw-bridge-ready'));
