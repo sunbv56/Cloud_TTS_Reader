@@ -1550,6 +1550,9 @@ async function mergeChapterFile(event, bookId, bookData) {
             await loadBook(newBookData, bookId, filename);
         }
 
+        // ── 4. Cập nhật lại giao diện danh sách truyện ────────────────────────
+        await refreshLibrary();
+
         setTimeout(() => document.getElementById('status-indicator').innerText = 'Ready', 3000);
 
     } catch (err) {
