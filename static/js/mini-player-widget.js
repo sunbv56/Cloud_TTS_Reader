@@ -36,7 +36,7 @@
     let pipDrawTimer = null;
     let isExitingPip = false;
     let lastPipTime = 0;
-    const PIP_W = 480, PIP_H = 120, PIP_DPR = 2;
+    const PIP_W = 480, PIP_H = 140, PIP_DPR = 2;
 
     // ---------------------------------------------------------
     // DOM creation
@@ -403,6 +403,26 @@
         return lines;
     }
 
+    function doesTextFit(ctx, text, maxWidth, maxLines) {
+        const words = String(text || '').split(/\s+/);
+        let linesCount = 0;
+        let line = '';
+        for (const word of words) {
+            const probe = line ? line + ' ' + word : word;
+            if (ctx.measureText(probe).width > maxWidth && line) {
+                linesCount++;
+                line = word;
+                if (linesCount === maxLines) {
+                    return false;
+                }
+            } else {
+                line = probe;
+            }
+        }
+        if (line) linesCount++;
+        return linesCount <= maxLines;
+    }
+
     // Current + upcoming sentence of the active chapter (karaoke style).
     // Falls back to nulls when the segment's sentences aren't loaded yet.
     function getSentencePair() {
@@ -447,34 +467,67 @@
         ctx.fillText(wrapText(ctx, chapterTitle.toUpperCase(), textW, 1)[0] || '', textX, 22);
 
         if (pair) {
-            // Current sentence — bright, up to 2 lines
+            // Current sentence — bright, up to 3 lines
             ctx.fillStyle = '#ffffff';
-            ctx.font = '600 15px Inter, system-ui, sans-serif';
-            const curLines = wrapText(ctx, pair.current, textW, 2);
-            let ty = 46;
+
+            let fontSize = 15;
+            const minFontSize = 10;
+            while (fontSize > minFontSize) {
+                ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
+                if (doesTextFit(ctx, pair.current, textW, 3)) {
+                    break;
+                }
+                fontSize--;
+            }
+
+            ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
+            const curLines = wrapText(ctx, pair.current, textW, 3);
+
+            const lineHeight = Math.max(14, Math.round(fontSize * 1.33));
+            const verticalCenter = 56 + Math.round((PIP_H - 120) / 2);
+            let ty = verticalCenter - Math.round(((curLines.length - 1) * lineHeight) / 2);
+
+            const spacing = lineHeight;
             for (const l of curLines) {
                 ctx.fillText(l, textX, ty);
-                ty += 20;
+                ty += spacing;
             }
+
             // Next sentence — dimmed, single line
             if (pair.next) {
                 ctx.fillStyle = '#64748b';
                 ctx.font = '400 12px Inter, system-ui, sans-serif';
                 const nextLine = wrapText(ctx, pair.next, textW - 14, 1)[0] || '';
                 ctx.fillStyle = primary;
-                ctx.fillText('▸', textX, 103);
+                ctx.fillText('▸', textX, PIP_H - 17);
                 ctx.fillStyle = '#64748b';
-                ctx.fillText(nextLine, textX + 14, 103);
+                ctx.fillText(nextLine, textX + 14, PIP_H - 17);
             }
         } else {
             // Sentences not loaded yet: show the chapter title big instead
             ctx.fillStyle = '#ffffff';
-            ctx.font = '800 16px Inter, system-ui, sans-serif';
-            const lines = wrapText(ctx, chapterTitle, textW, 2);
-            let ty = 56;
+
+            let fontSize = 16;
+            const minFontSize = 10;
+            while (fontSize > minFontSize) {
+                ctx.font = `800 ${fontSize}px Inter, system-ui, sans-serif`;
+                if (doesTextFit(ctx, chapterTitle, textW, 3)) {
+                    break;
+                }
+                fontSize--;
+            }
+
+            ctx.font = `800 ${fontSize}px Inter, system-ui, sans-serif`;
+            const lines = wrapText(ctx, chapterTitle, textW, 3);
+
+            const lineHeight = Math.max(14, Math.round(fontSize * 1.31));
+            const fallbackCenter = Math.round(PIP_H / 2) + 6;
+            let ty = fallbackCenter - Math.round(((lines.length - 1) * lineHeight) / 2);
+
+            const spacing = lineHeight;
             for (const l of lines) {
                 ctx.fillText(l, textX, ty);
-                ty += 21;
+                ty += spacing;
             }
         }
 
@@ -514,16 +567,15 @@
         isExitingPip = false;
     }
 
-    // Prefer the borderless video PiP; fall back to Document PiP.
+    // Prefer the borderless Canvas Video PiP; fall back to Document PiP.
     function openBestPiP() {
-        const attempt = document.pictureInPictureEnabled
-            ? openVideoPiP()
-            : Promise.reject(new Error('video PiP unsupported'));
-        return attempt.catch(err => {
-            console.warn('[MPW] Video PiP failed, falling back to Document PiP:', err);
-            if ('documentPictureInPicture' in window) return openPiP();
-            throw err;
-        });
+        if (document.pictureInPictureEnabled) {
+            return openVideoPiP();
+        } else if ('documentPictureInPicture' in window) {
+            return openPiP();
+        } else {
+            return Promise.reject(new Error('Picture-in-Picture unsupported'));
+        }
     }
 
     // ---------------------------------------------------------
