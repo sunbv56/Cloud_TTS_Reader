@@ -281,7 +281,7 @@ body.mpw-pip-body.mpw-pip-compact .mpw-card {
     gap: 0.55rem;
 }
 
-body.mpw-pip-body.mpw-pip-compact .mpw-card > :not(.mpw-art):not(.mpw-play):not(#mpw-pip-round-btn) {
+body.mpw-pip-body.mpw-pip-compact .mpw-card > :not(#mpw-pip-round-btn) {
     display: none;
 }
 

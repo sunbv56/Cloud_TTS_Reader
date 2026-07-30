@@ -38,7 +38,7 @@ test('websocket wait reports both success and timeout', () => {
 
 test('native PiP keeps the full layout and offers a compact layout', () => {
     assert.match(miniPlayerJs, /full:\s*\{\s*width:\s*480,\s*height:\s*140\s*\}/);
-    assert.match(miniPlayerJs, /compact:\s*\{\s*width:\s*160,\s*height:\s*160\s*\}/);
+    assert.match(miniPlayerJs, /compact:\s*\{\s*width:\s*50,\s*height:\s*50\s*\}/);
     assert.match(miniPlayerJs, /PIP_FRAME_RATE\s*=\s*1/);
     assert.match(miniPlayerJs, /openBestPiP\('full'\)/);
     assert.match(miniPlayerJs, /id="mpw-pip-round-btn"/);

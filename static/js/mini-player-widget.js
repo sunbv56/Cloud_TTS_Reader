@@ -40,7 +40,7 @@
     let pipLayout = 'full';
     const PIP_LAYOUTS = Object.freeze({
         full: { width: 480, height: 140 },
-        compact: { width: 160, height: 160 },
+        compact: { width: 50, height: 50 },
     });
     const PIP_DPR = 1;
     const PIP_FRAME_RATE = 1;
@@ -520,12 +520,12 @@
     function drawCompactPipFrame(ctx, primary, progress) {
         const dimensions = PIP_LAYOUTS.compact;
         const center = dimensions.width / 2;
-        const radius = 66;
+        const radius = 21;
 
         ctx.fillStyle = '#070a10';
         ctx.fillRect(0, 0, dimensions.width, dimensions.height);
 
-        const bubble = ctx.createRadialGradient(center - 18, center - 22, 8, center, center, radius);
+        const bubble = ctx.createRadialGradient(center - 6, center - 7, 2, center, center, radius);
         bubble.addColorStop(0, '#1f2937');
         bubble.addColorStop(1, '#0b0f17');
         ctx.beginPath();
@@ -534,24 +534,24 @@
         ctx.fill();
 
         ctx.beginPath();
-        ctx.arc(center, center, radius - 3, -Math.PI / 2,
+        ctx.arc(center, center, radius - 1, -Math.PI / 2,
             -Math.PI / 2 + Math.PI * 2 * progress / 100);
         ctx.strokeStyle = primary;
-        ctx.lineWidth = 6;
+        ctx.lineWidth = 2;
         ctx.lineCap = 'round';
         ctx.stroke();
 
         ctx.fillStyle = '#ffffff';
         if (bridge.audio.paused) {
             ctx.beginPath();
-            ctx.moveTo(center - 13, center - 22);
-            ctx.lineTo(center + 24, center);
-            ctx.lineTo(center - 13, center + 22);
+            ctx.moveTo(center - 4, center - 7);
+            ctx.lineTo(center + 8, center);
+            ctx.lineTo(center - 4, center + 7);
             ctx.closePath();
             ctx.fill();
         } else {
-            ctx.fillRect(center - 19, center - 22, 13, 44);
-            ctx.fillRect(center + 7, center - 22, 13, 44);
+            ctx.fillRect(center - 6, center - 7, 4, 14);
+            ctx.fillRect(center + 2, center - 7, 4, 14);
         }
     }
 
@@ -624,7 +624,7 @@
                 : '<i class="fas fa-circle"></i>';
         }
         try {
-            pipWindow.resizeTo(compact ? 220 : 480, compact ? 220 : 148);
+            pipWindow.resizeTo(compact ? 50 : 480, compact ? 50 : 148);
         } catch (_) {
             // Window sizing is controlled by the browser/OS on some platforms.
         }
@@ -644,8 +644,8 @@
 
         const compact = layout === 'compact';
         pipWindow = await window.documentPictureInPicture.requestWindow({
-            width: compact ? 220 : 480,
-            height: compact ? 220 : 148,
+            width: compact ? 50 : 480,
+            height: compact ? 50 : 148,
         });
 
         // Copy only the two sheets the PiP content needs: Font Awesome + our own.
