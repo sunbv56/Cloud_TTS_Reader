@@ -7,6 +7,12 @@ import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "http
 // Firebase placeholders (Initialized via API)
 let app, auth, db, storage, provider;
 
+// Keep enough compressed audio for background playback without dispatching
+// hundreds of TTS jobs at once. The old 150/500-chunk policy caused large
+// network, MSE and server bursts on phones.
+const FOREGROUND_PREFETCH_CHUNKS = 40;
+const BACKGROUND_PREFETCH_CHUNKS = 80;
+
 // App State
 let STATE = {
     user: null,
@@ -64,6 +70,7 @@ let STATE = {
     lastPlaybackTick: 0,
     stallCount: 0,
     pauseCount: 0,
+    pauseTimeoutHandled: false,
     // Offline Download
     isDownloading: false,
     downloadBuffer: new Map(),
@@ -655,43 +662,34 @@ const playBtn = document.getElementById('play-btn');
 const textContainer = document.getElementById('text-container');
 const fileInput = document.getElementById('file-input');
 const bookList = document.getElementById('book-list');
-// --- No-Sleep Web Audio Hack ---
-let noSleepContext = null;
-let noSleepOscillator = null;
 
-function enableNoSleepAudio() {
-    if (noSleepContext && noSleepContext.state === 'running') return;
-    try {
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        noSleepContext = new AudioContext();
-        noSleepOscillator = noSleepContext.createOscillator();
-        const gainNode = noSleepContext.createGain();
+// The real media element + Media Session are sufficient for supported
+// browsers to classify this page as background audio. A silent Web Audio
+// oscillator kept the DSP/audio graph awake continuously and heated phones.
 
-        // Cực kỳ nhỏ, không thể nghe thấy
-        gainNode.gain.value = 0.0001;
-        noSleepOscillator.connect(gainNode);
-        gainNode.connect(noSleepContext.destination);
-
-        noSleepOscillator.start();
-        console.log("No-Sleep Audio Context started.");
-    } catch (e) {
-        console.warn("Failed to start No-Sleep Audio:", e);
+function closeWebSocketIntentionally() {
+    if (STATE.prefetchTimeout) {
+        clearTimeout(STATE.prefetchTimeout);
+        STATE.prefetchTimeout = null;
     }
+    if (STATE.heartbeatInterval) {
+        clearInterval(STATE.heartbeatInterval);
+        STATE.heartbeatInterval = null;
+    }
+    if (!STATE.isPlaying) STATE.pauseTimeoutHandled = true;
+
+    const socket = STATE.ws;
+    if (!socket) return;
+    socket._intentionalClose = true;
+    if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+        socket.close();
+    }
+    if (STATE.ws === socket) STATE.ws = null;
 }
 
-function disableNoSleepAudio() {
-    if (noSleepOscillator) {
-        try {
-            noSleepOscillator.stop();
-            noSleepOscillator.disconnect();
-        } catch (e) { }
-        noSleepOscillator = null;
-    }
-    if (noSleepContext) {
-        noSleepContext.close();
-        noSleepContext = null;
-    }
-    console.log("No-Sleep Audio Context stopped.");
+async function stopPlaybackSession() {
+    await resetAudioEngine();
+    closeWebSocketIntentionally();
 }
 
 // --- Initialization ---
@@ -702,6 +700,7 @@ function initWebSocket() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
     STATE.ws = new WebSocket(wsUrl);
+    const socket = STATE.ws;
 
     STATE.ws.onopen = () => {
         console.log("Connected to WebSocket");
@@ -895,6 +894,15 @@ function initWebSocket() {
     STATE.ws.onclose = () => {
         console.log("WebSocket Disconnected.");
 
+        // Ignore a late close from an older socket after a replacement has
+        // already connected; it must not clear the new socket's heartbeat.
+        if (STATE.ws && STATE.ws !== socket) return;
+        if (STATE.ws === socket) STATE.ws = null;
+        if (STATE.heartbeatInterval) {
+            clearInterval(STATE.heartbeatInterval);
+            STATE.heartbeatInterval = null;
+        }
+
         // --- CRITICAL FIX FOR 30M DISCONNECT ---
         // Release any pending chunk locks so they can be re-fetched after reconnect
         STATE.fetchingSet.clear();
@@ -902,17 +910,25 @@ function initWebSocket() {
         STATE.sessionId++; // Invalidate pending responses from old connection
         STATE.isTransitioning = false; // FIX #6: Clear transitioning flag to unblock stall detector
 
-        // FIX #4: Use chunkTimings presence instead of isStalled to decide reconnect
-        // isStalled was never reset, permanently blocking reconnection after any stall
-        if (STATE.isPlaying || STATE.chunkTimings.length > 0) {
+        // A deliberate close (sleep timer, idle timeout, completed download)
+        // must stay closed. Buffered chunks alone are not proof that playback
+        // is active and previously caused endless background reconnects.
+        if (socket._intentionalClose) {
+            document.getElementById('status-indicator').innerText = "Disconnected";
+            return;
+        }
+
+        if (STATE.isPlaying || STATE.isDownloading) {
             STATE.isStalled = false; // FIX #2: Reset isStalled so future reconnects work
             console.log("Unexpected disconnect, reconnecting in 3s...");
             document.getElementById('status-indicator').innerText = "Reconnecting...";
-            setTimeout(initWebSocket, 3000);
+            setTimeout(() => {
+                if (STATE.isPlaying || STATE.isDownloading) initWebSocket();
+            }, 3000);
 
             // Force a prefetch check shortly after reconnect completes
             setTimeout(() => {
-                if (STATE.currentBook) {
+                if (STATE.isPlaying && STATE.currentBook && STATE.ws?.readyState === WebSocket.OPEN) {
                     // Start filling buffer heavily just like a jump
                     let lastChap = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].chapterIndex : STATE.currentChapterIndex;
                     let lastIdx = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].index : STATE.currentSentenceIndex;
@@ -931,7 +947,7 @@ function initWebSocket() {
  * If not connected, initiates connection and waits for the OPEN state.
  */
 async function waitForWebSocket() {
-    if (STATE.ws && STATE.ws.readyState === WebSocket.OPEN) return;
+    if (STATE.ws && STATE.ws.readyState === WebSocket.OPEN) return true;
 
     if (!STATE.ws || STATE.ws.readyState === WebSocket.CLOSED || STATE.ws.readyState === WebSocket.CLOSING) {
         console.warn("WebSocket not connected. Connecting...");
@@ -943,11 +959,11 @@ async function waitForWebSocket() {
         const startTime = Date.now();
         const check = () => {
             if (STATE.ws && STATE.ws.readyState === WebSocket.OPEN) {
-                resolve();
+                resolve(true);
             } else if (Date.now() - startTime > 10000) {
                 // Timeout after 10s
                 console.error("WebSocket connection timeout.");
-                resolve(); // Resolve anyway to avoid hanging, or handle error
+                resolve(false);
             } else {
                 setTimeout(check, 100);
             }
@@ -2281,7 +2297,9 @@ async function downloadSelectedChapters() {
         console.log(`[Download] Starting parallel download: ${STATE.downloadExpected} chunks across ${chapters.length} chapters`);
 
         // 4. Ensure WebSocket is connected (workers are needed!)
-        await waitForWebSocket();
+        if (!(await waitForWebSocket())) {
+            throw new Error("WebSocket connection timeout.");
+        }
 
         // 5. Send ALL sentences as PREFETCH tasks — workers process in parallel!
         // Also cache chunk metadata for retry on failure
@@ -2397,10 +2415,7 @@ async function downloadSelectedChapters() {
         downloadBtn.classList.remove('!bg-red-500/20', '!text-red-400', '!border-red-500/30', '!bg-amber-500/20', '!text-amber-400', '!border-amber-500/30');
 
         // Close WebSocket after download (free backend resources)
-        if (STATE.ws) {
-            STATE.ws.close();
-            STATE.ws = null;
-        }
+        closeWebSocketIntentionally();
         document.getElementById('status-indicator').innerText = "Disconnected";
         const playBtn = document.getElementById('play-btn');
         if (playBtn) playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
@@ -2515,8 +2530,9 @@ function updatePrefetchUI() {
     if (STATE.isLiteMode) return;
     if (!STATE.currentBook) return;
 
-    // Target buffer size: keep at least 100 chunks ahead, or 10x the workers
-    const target = Math.max(100, STATE.settings.numWorkers * 10);
+    const target = document.visibilityState === 'hidden'
+        ? BACKGROUND_PREFETCH_CHUNKS
+        : FOREGROUND_PREFETCH_CHUNKS;
     const currentGlobal = getGlobalIndex(STATE.currentChapterIndex, STATE.currentSentenceIndex);
 
     // Count ready chunks (in queue or already in MSE) that are AHEAD of current sentence
@@ -2558,9 +2574,14 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
     if (STATE.prefetchTimeout) clearTimeout(STATE.prefetchTimeout);
 
     const runPrefetch = async () => {
-        if (count === null) count = Math.max(150, STATE.settings.numWorkers * 15); // FIX #5 REVISED: 150 chunks = ~10 min buffer; enough for background tabs where ontimeupdate is throttled
+        if (count === null) {
+            count = document.visibilityState === 'hidden'
+                ? BACKGROUND_PREFETCH_CHUNKS
+                : FOREGROUND_PREFETCH_CHUNKS;
+        }
         if (!STATE.ws || STATE.ws.readyState !== WebSocket.OPEN) {
-            await waitForWebSocket();
+            const connected = await waitForWebSocket();
+            if (!connected) return;
         }
         if (!STATE.currentBook) return;
 
@@ -2662,7 +2683,10 @@ async function playFromSentence(index) {
     // Dọn dẹp cache cũ khi nhảy tới vị trí mới (jump) - "Dọn dẹp sạch cho cái mới đi vào"
     await OFFLINE_MANAGER.clearCache();
 
-    await waitForWebSocket();
+    if (!(await waitForWebSocket())) {
+        document.getElementById('status-indicator').innerText = "Connection failed";
+        return;
+    }
 
     const chapter = STATE.currentBook.chapters[STATE.currentChapterIndex];
     if (!chapter.sentences) {
@@ -2798,7 +2822,10 @@ async function togglePlayback() {
 
     if (audio.paused) {
         document.getElementById('status-indicator').innerText = "Connecting...";
-        await waitForWebSocket();
+        if (!(await waitForWebSocket())) {
+            document.getElementById('status-indicator').innerText = "Connection failed";
+            return;
+        }
         if (STATE.chunkTimings.length === 0) {
             await playFromSentence(STATE.currentSentenceIndex);
         } else {
@@ -2815,12 +2842,12 @@ playBtn.onclick = () => togglePlayback();
 audio.onplay = async () => {
     STATE.isTransitioning = false;
     STATE.isPlaying = true;
+    STATE.pauseTimeoutHandled = false;
 
     // [TASK 3] Reset stall recovery counters on successful play
     STATE._stallRecoveryCount = 0;
     STATE.streamingRetryCount.clear();
 
-    enableNoSleepAudio();
     playBtn.innerHTML = '<i class="fas fa-pause"></i>';
     document.getElementById('status-indicator').innerText = "Streaming";
 
@@ -2832,7 +2859,8 @@ audio.onplay = async () => {
     if (STATE.currentBook && (!STATE.ws || STATE.ws.readyState !== WebSocket.OPEN)) {
         console.log("Playback resumed but WebSocket is closed. Reconnecting...");
         try {
-            await waitForWebSocket();
+            const connected = await waitForWebSocket();
+            if (!connected) throw new Error("WebSocket connection timeout.");
 
             if (STATE.currentSentenceIndex !== -1) {
                 console.log(`Current sentence ${STATE.currentSentenceIndex} is already buffered. Resuming prefetch...`);
@@ -2846,7 +2874,7 @@ audio.onplay = async () => {
 
 audio.onpause = () => {
     STATE.isPlaying = false;
-    disableNoSleepAudio();
+    STATE.pauseTimeoutHandled = false;
     playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
     document.getElementById('status-indicator').innerText = "Paused";
     if ('mediaSession' in navigator) {
@@ -3431,8 +3459,7 @@ function updateMediaSession() {
         // Android/Chrome support for jumping chapters
         try {
             navigator.mediaSession.setActionHandler('stop', () => {
-                audio.pause();
-                STATE.isPlaying = false;
+                stopPlaybackSession();
             });
         } catch (e) { }
 
@@ -3451,8 +3478,13 @@ window.addEventListener('pagehide', () => {
 async function requestWakeLock() {
     if ('wakeLock' in navigator) {
         try {
-            STATE.wakeLockSentinel = await navigator.wakeLock.request('screen');
-            STATE.wakeLockSentinel.addEventListener('release', () => {
+            if (STATE.wakeLockSentinel && !STATE.wakeLockSentinel.released) return;
+            const sentinel = await navigator.wakeLock.request('screen');
+            STATE.wakeLockSentinel = sentinel;
+            sentinel.addEventListener('release', () => {
+                if (STATE.wakeLockSentinel === sentinel) {
+                    STATE.wakeLockSentinel = null;
+                }
                 console.log('Screen Wake Lock was released');
             });
             console.log('Screen Wake Lock is active');
@@ -3559,9 +3591,7 @@ function startSleepTimer(seconds) {
             STATE.isPlaying = false;
 
             // Action: Disconnect WebSocket to stop backend workers
-            if (STATE.ws) {
-                STATE.ws.close();
-            }
+            closeWebSocketIntentionally();
 
             // Action: Increment Session ID to invalidate any pending work
             STATE.sessionId++;
@@ -3667,7 +3697,8 @@ async function triggerManualSave() {
 // --- Stall Detection Logic (Poll every 1s) ---
 setInterval(() => {
     if (!STATE.isPlaying || STATE.isTransitioning || !audio.currentTime) {
-        if (!STATE.isPlaying && STATE.currentBook && !STATE.isTransitioning && !STATE.isDownloading) {
+        if (!STATE.isPlaying && STATE.currentBook && !STATE.isTransitioning
+            && !STATE.isDownloading && !STATE.pauseTimeoutHandled) {
             STATE.pauseCount++;
             if (STATE.pauseCount % 10 === 0) console.log(`Inactivity: ${STATE.pauseCount}s / 60s`);
 
@@ -3701,6 +3732,7 @@ setInterval(() => {
 async function handlePauseTimeout() {
     console.warn("Pause Timeout: 1 minute reached. Saving and Disconnecting...");
     STATE.pauseCount = 0; // Reset to avoid double trigger
+    STATE.pauseTimeoutHandled = true;
 
     // 1. Save Progress
     if (STATE.user && STATE.currentBookId) {
@@ -3709,13 +3741,7 @@ async function handlePauseTimeout() {
     }
 
     // 2. [TASK 3] Disconnect WebSocket ONLY (Preserve Buffer & Cache)
-    if (STATE.ws) {
-        if (STATE.heartbeatInterval) {
-            clearInterval(STATE.heartbeatInterval);
-            STATE.heartbeatInterval = null;
-        }
-        STATE.ws.close();
-    }
+    closeWebSocketIntentionally();
 
     STATE.isPlaying = false;
     const playBtn = document.getElementById('play-btn');
@@ -3738,7 +3764,7 @@ async function handlePlaybackStall() {
         document.getElementById('status-indicator').style.color = "#FFD700";
 
         // Reconnect WebSocket
-        if (STATE.ws) STATE.ws.close();
+        closeWebSocketIntentionally();
         STATE.fetchingSet.clear();
         STATE.metadataQueue = [];
         STATE.appendQueue = [];
@@ -3764,13 +3790,7 @@ async function handlePlaybackStall() {
     audio.pause();
 
     // 1. Disconnect WebSocket & Clear Heartbeat
-    if (STATE.ws) {
-        if (STATE.heartbeatInterval) {
-            clearInterval(STATE.heartbeatInterval);
-            STATE.heartbeatInterval = null;
-        }
-        STATE.ws.close();
-    }
+    closeWebSocketIntentionally();
 
     // 2. Clear RAM (Queues)
     STATE.appendQueue = [];
@@ -3822,12 +3842,12 @@ document.addEventListener('visibilitychange', () => {
     }
 
     // BACKGROUND TAB FIX: When page is hidden, ontimeupdate is throttled by the browser.
-    // Proactively fill buffer to max so audio can continue playing for 10+ minutes in background.
+    // Fill a bounded buffer before browser timer throttling becomes aggressive.
     if (document.visibilityState === 'hidden' && STATE.isPlaying && STATE.currentBook) {
-        console.log("Tab hidden: triggering aggressive background prefetch (500 chunks)...");
+        console.log(`Tab hidden: filling a bounded ${BACKGROUND_PREFETCH_CHUNKS}-chunk background buffer...`);
         let lastChap = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].chapterIndex : STATE.currentChapterIndex;
         let lastIdx = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].index : STATE.currentSentenceIndex;
-        prefetchNext(lastChap, lastIdx, 500, true); // Force 500 chunks on hide
+        prefetchNext(lastChap, lastIdx, BACKGROUND_PREFETCH_CHUNKS, true);
     }
 });
 
@@ -4176,6 +4196,7 @@ window.MPW_BRIDGE = {
     audio,
     togglePlayback,
     resetAudioEngine,
+    stopPlaybackSession,
     toggleDiscoveryMode,
     playNextChunk,
     playPrevChunk,
