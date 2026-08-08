@@ -2,7 +2,8 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, listAll } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
+import { compressImageForStorage, IMAGE_MAX_BYTES } from "./js/image-manager.js";
 
 // Firebase placeholders (Initialized via API)
 let app, auth, db, storage, provider;
@@ -19,6 +20,12 @@ let STATE = {
     currentBook: null,
     currentBookId: null,
     currentFilename: null,
+    imageManifest: null,
+    imageURLCache: new Map(),
+    pendingImageFiles: [],
+    uploadImagesChoice: false,
+    uploadInputTarget: 'sidebar',
+    imageEditTargetId: null,
     currentChapterIndex: 0,
     currentSentenceIndex: 0,
     lastSavedChunkIndex: -1,
@@ -314,7 +321,9 @@ async function startFirebase() {
 
                 // Fetch recent books from Firestore
                 await refreshLibrary();
+                initWebSocket();
             } else {
+                closeWebSocketIntentionally();
                 authInfo.innerHTML = `<span class="text-slate-500">Guest Mode</span>`;
                 authBtn.innerHTML = '<i class="fab fa-google"></i>';
                 authBtn.onclick = () => signInWithPopup(auth, provider);
@@ -338,6 +347,16 @@ async function startFirebase() {
         console.error("Failed to initialize Firebase:", err);
         setTimeout(startFirebase, 5000); // Retry
     }
+}
+
+/** Fetch helper for backend endpoints that access the authenticated user's data. */
+async function authFetch(url, options = {}) {
+    const user = STATE.user || auth?.currentUser;
+    if (!user) throw new Error('Authentication required');
+    const token = await user.getIdToken();
+    const headers = new Headers(options.headers || {});
+    headers.set('Authorization', `Bearer ${token}`);
+    return fetch(url, { ...options, headers });
 }
 
 startFirebase();
@@ -661,7 +680,115 @@ const audio = document.getElementById('main-audio');
 const playBtn = document.getElementById('play-btn');
 const textContainer = document.getElementById('text-container');
 const fileInput = document.getElementById('file-input');
+const imageInput = document.getElementById('image-input');
 const bookList = document.getElementById('book-list');
+
+function setModalVisibility(id, visible) {
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.classList.toggle('hidden', !visible);
+    modal.classList.toggle('flex', visible);
+}
+
+function openUploadOptions() {
+    setModalVisibility('upload-options-modal', true);
+}
+
+function beginBookUpload(withImages, inputTarget = STATE.uploadInputTarget || 'sidebar') {
+    STATE.uploadImagesChoice = withImages;
+    STATE.uploadInputTarget = inputTarget;
+    setModalVisibility('upload-options-modal', false);
+    const input = inputTarget === 'discovery'
+        ? document.getElementById('discovery-file-input')
+        : fileInput;
+    if (input) {
+        input.accept = withImages
+            ? '.txt,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.image'
+            : '.txt';
+        input.multiple = withImages;
+        input.value = '';
+        input.click();
+    }
+}
+
+async function processImageFiles(fileList) {
+    const files = Array.from(fileList || []).filter(file => file && (file.type?.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|bmp|avif|image)$/i.test(file.name || '')));
+    if (!files.length) return;
+    try {
+        if (!STATE.currentBookId || !STATE.user) throw new Error('Hãy mở một truyện và đăng nhập trước.');
+        if (STATE.imageEditTargetId) {
+            await replaceBookImage(STATE.currentBookId, STATE.imageEditTargetId, files[0]);
+        } else {
+            await uploadBookImages(STATE.currentBookId, files, STATE.currentBook?.title || '');
+        }
+        await renderImageManager();
+        await refreshLibrary();
+    } catch (err) {
+        console.error('[Images] Manage error:', err);
+        alert(`Không thể cập nhật ảnh: ${err.message}`);
+    } finally {
+        STATE.imageEditTargetId = null;
+        if (imageInput) imageInput.value = '';
+    }
+}
+
+async function handleImageInputSelection() {
+    await processImageFiles(imageInput?.files || []);
+}
+
+document.getElementById('upload-book-btn')?.addEventListener('click', openUploadOptions);
+document.getElementById('upload-txt-only-btn')?.addEventListener('click', () => beginBookUpload(false));
+document.getElementById('upload-txt-images-btn')?.addEventListener('click', () => beginBookUpload(true));
+document.querySelectorAll('[data-close-upload-options]').forEach(el => el.addEventListener('click', () => {
+    STATE.uploadImagesChoice = false;
+    setModalVisibility('upload-options-modal', false);
+}));
+document.querySelectorAll('[data-close-image-manager]').forEach(el => el.addEventListener('click', () => setModalVisibility('image-manager-modal', false)));
+document.getElementById('select-images-btn')?.addEventListener('click', () => {
+    if (!STATE.currentBookId) {
+        alert('Hãy mở truyện cần quản lý ảnh trước.');
+        return;
+    }
+    openImageManager();
+});
+document.getElementById('discovery-select-images-btn')?.addEventListener('click', () => {
+    if (!STATE.currentBookId) {
+        alert('Hãy mở truyện cần quản lý ảnh trước.');
+        return;
+    }
+    openImageManager();
+});
+document.getElementById('image-manager-add-btn')?.addEventListener('click', () => {
+    STATE.imageEditTargetId = null;
+    imageInput?.click();
+});
+if (imageInput) imageInput.addEventListener('change', handleImageInputSelection);
+document.getElementById('discovery-drop-zone')?.addEventListener('click', event => {
+    if (event.target.closest('#discovery-file-input')) return;
+    STATE.uploadInputTarget = 'discovery';
+    openUploadOptions();
+});
+const imageManagerList = document.getElementById('image-manager-list');
+if (imageManagerList) {
+    ['dragenter', 'dragover'].forEach(eventName => imageManagerList.addEventListener(eventName, event => {
+        event.preventDefault();
+        imageManagerList.classList.add('border-primary', 'bg-primary/5');
+    }));
+    ['dragleave', 'drop'].forEach(eventName => imageManagerList.addEventListener(eventName, event => {
+        event.preventDefault();
+        imageManagerList.classList.remove('border-primary', 'bg-primary/5');
+    }));
+    imageManagerList.addEventListener('drop', event => processImageFiles(event.dataTransfer?.files || []));
+}
+document.addEventListener('paste', event => {
+    const modal = document.getElementById('image-manager-modal');
+    if (!modal || modal.classList.contains('hidden') || !STATE.currentBookId) return;
+    const clipboardFiles = Array.from(event.clipboardData?.files || []);
+    if (clipboardFiles.length) {
+        event.preventDefault();
+        processImageFiles(clipboardFiles);
+    }
+});
 
 // The real media element + Media Session are sufficient for supported
 // browsers to classify this page as background audio. A silent Web Audio
@@ -693,18 +820,31 @@ async function stopPlaybackSession() {
 }
 
 // --- Initialization ---
-function initWebSocket() {
+async function initWebSocket() {
     if (STATE.ws && (STATE.ws.readyState === WebSocket.OPEN || STATE.ws.readyState === WebSocket.CONNECTING)) {
         return; // Don't create multiple connections
+    }
+    if (!STATE.user) return;
+    if (STATE.wsConnecting) return;
+    STATE.wsConnecting = true;
+    let token;
+    try {
+        token = await STATE.user.getIdToken();
+    } catch (error) {
+        STATE.wsConnecting = false;
+        console.error('Unable to authenticate WebSocket:', error);
+        return;
     }
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
     STATE.ws = new WebSocket(wsUrl);
     const socket = STATE.ws;
+    STATE.wsConnecting = false;
 
     STATE.ws.onopen = () => {
         console.log("Connected to WebSocket");
         document.getElementById('status-indicator').innerText = "Ready";
+        socket.send(JSON.stringify({ type: "AUTH", token }));
 
         // --- FIXED: Clear existing heartbeat to avoid PING interval leaks ---
         if (STATE.heartbeatInterval) clearInterval(STATE.heartbeatInterval);
@@ -1147,6 +1287,220 @@ async function uploadToStorage(file) {
     }
 }
 
+function imageManifestRef(bookId) {
+    return ref(storage, `users/${STATE.user.uid}/images/${bookId}/manifest.json`);
+}
+
+function imageAssetRef(bookId, imageId) {
+    return ref(storage, `users/${STATE.user.uid}/images/${bookId}/assets/${imageId}.webp`);
+}
+
+async function loadImageManifest(bookId) {
+    if (!STATE.user || !bookId) return { version: 1, coverId: null, images: [] };
+    try {
+        const url = await getDownloadURL(imageManifestRef(bookId));
+        const response = await fetch(url, { cache: 'no-store' });
+        if (!response.ok) throw new Error(`Manifest HTTP ${response.status}`);
+        const manifest = await response.json();
+        return { version: 1, coverId: null, images: [], ...manifest };
+    } catch (err) {
+        if (err.code !== 'storage/object-not-found') console.debug('[Images] No manifest:', err.code || err.message);
+        return { version: 1, coverId: null, images: [] };
+    }
+}
+
+async function saveImageManifest(bookId, manifest) {
+    const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+    await uploadBytes(imageManifestRef(bookId), blob, {
+        contentType: 'application/json',
+        customMetadata: { bookId, schemaVersion: '1' }
+    });
+}
+
+async function uploadBookImages(bookId, files, bookTitle = '') {
+    if (!STATE.user || !bookId || !files?.length) return null;
+    const manifest = await loadImageManifest(bookId);
+    for (const sourceFile of files) {
+        const file = await compressImageForStorage(sourceFile);
+        if (file.size > IMAGE_MAX_BYTES) throw new Error(`${sourceFile.name} vượt quá 150 KB sau tối ưu.`);
+        const imageId = `img_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
+        const asset = imageAssetRef(bookId, imageId);
+        await uploadBytes(asset, file, {
+            contentType: 'image/webp',
+            customMetadata: { bookId, title: bookTitle, role: manifest.images.length === 0 ? 'cover' : 'illustration' }
+        });
+        manifest.images.push({
+            id: imageId,
+            path: asset.fullPath,
+            chapterIndex: null,
+            alt: sourceFile.name.replace(/\.[^.]+$/, ''),
+            size: file.size,
+            createdAt: new Date().toISOString()
+        });
+        if (!manifest.coverId) manifest.coverId = imageId;
+    }
+    await saveImageManifest(bookId, manifest);
+    STATE.imageManifest = manifest;
+    STATE.imageURLCache.clear();
+    return manifest;
+}
+
+async function getImageURL(bookId, image) {
+    if (!image?.id) return null;
+    if (STATE.imageURLCache.has(image.id)) return STATE.imageURLCache.get(image.id);
+    try {
+        const url = await getDownloadURL(imageAssetRef(bookId, image.id));
+        STATE.imageURLCache.set(image.id, url);
+        return url;
+    } catch (err) {
+        console.warn('[Images] Cannot load image:', image.id, err);
+        return null;
+    }
+}
+
+async function hydrateBookCover(bookId, elements) {
+    const manifest = await loadImageManifest(bookId);
+    const cover = manifest.images.find(image => image.id === manifest.coverId) || manifest.images[0];
+    if (!cover) return;
+    const url = await getImageURL(bookId, cover);
+    if (!url) return;
+    elements.forEach(el => {
+        if (el) {
+            el.src = url;
+            el.classList.remove('hidden');
+            const fallbackIcon = el.parentElement?.querySelector('i.fa-book, i.fa-volume-up');
+            if (fallbackIcon) fallbackIcon.remove();
+        }
+    });
+}
+
+async function deleteBookImages(bookId) {
+    if (!STATE.user || !bookId) return;
+    const base = ref(storage, `users/${STATE.user.uid}/images/${bookId}`);
+    try {
+        const listing = await listAll(base);
+        await Promise.all(listing.items.map(item => deleteObject(item).catch(err => {
+            if (err.code !== 'storage/object-not-found') throw err;
+        })));
+        await Promise.all(listing.prefixes.map(prefix => deleteBookImagesFromPrefix(prefix)));
+    } catch (err) {
+        if (err.code !== 'storage/object-not-found') console.debug('[Images] Cleanup skipped:', err.code || err.message);
+    }
+    try { await deleteObject(imageManifestRef(bookId)); } catch (err) {
+        if (err.code !== 'storage/object-not-found') throw err;
+    }
+}
+
+async function deleteBookImagesFromPrefix(prefix) {
+    const listing = await listAll(prefix);
+    await Promise.all(listing.items.map(item => deleteObject(item).catch(err => {
+        if (err.code !== 'storage/object-not-found') throw err;
+    })));
+    await Promise.all(listing.prefixes.map(child => deleteBookImagesFromPrefix(child)));
+}
+
+async function replaceBookImage(bookId, imageId, sourceFile) {
+    const file = await compressImageForStorage(sourceFile);
+    const manifest = await loadImageManifest(bookId);
+    const image = manifest.images.find(item => item.id === imageId);
+    if (!image) throw new Error('Ảnh không còn tồn tại.');
+    const asset = imageAssetRef(bookId, imageId);
+    await uploadBytes(asset, file, {
+        contentType: 'image/webp',
+        customMetadata: { bookId, title: STATE.currentBook?.title || '', role: manifest.coverId === imageId ? 'cover' : 'illustration' }
+    });
+    image.alt = sourceFile.name.replace(/\.[^.]+$/, '');
+    image.size = file.size;
+    image.updatedAt = new Date().toISOString();
+    await saveImageManifest(bookId, manifest);
+    STATE.imageManifest = manifest;
+    STATE.imageURLCache.delete(imageId);
+}
+
+async function removeBookImage(bookId, imageId) {
+    const manifest = await loadImageManifest(bookId);
+    if (!manifest.images.some(item => item.id === imageId)) return;
+    await deleteObject(imageAssetRef(bookId, imageId)).catch(err => {
+        if (err.code !== 'storage/object-not-found') throw err;
+    });
+    manifest.images = manifest.images.filter(item => item.id !== imageId);
+    if (manifest.coverId === imageId) manifest.coverId = manifest.images[0]?.id || null;
+    await saveImageManifest(bookId, manifest);
+    STATE.imageManifest = manifest;
+    STATE.imageURLCache.delete(imageId);
+}
+
+async function setBookCover(bookId, imageId) {
+    const manifest = await loadImageManifest(bookId);
+    if (!manifest.images.some(item => item.id === imageId)) throw new Error('Ảnh không còn tồn tại.');
+    manifest.coverId = imageId;
+    manifest.images.forEach(image => { image.role = image.id === imageId ? 'cover' : 'illustration'; });
+    await saveImageManifest(bookId, manifest);
+    STATE.imageManifest = manifest;
+}
+
+async function renderImageManager() {
+    const list = document.getElementById('image-manager-list');
+    const title = document.getElementById('image-manager-book-title');
+    if (!list || !STATE.currentBookId) return;
+    const manifest = await loadImageManifest(STATE.currentBookId);
+    STATE.imageManifest = manifest;
+    if (title) title.textContent = `${STATE.currentBook?.title || 'Truyện hiện tại'} · ${manifest.images.length} ảnh`;
+    list.innerHTML = '';
+    if (!manifest.images.length) {
+        list.innerHTML = '<div class="rounded-2xl border border-dashed border-white/10 p-8 text-center text-sm text-slate-500">Chưa có ảnh. Bấm “Thêm ảnh” để bắt đầu.</div>';
+        return;
+    }
+    for (const image of manifest.images) {
+        const row = document.createElement('div');
+        row.className = 'flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3';
+        const thumb = document.createElement('img');
+        thumb.className = 'w-16 h-16 rounded-xl object-cover bg-black/20 shrink-0';
+        thumb.alt = image.alt || 'Ảnh minh họa';
+        thumb.src = await getImageURL(STATE.currentBookId, image) || '/static/icon.svg';
+        const info = document.createElement('div');
+        info.className = 'min-w-0 flex-1';
+        const name = document.createElement('div');
+        name.className = 'truncate text-sm font-bold text-white';
+        name.textContent = image.alt || 'Ảnh minh họa';
+        const meta = document.createElement('div');
+        meta.className = 'text-xs text-slate-500 mt-1';
+        meta.textContent = `${Math.round((image.size || 0) / 1024)} KB${manifest.coverId === image.id ? ' · Cover' : ''}`;
+        info.append(name, meta);
+        const actions = document.createElement('div');
+        actions.className = 'flex items-center gap-2 shrink-0';
+        const coverBtn = document.createElement('button');
+        coverBtn.className = 'rounded-lg px-2.5 py-2 text-xs font-bold hover:bg-primary/15 hover:text-primary transition-colors';
+        coverBtn.textContent = manifest.coverId === image.id ? 'Đang là bìa' : 'Đặt bìa';
+        coverBtn.disabled = manifest.coverId === image.id;
+        coverBtn.onclick = async () => { await setBookCover(STATE.currentBookId, image.id); await renderImageManager(); await refreshLibrary(); };
+        const replaceBtn = document.createElement('button');
+        replaceBtn.className = 'rounded-lg px-2.5 py-2 text-xs font-bold hover:bg-primary/15 hover:text-primary transition-colors';
+        replaceBtn.textContent = 'Thay';
+        replaceBtn.onclick = () => { STATE.imageEditTargetId = image.id; imageInput?.click(); };
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'rounded-lg px-2.5 py-2 text-xs font-bold text-red-400 hover:bg-red-500/15 transition-colors';
+        deleteBtn.textContent = 'Xóa';
+        deleteBtn.onclick = async () => {
+            if (!confirm(`Xóa ảnh “${image.alt || 'minh họa'}”?`)) return;
+            await removeBookImage(STATE.currentBookId, image.id);
+            await renderImageManager();
+            await refreshLibrary();
+        };
+        actions.append(coverBtn, replaceBtn, deleteBtn);
+        row.append(thumb, info, actions);
+        list.appendChild(row);
+    }
+}
+
+async function openImageManager() {
+    setModalVisibility('image-manager-modal', true);
+    try { await renderImageManager(); } catch (err) {
+        console.error('[Images] Manager load error:', err);
+        alert(`Không thể tải danh sách ảnh: ${err.message}`);
+    }
+}
+
 async function saveProgress(force = false) {
     if (!STATE.user || !STATE.currentBookId) return;
 
@@ -1412,7 +1766,8 @@ async function refreshLibrary() {
                 discCard.innerHTML = `
                     <div class="absolute inset-0 bg-primary/0 group-hover:bg-primary/5 transition-colors duration-500"></div>
                     <div class="flex items-center gap-4 relative z-10">
-                        <div class="w-12 h-12 rounded-xl ${isActive ? 'bg-primary text-black shadow-lg shadow-primary/30' : 'bg-white/5 border border-white/10 text-primary'} flex items-center justify-center shrink-0">
+                        <div class="w-12 h-12 rounded-xl overflow-hidden ${isActive ? 'bg-primary text-black shadow-lg shadow-primary/30' : 'bg-white/5 border border-white/10 text-primary'} flex items-center justify-center shrink-0">
+                            <img data-cover-image="${bookId}" class="hidden w-full h-full object-cover" alt="">
                             <i class="fas ${isActive ? 'fa-volume-up' : 'fa-book'} text-xl"></i>
                         </div>
                         <div class="flex-1 min-w-0 pr-8">
@@ -1440,6 +1795,7 @@ async function refreshLibrary() {
                 discCard.appendChild(dropdown);
 
                 discoveryGrid.appendChild(discCard);
+                void hydrateBookCover(bookId, [discCard.querySelector(`[data-cover-image="${bookId}"]`)]);
             }
         });
     } catch (err) {
@@ -1463,10 +1819,7 @@ async function downloadTextBook(bookId, title = 'book') {
     if (status) status.innerText = 'Preparing TXT...';
 
     try {
-        const token = await STATE.user.getIdToken();
-        const response = await fetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/export-text`, {
-            headers: { Authorization: `Bearer ${token}` }
-        });
+        const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/export-text`);
 
         if (!response.ok) {
             let message = 'Unable to download the TXT file.';
@@ -1516,16 +1869,28 @@ function toggleKebabMenu(bookId, isDiscovery = false) {
 
     // Hide ALL open menus (sidebar and discovery)
     document.querySelectorAll('[id*="kebab-menu-"]').forEach(menu => {
-        if (menu.id !== targetId) menu.classList.add('hidden');
+        if (menu.id !== targetId) {
+            menu.classList.add('hidden');
+            const owner = menu.closest('[data-book-id]');
+            if (owner) owner.style.zIndex = '';
+        }
     });
 
     const menu = document.getElementById(targetId);
-    if (menu) menu.classList.toggle('hidden');
+    if (menu) {
+        menu.classList.toggle('hidden');
+        const owner = menu.closest('[data-book-id]');
+        if (owner) owner.style.zIndex = menu.classList.contains('hidden') ? '' : '60';
+    }
 }
 
 // Close all kebab menus when clicking anywhere outside
 document.addEventListener('click', () => {
-    document.querySelectorAll('[id*="kebab-menu-"]').forEach(menu => menu.classList.add('hidden'));
+    document.querySelectorAll('[id*="kebab-menu-"]').forEach(menu => {
+        menu.classList.add('hidden');
+        const owner = menu.closest('[data-book-id]');
+        if (owner) owner.style.zIndex = '';
+    });
 });
 
 // ── Feature 1: Delete Book ───────────────────────────────────────────────────
@@ -1558,9 +1923,10 @@ async function deleteBook(bookId, filename, title, bypassConfirm = false) {
                 }
             });
         }
+        const deleteImages = deleteBookImages(bookId);
 
         // ── 3. Run both in PARALLEL ──────────────────────────────────────────
-        await Promise.all([deleteFirestore, deleteStorage]);
+        await Promise.all([deleteFirestore, deleteStorage, deleteImages]);
         console.log(`[Delete] "${title}" deleted successfully.`);
 
         // ── 4. If the deleted book is currently open, reset the reader ────────
@@ -1614,7 +1980,7 @@ async function mergeChapterFile(event, bookId, bookData) {
         formData.append('filename', filename);
         formData.append('file', newFile);
 
-        const response = await fetch('/api/append-chapter', {
+        const response = await authFetch('/api/append-chapter', {
             method: 'POST',
             body: formData
         });
@@ -1714,8 +2080,15 @@ async function loadBookFromStorage(bookId, bookData) {
 
 // --- File Handling ---
 const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+    const selectedFiles = Array.from(e.target.files || []);
+    const file = selectedFiles.find(candidate => candidate.name.toLowerCase().endsWith('.txt'));
+    const includeImages = STATE.uploadImagesChoice;
+    STATE.uploadImagesChoice = false;
+    if (!file) {
+        alert('Hãy chọn một file .txt cho truyện.');
+        e.target.value = '';
+        return;
+    }
 
     if (!file.name.toLowerCase().endsWith('.txt')) {
         alert('Chỉ hỗ trợ file .txt.');
@@ -1727,8 +2100,8 @@ const handleFileUpload = async (e) => {
         e.target.value = '';
         return;
     }
-    if (file.size > 100 * 1024 * 1024) {
-        alert('File vượt quá giới hạn 100 MB. Hãy chia nhỏ nội dung trước khi tải lên.');
+    if (file.size > 25 * 1024 * 1024) {
+        alert('File vượt quá giới hạn 25 MB. Hãy chia nhỏ nội dung trước khi tải lên.');
         e.target.value = '';
         return;
     }
@@ -1737,6 +2110,8 @@ const handleFileUpload = async (e) => {
         alert("Please login first to upload books.");
         return;
     }
+
+    const illustrations = includeImages ? selectedFiles.filter(candidate => candidate !== file) : [];
 
     showLoading("Uploading & Partitioning " + file.name + "...");
     const formData = new FormData();
@@ -1755,7 +2130,7 @@ const handleFileUpload = async (e) => {
         }
         const estimatedChapters = separatorCount + 1;
         document.getElementById('status-indicator').innerText = `Found ~${estimatedChapters} chapters. Preparing...`;
-        const response = await fetch('/api/upload-story', {
+        const response = await authFetch('/api/upload-story', {
             method: 'POST',
             body: formData
         });
@@ -1764,7 +2139,7 @@ const handleFileUpload = async (e) => {
         const data = await response.json();
 
         // Fetch fresh metadata
-        const metaRes = await fetch(`/api/stories/${STATE.user.uid}/${data.storyId}/metadata`);
+        const metaRes = await authFetch(`/api/stories/${STATE.user.uid}/${data.storyId}/metadata`);
         let bookInfo = await metaRes.json();
 
         // --- FIX BUG 1 & 5: Normalize bookInfo for non-segmented upload flow ---
@@ -1777,9 +2152,22 @@ const handleFileUpload = async (e) => {
             }));
         }
 
+        if (illustrations.length) {
+            document.getElementById('status-indicator').innerText = `Đang tối ưu ${illustrations.length} ảnh...`;
+            try {
+                await uploadBookImages(data.storyId, illustrations, bookInfo.title || file.name);
+            } catch (imageError) {
+                console.error('[Images] Upload failed:', imageError);
+                alert(`Sách đã tải lên nhưng ảnh minh họa chưa lưu được: ${imageError.message}`);
+            }
+        }
+
         // --- FIX BUG 6: Await loadBook and call refreshLibrary directly ---
         await loadBook(bookInfo, data.storyId, file.name);
         await refreshLibrary();
+        STATE.pendingImageFiles = [];
+        if (imageInput) imageInput.value = '';
+        updateImageSelectionStatus();
     } catch (err) {
         console.error(err);
         alert("Error uploading story: " + err.message);
@@ -1822,6 +2210,10 @@ function setupDragAndDrop() {
         const dt = e.dataTransfer;
         const files = dt.files;
         if (files && files.length > 0) {
+            // Drag-and-drop is intentionally TXT-only; image import is explicit
+            // through the popup so the user understands what will be uploaded.
+            STATE.uploadImagesChoice = false;
+            STATE.uploadInputTarget = 'discovery';
             handleFileUpload({ target: { files: files } });
         }
     }, false);
@@ -1878,6 +2270,8 @@ async function loadBook(bookData, bookId, filename) {
 
     STATE.currentBookId = bookId || ("book_" + bookData.title.replace(/[^a-zA-Z0-9]/g, "_"));
     STATE.currentFilename = filename || (STATE.currentBook.title + ".txt");
+    STATE.imageManifest = await loadImageManifest(STATE.currentBookId);
+    STATE.imageURLCache.clear();
 
     // Check for existing progress
     const progress = await loadProgress(STATE.currentBookId);
@@ -1933,7 +2327,7 @@ async function fetchSegment(segmentIndex) {
 
     console.log(`[Segmentation] Fetching segment ${segmentIndex}...`);
     try {
-        const res = await fetch(`/api/stories/${STATE.user.uid}/${STATE.currentBookId}/segments/${segmentIndex}?t=${Date.now()}`);
+        const res = await authFetch(`/api/stories/${STATE.user.uid}/${STATE.currentBookId}/segments/${segmentIndex}?t=${Date.now()}`);
         const data = await res.json();
 
         // Update chapters in currentBook
@@ -2005,28 +2399,30 @@ function updateLibraryHighlight() {
         const statusDiv = card.querySelector('.text-xs');
 
         if (isActive) {
-            card.className = `glass p-6 rounded-3xl flex flex-col gap-4 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 transition-all border border-primary bg-primary/10 ring-2 ring-primary/20 shadow-2xl shadow-primary/20 group relative overflow-hidden`;
+            card.className = `glass p-6 rounded-3xl flex flex-col gap-4 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 transition-all border border-primary bg-primary/10 ring-2 ring-primary/20 shadow-2xl shadow-primary/20 group relative`;
             if (titleH3) {
                 titleH3.classList.add('text-primary');
                 titleH3.classList.remove('text-white');
             }
             if (iconDiv) {
                 iconDiv.className = `w-12 h-12 rounded-xl bg-primary text-black shadow-lg shadow-primary/30 flex items-center justify-center shrink-0`;
-                iconDiv.innerHTML = '<i class="fas fa-volume-up text-xl"></i>';
+                const fallbackIcon = iconDiv.querySelector('i');
+                if (fallbackIcon) fallbackIcon.className = 'fas fa-volume-up text-xl';
             }
             if (statusDiv) {
                 statusDiv.className = `text-xs text-primary/70 flex items-center gap-2 mt-1`;
                 statusDiv.innerHTML = '<i class="fas fa-play text-[10px]"></i> Currently Reading';
             }
         } else {
-            card.className = `glass p-6 rounded-3xl flex flex-col gap-4 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 transition-all border border-white/5 border-t-white/10 group relative overflow-hidden`;
+            card.className = `glass p-6 rounded-3xl flex flex-col gap-4 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 transition-all border border-white/5 border-t-white/10 group relative`;
             if (titleH3) {
                 titleH3.classList.remove('text-primary');
                 titleH3.classList.add('text-white');
             }
             if (iconDiv) {
                 iconDiv.className = `w-12 h-12 rounded-xl bg-white/5 border border-white/10 text-primary flex items-center justify-center shrink-0`;
-                iconDiv.innerHTML = '<i class="fas fa-book text-xl"></i>';
+                const fallbackIcon = iconDiv.querySelector('i');
+                if (fallbackIcon) fallbackIcon.className = 'fas fa-book text-xl';
             }
             if (statusDiv) {
                 statusDiv.className = `text-xs text-slate-400 flex items-center gap-2 mt-1`;
@@ -2056,7 +2452,7 @@ async function fetchChapterSentences(index) {
     document.getElementById('status-indicator').innerText = "Loading Chapter...";
 
     try {
-        const response = await fetch('/api/get-chapter-sentences', {
+        const response = await authFetch('/api/get-chapter-sentences', {
             method: 'POST',
             body: formData
         });
@@ -2073,6 +2469,32 @@ async function fetchChapterSentences(index) {
         document.getElementById('status-indicator').innerText = "Error loading chapter";
         throw e;
     }
+}
+
+async function renderChapterImages(index) {
+    if (!STATE.imageManifest?.images?.length) return [];
+    const images = STATE.imageManifest.images.filter(image => image.chapterIndex === index || (image.chapterIndex == null && index === 0));
+    const figures = [];
+    for (const image of images) {
+        const url = await getImageURL(STATE.currentBookId, image);
+        if (!url) continue;
+        const figure = document.createElement('figure');
+        figure.className = 'my-4 flex flex-col items-center gap-2';
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = image.alt || 'Ảnh minh họa';
+        img.loading = 'lazy';
+        img.className = 'max-h-80 max-w-full rounded-2xl object-contain border border-white/10 shadow-lg';
+        figure.appendChild(img);
+        if (image.alt) {
+            const caption = document.createElement('figcaption');
+            caption.className = 'text-xs text-slate-500 italic';
+            caption.textContent = image.alt;
+            figure.appendChild(caption);
+        }
+        figures.push(figure);
+    }
+    return figures;
 }
 
 async function renderChapter(index) {
@@ -2113,8 +2535,10 @@ async function renderChapter(index) {
         }
     }
 
+    const chapterFigures = await renderChapterImages(index);
     await safeViewTransition(() => {
         textContainer.innerHTML = '';
+        chapterFigures.forEach(figure => textContainer.appendChild(figure));
         chapter.sentences.forEach((text, i) => {
             const span = document.createElement('span');
             span.id = `sentence-${i}`;
@@ -2563,7 +2987,7 @@ async function deleteSelectedChapters() {
         formData.append('filename', STATE.currentFilename);
         formData.append('indices', JSON.stringify(selectedIndices));
 
-        const response = await fetch('/api/delete-chapters', {
+        const response = await authFetch('/api/delete-chapters', {
             method: 'POST',
             body: formData
         });
@@ -4037,7 +4461,7 @@ async function openEditChapterModal(index) {
         formData.append('filename', STATE.currentFilename);
         formData.append('chapterIndex', index);
 
-        const response = await fetch('/api/get-chapter-content', {
+        const response = await authFetch('/api/get-chapter-content', {
             method: 'POST',
             body: formData
         });
@@ -4083,7 +4507,7 @@ async function saveChapterEdit() {
         formData.append('chapterIndex', editingChapterIndex);
         formData.append('newContent', newContent);
 
-        const response = await fetch('/api/update-chapter', {
+        const response = await authFetch('/api/update-chapter', {
             method: 'POST',
             body: formData
         });

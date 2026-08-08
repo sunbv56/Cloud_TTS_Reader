@@ -60,6 +60,75 @@ except Exception as e:
 app = FastAPI()
 NUM_WORKERS = 3  # Tăng số lượng worker nếu muốn nạp song song nhanh hơn
 
+# Resource limits are intentionally conservative for the 256 MB Fly.io VM. They
+# can be raised per deployment through environment variables without changing
+# the storage schema or existing user files.
+MAX_UPLOAD_BYTES = int(os.getenv("MAX_UPLOAD_BYTES", str(25 * 1024 * 1024)))
+MAX_APPEND_BYTES = int(os.getenv("MAX_APPEND_BYTES", str(10 * 1024 * 1024)))
+MAX_TTS_TEXT_CHARS = int(os.getenv("MAX_TTS_TEXT_CHARS", "5000"))
+MAX_DOWNLOAD_CHAPTERS = int(os.getenv("MAX_DOWNLOAD_CHAPTERS", "50"))
+MAX_DOWNLOAD_SENTENCES = int(os.getenv("MAX_DOWNLOAD_SENTENCES", "50000"))
+MAX_WS_WORKERS = int(os.getenv("MAX_WS_WORKERS", "5"))
+MAX_WS_QUEUE = int(os.getenv("MAX_WS_QUEUE", "100"))
+MAX_NEW_CONTENT_CHARS = int(os.getenv("MAX_NEW_CONTENT_CHARS", "1000000"))
+
+
+def _authorization_error(request: Request, user_id: str):
+    """Verify that the Firebase ID token belongs to the requested user."""
+    if not firebase_admin_initialized:
+        return JSONResponse({"error": "Firebase Admin not initialized"}, status_code=500)
+
+    authorization = request.headers.get("authorization", "")
+    if not authorization.lower().startswith("bearer "):
+        return JSONResponse({"error": "Authentication required"}, status_code=401)
+
+    try:
+        token = authorization.split(" ", 1)[1].strip()
+        decoded = auth.verify_id_token(token)
+        if decoded.get("uid") != user_id:
+            return JSONResponse({"error": "Forbidden"}, status_code=403)
+    except Exception:
+        return JSONResponse({"error": "Invalid or expired authentication token"}, status_code=401)
+    return None
+
+
+def _verify_bearer_token(authorization: str):
+    """Return decoded Firebase claims or None for an invalid token."""
+    if not firebase_admin_initialized or not authorization.lower().startswith("bearer "):
+        return None
+    try:
+        token = authorization.split(" ", 1)[1].strip()
+        return auth.verify_id_token(token)
+    except Exception:
+        return None
+
+
+def _validate_text_size(text: str, field_name: str = "text"):
+    if not isinstance(text, str) or not text.strip():
+        return JSONResponse({"error": f"{field_name} is required"}, status_code=400)
+    if len(text) > MAX_TTS_TEXT_CHARS:
+        return JSONResponse({
+            "error": f"{field_name} exceeds the {MAX_TTS_TEXT_CHARS}-character limit"
+        }, status_code=413)
+    return None
+
+
+async def _save_upload_with_limit(upload: UploadFile, target_path: str, max_bytes: int):
+    """Stream an upload to disk and reject it before it can exhaust memory/disk."""
+    total = 0
+    try:
+        with open(target_path, "wb") as target:
+            while chunk := await upload.read(1024 * 1024):
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError(f"File exceeds the {max_bytes} byte limit")
+                target.write(chunk)
+    except ValueError:
+        if os.path.exists(target_path):
+            os.remove(target_path)
+        raise
+    return total
+
 def sanitize_slug(text: str):
     """Convert Vietnamese text to clean ASCII slug."""
     # Convert to lowercase
@@ -252,7 +321,12 @@ def convert_firestore_data(data: dict):
 
 # API Endpoints
 @app.get("/stream/audio")
-async def stream_audio(text: str, voice: str, rate: str = "+0%", pitch: str = "+0Hz", volume: str = "+0%"):
+async def stream_audio(request: Request, text: str, voice: str, rate: str = "+0%", pitch: str = "+0Hz", volume: str = "+0%"):
+    if _verify_bearer_token(request.headers.get("authorization", "")) is None:
+        return JSONResponse({"error": "Authentication required"}, status_code=401)
+    text_error = _validate_text_size(text)
+    if text_error:
+        return text_error
     # Format settings for edge-tts
     # rate: +50%, -10%, etc.
     # pitch: +5Hz, -5Hz, etc.
@@ -267,7 +341,12 @@ async def stream_audio(text: str, voice: str, rate: str = "+0%", pitch: str = "+
     return StreamingResponse(audio_generator(), media_type="audio/mpeg")
 
 @app.get("/stream/metadata")
-async def stream_metadata(text: str, voice: str, rate: str = "+0%", pitch: str = "+0Hz", volume: str = "+0%"):
+async def stream_metadata(request: Request, text: str, voice: str, rate: str = "+0%", pitch: str = "+0Hz", volume: str = "+0%"):
+    if _verify_bearer_token(request.headers.get("authorization", "")) is None:
+        return JSONResponse({"error": "Authentication required"}, status_code=401)
+    text_error = _validate_text_size(text)
+    if text_error:
+        return text_error
     communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume=volume)
     metadata = []
     async for chunk in communicate.stream():
@@ -282,12 +361,15 @@ async def stream_metadata(text: str, voice: str, rate: str = "+0%", pitch: str =
 @app.post("/api/parse-book")
 async def parse_book(file: UploadFile = File(...)):
     # Memory optimization: Stream upload to a temporary file
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
-        while chunk := await file.read(1024 * 1024): # 1MB chunks
-            tmp.write(chunk)
-        tmp_path = tmp.name
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+    tmp_path = tmp.name
+    tmp.close()
 
     try:
+        try:
+            await _save_upload_with_limit(file, tmp_path, MAX_UPLOAD_BYTES)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=413)
         chapters = parse_chapters_from_file(tmp_path)
         
         # Optimization: Generate metadata in a single pass and remove redundant processed_chapters loop
@@ -309,6 +391,7 @@ async def parse_book(file: UploadFile = File(...)):
 
 @app.post("/api/upload-story")
 async def upload_story(
+    request: Request,
     userId: str = Form(...),
     file: UploadFile = File(...)
 ):
@@ -316,8 +399,9 @@ async def upload_story(
     Advanced upload with chunking logic.
     If chapters > 200, splits into 100-chapter segments.
     """
-    if not firebase_admin_initialized:
-        return JSONResponse({"error": "Firebase Admin not initialized"}, status_code=500)
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
 
     # Sanitize title
     story_title = file.filename.replace(".txt", "")
@@ -326,12 +410,15 @@ async def upload_story(
         story_id = "story"
     story_id += "_" + str(int(asyncio.get_event_loop().time()))
     
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
-        while chunk := await file.read(1024 * 1024):
-            tmp.write(chunk)
-        tmp_path = tmp.name
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+    tmp_path = tmp.name
+    tmp.close()
 
     try:
+        try:
+            await _save_upload_with_limit(file, tmp_path, MAX_UPLOAD_BYTES)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=413)
         chapters = parse_chapters_from_file(tmp_path)
         total_chapters = len(chapters)
         
@@ -407,9 +494,10 @@ async def upload_story(
             os.remove(tmp_path)
 
 @app.get("/api/stories/{userId}/{storyId}/metadata")
-async def get_story_metadata(userId: str, storyId: str):
-    if not firebase_admin_initialized:
-        return JSONResponse({"error": "Firebase Admin not initialized"}, status_code=500)
+async def get_story_metadata(request: Request, userId: str, storyId: str):
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
     
     doc_ref = db_admin.collection("users").document(userId).collection("stories").document(storyId)
     doc = doc_ref.get()
@@ -419,9 +507,10 @@ async def get_story_metadata(userId: str, storyId: str):
     return JSONResponse(convert_firestore_data(doc.to_dict()))
 
 @app.get("/api/stories/{userId}/{storyId}/segments/{segmentIndex}")
-async def get_segment_data(userId: str, storyId: str, segmentIndex: int):
-    if not firebase_admin_initialized:
-        return JSONResponse({"error": "Firebase Admin not initialized"}, status_code=500)
+async def get_segment_data(request: Request, userId: str, storyId: str, segmentIndex: int):
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
     
     bucket = storage.bucket()
     blob_path = f"users/{userId}/stories/{storyId}/segments/seg_{segmentIndex}.json"
@@ -538,13 +627,15 @@ async def export_story_text(userId: str, storyId: str, request: Request):
 
 @app.post("/api/get-chapter-sentences")
 async def get_chapter_sentences(
+    request: Request,
     userId: str = Form(...),
     filename: str = Form(...),
     chapterIndex: int = Form(...)
 ):
     """Memory-efficiently fetch sentences for a specific chapter only."""
-    if not firebase_admin_initialized:
-        return JSONResponse({"error": "Firebase Admin not initialized on server. Check credentials."}, status_code=500)
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
 
     try:
         bucket = storage.bucket()
@@ -592,14 +683,16 @@ async def get_firebase_config():
 
 @app.post("/api/append-chapter")
 async def append_chapter(
+    request: Request,
     userId: str = Form(...),
     bookId: str = Form(...),
     filename: str = Form(...),
     file: UploadFile = File(...)
 ):
     """Memory-efficient chapter appending on the server."""
-    if not firebase_admin_initialized:
-        return JSONResponse({"error": "Firebase Admin not initialized on server. Check credentials."}, status_code=500)
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
 
     try:
         bucket = storage.bucket()
@@ -635,9 +728,18 @@ async def append_chapter(
                     f.write("\n\n")
             
             # 3. Append new content
-            with open(tmp_path, "ab") as f:
-                while chunk := await file.read(1024 * 1024):
-                    f.write(chunk)
+            appended_path = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+            appended_path.close()
+            try:
+                await _save_upload_with_limit(file, appended_path.name, MAX_APPEND_BYTES)
+                with open(appended_path.name, "rb") as source, open(tmp_path, "ab") as target:
+                    while chunk := source.read(1024 * 1024):
+                        target.write(chunk)
+            except ValueError as exc:
+                return JSONResponse({"error": str(exc)}, status_code=413)
+            finally:
+                if os.path.exists(appended_path.name):
+                    os.remove(appended_path.name)
                     
             # 4. Parse result
             chapters = parse_chapters_from_file(tmp_path)
@@ -730,14 +832,16 @@ async def append_chapter(
 
 @app.post("/api/delete-chapters")
 async def delete_chapters(
+    request: Request,
     userId: str = Form(...),
     bookId: str = Form(...),
     filename: str = Form(...),
     indices: str = Form(...) # JSON string of list of ints [0, 2, 5]
 ):
     """Memory-efficient multi-chapter deletion on the server."""
-    if not firebase_admin_initialized:
-        return JSONResponse({"error": "Firebase Admin not initialized on server. Check credentials."}, status_code=500)
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
 
     try:
         bucket = storage.bucket()
@@ -751,6 +855,10 @@ async def delete_chapters(
         target_indices = json.loads(indices)
         if not isinstance(target_indices, list):
             return JSONResponse({"error": "Indices must be a JSON array"}, status_code=400)
+        if len(target_indices) > 200:
+            return JSONResponse({"error": "Too many chapters selected"}, status_code=413)
+        if any(not isinstance(index, int) or isinstance(index, bool) for index in target_indices):
+            return JSONResponse({"error": "Indices must contain integers"}, status_code=400)
         # Sort descending so we can pop without shifting remaining target indices
         target_indices.sort(reverse=True)
     except Exception as e:
@@ -869,14 +977,16 @@ async def delete_chapters(
 
 @app.post("/api/get-chapter-content")
 async def get_chapter_content(
+    request: Request,
     userId: str = Form(...),
     bookId: str = Form(None),
     filename: str = Form(...),
     chapterIndex: int = Form(...)
 ):
     """Retrieve raw text content of a specific chapter."""
-    if not firebase_admin_initialized:
-        return JSONResponse({"error": "Firebase Admin not initialized"}, status_code=500)
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
 
     try:
         bucket = storage.bucket()
@@ -920,6 +1030,7 @@ async def get_chapter_content(
 
 @app.post("/api/update-chapter")
 async def update_chapter(
+    request: Request,
     userId: str = Form(...),
     bookId: str = Form(...),
     filename: str = Form(...),
@@ -927,8 +1038,13 @@ async def update_chapter(
     newContent: str = Form(...)
 ):
     """Update raw text content of a specific chapter and re-upload."""
-    if not firebase_admin_initialized:
-        return JSONResponse({"error": "Firebase Admin not initialized"}, status_code=500)
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
+    if len(newContent) > MAX_NEW_CONTENT_CHARS:
+        return JSONResponse({
+            "error": f"newContent exceeds the {MAX_NEW_CONTENT_CHARS}-character limit"
+        }, status_code=413)
 
     try:
         bucket = storage.bucket()
@@ -1057,8 +1173,20 @@ class ChapterDownloadRequest(BaseModel):
     volume: str = "+0%"
 
 @app.post("/api/download-chapters")
-async def download_chapters(req: ChapterDownloadRequest):
+async def download_chapters(request: Request, req: ChapterDownloadRequest):
     """Generate a single MP3 file from selected chapters and stream as download."""
+    if _verify_bearer_token(request.headers.get("authorization", "")) is None:
+        return JSONResponse({"error": "Authentication required"}, status_code=401)
+    if not req.chapters or len(req.chapters) > MAX_DOWNLOAD_CHAPTERS:
+        return JSONResponse({"error": f"Select between 1 and {MAX_DOWNLOAD_CHAPTERS} chapters"}, status_code=413)
+    sentence_count = sum(len(chapter.sentences) for chapter in req.chapters)
+    if sentence_count > MAX_DOWNLOAD_SENTENCES:
+        return JSONResponse({"error": f"Download exceeds the {MAX_DOWNLOAD_SENTENCES}-sentence limit"}, status_code=413)
+    for chapter in req.chapters:
+        for sentence in chapter.sentences:
+            text_error = _validate_text_size(sentence, "sentence")
+            if text_error:
+                return text_error
     indices = [c.chapterIndex for c in req.chapters]
     xx = min(indices) + 1  # 1-indexed for display
     yy = max(indices) + 1
@@ -1105,8 +1233,8 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    queue = asyncio.Queue()
-    state = {"active_session": -1, "current_workers": 0}
+    queue = asyncio.Queue(maxsize=MAX_WS_QUEUE)
+    state = {"active_session": -1, "current_workers": 0, "authenticated": False}
     worker_pool = {} # worker_id -> Task
     ws_lock = asyncio.Lock()
 
@@ -1114,7 +1242,30 @@ async def websocket_endpoint(websocket: WebSocket):
         try:
             while True:
                 msg = await websocket.receive_json()
+                if not state["authenticated"]:
+                    if msg.get("type") != "AUTH":
+                        await websocket.close(code=1008, reason="Authentication required")
+                        return
+                    claims = _verify_bearer_token(f"Bearer {msg.get('token', '')}")
+                    if claims is None:
+                        await websocket.close(code=1008, reason="Invalid or expired authentication token")
+                        return
+                    state["authenticated"] = True
+                    async with ws_lock:
+                        await websocket.send_json({"type": "AUTH_OK"})
+                    continue
                 if msg["type"] == "PREFETCH":
+                    text_error = _validate_text_size(msg.get("text", ""))
+                    if text_error:
+                        async with ws_lock:
+                            await websocket.send_json({
+                                "type": "PREFETCH_FAILED",
+                                "index": msg.get("index", -1),
+                                "chapterIndex": msg.get("chapterIndex", 0),
+                                "sessionId": msg.get("sessionId", -1),
+                                "error": text_error.body.decode("utf-8") if hasattr(text_error, "body") else "Invalid text"
+                            })
+                        continue
                     sid = msg.get("sessionId", -1)
                     if sid > state["active_session"]:
                         state["active_session"] = sid
@@ -1123,7 +1274,11 @@ async def websocket_endpoint(websocket: WebSocket):
                         while not queue.empty():
                             queue.get_nowait()
                         
-                        requested_workers = msg.get("numWorkers", NUM_WORKERS)
+                        try:
+                            requested_workers = int(msg.get("numWorkers", NUM_WORKERS))
+                        except (TypeError, ValueError):
+                            requested_workers = NUM_WORKERS
+                        requested_workers = max(1, min(requested_workers, MAX_WS_WORKERS))
                         print(f"Aggressive Reset: Killing old workers, spawning {requested_workers} new workers.")
                         
                         # Aggressively kill ALL current workers to abort any stuck network requests
@@ -1136,7 +1291,17 @@ async def websocket_endpoint(websocket: WebSocket):
                         for i in range(requested_workers):
                             worker_pool[i] = asyncio.create_task(worker(i))
                         
-                    await queue.put(msg)
+                    if queue.full():
+                        async with ws_lock:
+                            await websocket.send_json({
+                                "type": "PREFETCH_FAILED",
+                                "index": msg.get("index", -1),
+                                "chapterIndex": msg.get("chapterIndex", 0),
+                                "sessionId": msg.get("sessionId", -1),
+                                "error": "TTS queue is full; try again shortly"
+                            })
+                    else:
+                        await queue.put(msg)
                 elif msg["type"] == "PING":
                     async with ws_lock:
                         await websocket.send_json({"type": "PONG"})
