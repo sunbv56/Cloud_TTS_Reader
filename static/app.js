@@ -21,6 +21,7 @@ let STATE = {
     currentBookId: null,
     currentFilename: null,
     imageManifest: null,
+    imageManifestCache: new Map(),
     imageURLCache: new Map(),
     pendingImageFiles: [],
     uploadImagesChoice: false,
@@ -1353,15 +1354,29 @@ function imageAssetRef(bookId, imageId) {
 
 async function loadImageManifest(bookId) {
     if (!STATE.user || !bookId) return { version: 1, coverId: null, images: [] };
+    if (STATE.imageManifestCache.has(bookId)) return STATE.imageManifestCache.get(bookId);
+    const emptyManifest = { version: 1, coverId: null, images: [] };
     try {
-        const url = await getDownloadURL(imageManifestRef(bookId));
+        // Listing the per-book folder avoids a noisy 404 request for legacy
+        // books that never had illustrations. Older books can therefore be
+        // migrated without requiring a Firestore collection or schema change.
+        const listing = await listAll(ref(storage, `users/${STATE.user.uid}/images/${bookId}`));
+        const manifestItem = listing.items.find(item => item.name === 'manifest.json');
+        if (!manifestItem) {
+            STATE.imageManifestCache.set(bookId, emptyManifest);
+            return emptyManifest;
+        }
+        const url = await getDownloadURL(manifestItem);
         const response = await fetch(url, { cache: 'no-store' });
         if (!response.ok) throw new Error(`Manifest HTTP ${response.status}`);
         const manifest = await response.json();
-        return { version: 1, coverId: null, images: [], ...manifest };
+        const normalized = { version: 1, coverId: null, images: [], ...manifest };
+        STATE.imageManifestCache.set(bookId, normalized);
+        return normalized;
     } catch (err) {
-        if (err.code !== 'storage/object-not-found') console.debug('[Images] No manifest:', err.code || err.message);
-        return { version: 1, coverId: null, images: [] };
+        if (err.code !== 'storage/object-not-found') console.debug('[Images] Manifest lookup skipped:', err.code || err.message);
+        STATE.imageManifestCache.set(bookId, emptyManifest);
+        return emptyManifest;
     }
 }
 
@@ -1371,6 +1386,7 @@ async function saveImageManifest(bookId, manifest) {
         contentType: 'application/json',
         customMetadata: { bookId, schemaVersion: '1' }
     });
+    STATE.imageManifestCache.set(bookId, manifest);
 }
 
 async function uploadBookImages(bookId, files, bookTitle = '') {
@@ -1420,9 +1436,9 @@ async function getImageURL(bookId, image) {
 async function hydrateBookCover(bookId, elements) {
     const manifest = await loadImageManifest(bookId);
     const cover = manifest.images.find(image => image.id === manifest.coverId) || manifest.images[0];
-    if (!cover) return;
+    if (!cover) return manifest;
     const url = await getImageURL(bookId, cover);
-    if (!url) return;
+    if (!url) return manifest;
     elements.forEach(el => {
         if (el) {
             el.src = url;
@@ -1431,6 +1447,7 @@ async function hydrateBookCover(bookId, elements) {
             if (fallbackIcon) fallbackIcon.remove();
         }
     });
+    return manifest;
 }
 
 async function deleteBookImages(bookId) {
@@ -1448,6 +1465,8 @@ async function deleteBookImages(bookId) {
     try { await deleteObject(imageManifestRef(bookId)); } catch (err) {
         if (err.code !== 'storage/object-not-found') throw err;
     }
+    STATE.imageManifestCache.delete(bookId);
+    STATE.imageURLCache.clear();
 }
 
 async function deleteBookImagesFromPrefix(prefix) {
@@ -1857,8 +1876,15 @@ async function refreshLibrary() {
                 discCard.appendChild(dropdown);
 
                 discoveryGrid.appendChild(discCard);
-                if (data.has_images === true) {
-                    void hydrateBookCover(bookId, [discCard.querySelector(`[data-cover-image="${bookId}"]`)]);
+                // `has_images` was introduced after legacy books already
+                // existed. Undefined means "probe Storage once", false means
+                // explicitly no images, true means hydrate the known cover.
+                if (data.has_images !== false) {
+                    void hydrateBookCover(bookId, [discCard.querySelector(`[data-cover-image="${bookId}"]`)]).then(async manifest => {
+                        if (manifest?.images?.length && data.has_images !== true) {
+                            await setDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId), { has_images: true }, { merge: true });
+                        }
+                    }).catch(err => console.debug('[Images] Cover hydration skipped:', err.message));
                 }
             }
         });
