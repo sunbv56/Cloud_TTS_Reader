@@ -38,7 +38,7 @@
     let isExitingPip = false;
     let lastPipTime = 0;
     const PIP_LAYOUTS = Object.freeze({
-        full: { width: 640, height: 260 },
+        full: { width: 640, height: 220 },
     });
     const PIP_DPR = 1;
     const PIP_FRAME_RATE = 1;
@@ -434,13 +434,14 @@
         return lines.slice(0, maxLines);
     }
 
-    function fitText(ctx, text, maxWidth, maxLines, weight, maxSize, minSize) {
+    function fitText(ctx, text, maxWidth, maxLines, weight, maxSize, minSize, maxHeight = Infinity) {
         const value = String(text || '').trim();
         for (let size = maxSize; size >= minSize; size -= 1) {
             ctx.font = `${weight} ${size}px Arial, sans-serif`;
             const lines = wrapText(ctx, value, maxWidth, maxLines);
             const overflow = wrapText(ctx, value, maxWidth, maxLines + 1).length > maxLines;
-            if (!overflow) return lines;
+            const lineHeight = Math.max(11, Math.round(size * 1.15));
+            if (!overflow && lines.length * lineHeight <= maxHeight) return lines;
         }
 
         ctx.font = `${weight} ${minSize}px Arial, sans-serif`;
@@ -453,6 +454,11 @@
             lines[maxLines - 1] = `${last}…`;
         }
         return lines;
+    }
+
+    function getFontSize(ctx, fallback) {
+        const match = String(ctx.font || '').match(/(\d+(?:\.\d+)?)px/);
+        return match ? Number(match[1]) : fallback;
     }
 
     function getSentencePair() {
@@ -491,23 +497,40 @@
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = '#f8fafc';
-        const headerLines = fitText(ctx, headerText || 'Cloud TTS Reader', contentWidth, 1, '700', 15, 9);
+        const headerLines = fitText(ctx, headerText || 'Cloud TTS Reader', contentWidth, 1, '700', 15, 8);
         ctx.fillText(headerLines[0] || 'Cloud TTS Reader', left, 34);
         ctx.fillStyle = `${primary}88`;
         ctx.fillRect(left, 47, contentWidth, 2);
 
         ctx.fillStyle = '#f8fafc';
-        const lines = fitText(ctx, pair?.current || 'Sẵn sàng phát nội dung', contentWidth, 6, '600', 20, 11);
+        const progressTop = dimensions.height - 27;
+        const currentAvailableHeight = Math.max(30, progressTop - 78 - 14);
+        const lines = fitText(ctx, pair?.current || 'Sẵn sàng phát nội dung', contentWidth, 10, '600', 20, 8, currentAvailableHeight);
+        const currentSize = getFontSize(ctx, 20);
+        const currentLineHeight = Math.max(11, Math.round(currentSize * 1.15));
         let textY = 78;
         for (const line of lines) {
             ctx.fillText(line, left, textY);
-            textY += 20;
+            textY += currentLineHeight;
         }
         if (pair?.next) {
+            const nextTop = textY + Math.max(8, Math.round(currentLineHeight * 0.55));
+            const availableNextHeight = Math.max(0, progressTop - nextTop);
+            const nextFontMaxLines = Math.max(1, Math.min(5, Math.floor(availableNextHeight / 12)));
             ctx.fillStyle = '#64748b';
-            const nextLines = fitText(ctx, pair.next, dimensions.width - 118, 2, '500', 12, 10);
-            ctx.fillText(`Tiếp theo  ${nextLines[0] || ''}`, left, Math.min(textY + 5, dimensions.height - 43));
-            if (nextLines[1]) ctx.fillText(nextLines[1], left + 70, Math.min(textY + 22, dimensions.height - 22));
+            ctx.font = '600 10px Arial, sans-serif';
+            const nextLabel = 'Tiếp theo';
+            const labelWidth = ctx.measureText(nextLabel).width;
+            const nextWidth = Math.max(120, contentWidth - labelWidth - 10);
+            const nextLines = fitText(ctx, pair.next, nextWidth, nextFontMaxLines, '500', 12, 8, availableNextHeight);
+            const nextSize = getFontSize(ctx, 10);
+            const nextLineHeight = Math.max(10, Math.round(nextSize * 1.15));
+            ctx.fillText(nextLabel, left, nextTop);
+            ctx.font = `500 ${nextSize}px Arial, sans-serif`;
+            if (nextLines[0]) ctx.fillText(nextLines[0], left + labelWidth + 10, nextTop);
+            for (let index = 1; index < nextLines.length; index += 1) {
+                ctx.fillText(nextLines[index], left, nextTop + index * nextLineHeight);
+            }
         }
 
         ctx.fillStyle = 'rgba(255,255,255,0.10)';

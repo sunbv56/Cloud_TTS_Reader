@@ -37,7 +37,7 @@ test('websocket wait reports both success and timeout', () => {
 });
 
 test('native PiP keeps one polished full layout', () => {
-    assert.match(miniPlayerJs, /full:\s*\{\s*width:\s*640,\s*height:\s*260\s*\}/);
+    assert.match(miniPlayerJs, /full:\s*\{\s*width:\s*640,\s*height:\s*220\s*\}/);
     assert.match(miniPlayerJs, /PIP_FRAME_RATE\s*=\s*1/);
     assert.match(miniPlayerJs, /openBestPiP\(\)/);
     assert.match(miniPlayerJs, /const headerText = \[chapterTitle, bookTitle\]/);
@@ -58,7 +58,7 @@ test('in-app player can collapse to a circle', () => {
 });
 
 test('service worker updates the shell and caches mini-player assets', () => {
-    assert.match(serviceWorker, /cloud-tts-v4-pip-redesign/);
+    assert.match(serviceWorker, /cloud-tts-v5-pip-adaptive/);
     assert.match(serviceWorker, /\/static\/js\/mini-player-widget\.js/);
     assert.match(serviceWorker, /\/static\/css\/mini-player\.css/);
     assert.match(serviceWorker, /self\.skipWaiting\(\)/);
