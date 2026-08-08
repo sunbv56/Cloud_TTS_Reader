@@ -20,7 +20,7 @@ test('image upload uses per-book Storage paths and no new database collection', 
     assert.match(app, /uploadBookImages/);
     assert.match(app, /loadImageManifest/);
     assert.match(app, /imageManifestCache/);
-    assert.match(app, /listAll\(ref\(storage/);
+    assert.match(app, /getDownloadURL\(imageManifestRef\(bookId\)\)/);
     assert.match(app, /deleteBookImages/);
     assert.match(app, /replaceBookImage/);
     assert.match(app, /removeBookImage/);

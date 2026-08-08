@@ -1357,16 +1357,9 @@ async function loadImageManifest(bookId) {
     if (STATE.imageManifestCache.has(bookId)) return STATE.imageManifestCache.get(bookId);
     const emptyManifest = { version: 1, coverId: null, images: [] };
     try {
-        // Listing the per-book folder avoids a noisy 404 request for legacy
-        // books that never had illustrations. Older books can therefore be
-        // migrated without requiring a Firestore collection or schema change.
-        const listing = await listAll(ref(storage, `users/${STATE.user.uid}/images/${bookId}`));
-        const manifestItem = listing.items.find(item => item.name === 'manifest.json');
-        if (!manifestItem) {
-            STATE.imageManifestCache.set(bookId, emptyManifest);
-            return emptyManifest;
-        }
-        const url = await getDownloadURL(manifestItem);
+        // Read the manifest directly. This is compatible with the existing
+        // Storage Rules and avoids requiring directory-list permissions.
+        const url = await getDownloadURL(imageManifestRef(bookId));
         const response = await fetch(url, { cache: 'no-store' });
         if (!response.ok) throw new Error(`Manifest HTTP ${response.status}`);
         const manifest = await response.json();
