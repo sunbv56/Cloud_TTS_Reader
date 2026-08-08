@@ -1869,15 +1869,11 @@ async function refreshLibrary() {
                 discCard.appendChild(dropdown);
 
                 discoveryGrid.appendChild(discCard);
-                // `has_images` was introduced after legacy books already
-                // existed. Undefined means "probe Storage once", false means
-                // explicitly no images, true means hydrate the known cover.
-                if (data.has_images !== false) {
-                    void hydrateBookCover(bookId, [discCard.querySelector(`[data-cover-image="${bookId}"]`)]).then(async manifest => {
-                        if (manifest?.images?.length && data.has_images !== true) {
-                            await setDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId), { has_images: true }, { merge: true });
-                        }
-                    }).catch(err => console.debug('[Images] Cover hydration skipped:', err.message));
+                // Only books explicitly known to contain images need a
+                // manifest request. This prevents expected missing-manifest
+                // 404s for the rest of the legacy library.
+                if (data.has_images === true) {
+                    void hydrateBookCover(bookId, [discCard.querySelector(`[data-cover-image="${bookId}"]`)]).catch(err => console.debug('[Images] Cover hydration skipped:', err.message));
                 }
             }
         });
@@ -2354,6 +2350,9 @@ async function loadBook(bookData, bookId, filename) {
     STATE.currentFilename = filename || (STATE.currentBook.title + ".txt");
     STATE.imageManifest = await loadImageManifest(STATE.currentBookId);
     STATE.imageURLCache.clear();
+    if (STATE.imageManifest.images.length && STATE.user) {
+        await setDoc(doc(db, 'users', STATE.user.uid, 'progress', STATE.currentBookId), { has_images: true }, { merge: true });
+    }
 
     // Check for existing progress
     const progress = await loadProgress(STATE.currentBookId);
