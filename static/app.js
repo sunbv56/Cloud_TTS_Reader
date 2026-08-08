@@ -1396,6 +1396,9 @@ async function uploadBookImages(bookId, files, bookTitle = '') {
         if (!manifest.coverId) manifest.coverId = imageId;
     }
     await saveImageManifest(bookId, manifest);
+    await setDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId), {
+        has_images: manifest.images.length > 0
+    }, { merge: true });
     STATE.imageManifest = manifest;
     STATE.imageURLCache.clear();
     return manifest;
@@ -1482,6 +1485,9 @@ async function removeBookImage(bookId, imageId) {
     manifest.images = manifest.images.filter(item => item.id !== imageId);
     if (manifest.coverId === imageId) manifest.coverId = manifest.images[0]?.id || null;
     await saveImageManifest(bookId, manifest);
+    await setDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId), {
+        has_images: manifest.images.length > 0
+    }, { merge: true });
     STATE.imageManifest = manifest;
     STATE.imageURLCache.delete(imageId);
 }
@@ -1851,7 +1857,9 @@ async function refreshLibrary() {
                 discCard.appendChild(dropdown);
 
                 discoveryGrid.appendChild(discCard);
-                void hydrateBookCover(bookId, [discCard.querySelector(`[data-cover-image="${bookId}"]`)]);
+                if (data.has_images === true) {
+                    void hydrateBookCover(bookId, [discCard.querySelector(`[data-cover-image="${bookId}"]`)]);
+                }
             }
         });
     } catch (err) {
@@ -2223,7 +2231,6 @@ const handleFileUpload = async (e) => {
         await refreshLibrary();
         STATE.pendingImageFiles = [];
         if (imageInput) imageInput.value = '';
-        updateImageSelectionStatus();
     } catch (err) {
         console.error(err);
         alert("Error uploading story: " + err.message);
