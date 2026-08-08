@@ -49,6 +49,13 @@ test('MSE quota errors requeue audio and release played history', () => {
     assert.match(appJs, /STATE\.sourceBuffer\.remove\(0, removeEnd\)/);
 });
 
+test('library refresh clears discovery results after async snapshots', () => {
+    const snapshotIndex = appJs.indexOf('const querySnapshot = await getDocs(q);');
+    const clearAfterSnapshot = appJs.indexOf("if (discoveryGrid) discoveryGrid.innerHTML = '';", snapshotIndex);
+    assert.ok(snapshotIndex >= 0, 'library snapshot query must remain explicit');
+    assert.ok(clearAfterSnapshot > snapshotIndex, 'discovery grid must clear after the async query resolves');
+});
+
 test('native PiP keeps one polished full layout', () => {
     assert.match(miniPlayerJs, /full:\s*\{\s*width:\s*640,\s*height:\s*220\s*\}/);
     assert.match(miniPlayerJs, /PIP_FRAME_RATE\s*=\s*1/);
