@@ -13,6 +13,10 @@ let app, auth, db, storage, provider;
 // network, MSE and server bursts on phones.
 const FOREGROUND_PREFETCH_CHUNKS = 40;
 const BACKGROUND_PREFETCH_CHUNKS = 80;
+// Keep the MSE forward buffer bounded. Browser SourceBuffer quotas are
+// implementation-dependent, so a time budget is safer than a chunk count.
+const MAX_BUFFER_AHEAD_SECONDS = 180;
+const BUFFER_HISTORY_SECONDS = 10;
 
 // App State
 let STATE = {
@@ -67,6 +71,7 @@ let STATE = {
     lastAppendedChapter: 0,
     isFirstChunkOfSession: false,
     prefetchTimeout: null,
+    appendRetryTimeout: null,
     prefetchBatchStatus: {
         completed: 0,
         total: 0
@@ -606,6 +611,10 @@ async function resetAudioEngine() {
 
     // 3. Clear RAM State (Queues & Metadata)
     STATE.appendQueue = [];
+    if (STATE.appendRetryTimeout) {
+        clearTimeout(STATE.appendRetryTimeout);
+        STATE.appendRetryTimeout = null;
+    }
     STATE.chunkTimings = [];
     STATE.fetchingSet.clear();
     STATE.metadataQueue = [];
@@ -1214,6 +1223,21 @@ function initMSE() {
     STATE.mediaSource.addEventListener('sourceclose', () => console.log("MediaSource closed"));
 }
 
+function getBufferedAheadSeconds() {
+    if (!STATE.sourceBuffer || !STATE.sourceBuffer.buffered.length) return 0;
+    const currentTime = audio.currentTime || 0;
+    const end = STATE.sourceBuffer.buffered.end(STATE.sourceBuffer.buffered.length - 1);
+    return Math.max(0, end - currentTime);
+}
+
+function scheduleAppendRetry(delay = 500) {
+    if (STATE.appendRetryTimeout) return;
+    STATE.appendRetryTimeout = setTimeout(() => {
+        STATE.appendRetryTimeout = null;
+        processAppendQueue();
+    }, delay);
+}
+
 function processAppendQueue() {
     if (!STATE.sourceBuffer || STATE.sourceBuffer.updating || STATE.appendQueue.length === 0 || STATE.isAppending || STATE.isTransitioning) return;
 
@@ -1256,6 +1280,16 @@ function processAppendQueue() {
 
     STATE.isAppending = true;
     const chunk = STATE.appendQueue.shift();
+
+    // Stop extending the forward buffer before the browser reaches its
+    // opaque SourceBuffer quota. The chunk stays queued and will be retried as
+    // playback advances and frees room.
+    if (getBufferedAheadSeconds() >= MAX_BUFFER_AHEAD_SECONDS) {
+        STATE.appendQueue.unshift(chunk);
+        STATE.isAppending = false;
+        scheduleAppendRetry();
+        return;
+    }
 
     // [TASK 1: BUFFER CLEANUP] Before appending, check if we need to free space
     if (STATE.sourceBuffer.buffered.length > 0) {
@@ -1323,6 +1357,32 @@ function processAppendQueue() {
         STATE.lastAppendedChapter = chunk.chapterIndex;
         console.log(`Appended chunk ${chunk.index} (bytes: ${chunk.data.byteLength}) at ${startTime.toFixed(2)}s. Current audio time: ${audio.currentTime.toFixed(2)}s`);
     } catch (e) {
+        if (e?.name === 'QuotaExceededError') {
+            // appendQueue.shift() happens before appendBuffer(). Put the chunk
+            // back so a quota event cannot silently lose the next sentence.
+            STATE.appendQueue.unshift(chunk);
+            STATE.isAppending = false;
+
+            // Release played history immediately when possible. The normal
+            // timeupdate cleanup is intentionally conservative, but a quota
+            // event needs an immediate recovery path.
+            if (audio.currentTime > BUFFER_HISTORY_SECONDS && !STATE.sourceBuffer.updating) {
+                const removeEnd = audio.currentTime - BUFFER_HISTORY_SECONDS;
+                try {
+                    const firstStart = STATE.sourceBuffer.buffered.start(0);
+                    if (removeEnd > firstStart) {
+                        STATE.sourceBuffer.remove(0, removeEnd);
+                        return;
+                    }
+                } catch (removeError) {
+                    console.warn("SourceBuffer quota cleanup failed:", removeError);
+                }
+            }
+
+            scheduleAppendRetry(1000);
+            return;
+        }
+
         console.error("Append error:", e);
         STATE.isAppending = false;
     }
