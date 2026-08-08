@@ -465,8 +465,8 @@
         const chapterTitle = document.getElementById('player-title')?.textContent || '';
         const bookTitle = document.getElementById('player-author')?.textContent || 'Cloud TTS Reader';
         const pair = getSentencePair();
-        const left = 28;
-        const artSize = 64;
+        const left = 24;
+        const artSize = 48;
         const contentX = left + artSize + 18;
         const contentWidth = dimensions.width - contentX - 28;
 
@@ -489,31 +489,31 @@
         art.addColorStop(0, `${primary}cc`);
         art.addColorStop(1, '#142333');
         ctx.fillStyle = art;
-        ctx.fillRect(left, 28, artSize, artSize);
+        ctx.fillRect(left, 20, artSize, artSize);
         ctx.strokeStyle = `${primary}88`;
         ctx.lineWidth = 1;
-        ctx.strokeRect(left + 0.5, 28.5, artSize - 1, artSize - 1);
+        ctx.strokeRect(left + 0.5, 20.5, artSize - 1, artSize - 1);
         ctx.fillStyle = '#ffffff';
         ctx.font = '700 28px Arial, sans-serif';
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        ctx.fillText('♪', left + artSize / 2, 60);
+        ctx.fillText('♪', left + artSize / 2, 44);
 
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = primary;
         ctx.font = '700 10px Arial, sans-serif';
-        ctx.fillText('NOW READING  •  CLOUD TTS', contentX, 28);
+        ctx.fillText('NOW READING  •  CLOUD TTS', contentX, 23);
         ctx.fillStyle = '#f8fafc';
-        const chapterLines = fitText(ctx, chapterTitle || 'Đang đọc', contentWidth, 1, '700', 17, 12);
-        ctx.fillText(chapterLines[0] || 'Đang đọc', contentX, 51);
+        const chapterLines = fitText(ctx, chapterTitle || 'Đang đọc', contentWidth, 1, '700', 15, 11);
+        ctx.fillText(chapterLines[0] || 'Đang đọc', contentX, 45);
         ctx.fillStyle = '#94a3b8';
-        const bookLines = fitText(ctx, bookTitle, contentWidth, 1, '500', 12, 10);
-        ctx.fillText(bookLines[0] || 'Cloud TTS Reader', contentX, 72);
+        const bookLines = fitText(ctx, bookTitle, contentWidth, 1, '500', 10, 9);
+        ctx.fillText(bookLines[0] || 'Cloud TTS Reader', contentX, 61);
 
         ctx.fillStyle = '#f8fafc';
         const lines = fitText(ctx, pair?.current || 'Sẵn sàng phát nội dung', dimensions.width - 64, 4, '600', 17, 12);
-        let textY = 128;
+        let textY = 108;
         for (const line of lines) {
             ctx.fillText(line, left, textY);
             textY += 22;
