@@ -9,7 +9,8 @@ import edge_tts
 import tempfile
 import gc
 import firebase_admin
-from firebase_admin import credentials, storage, firestore
+from firebase_admin import credentials, storage, firestore, auth
+from urllib.parse import quote
 from fastapi import FastAPI, Request, Response, Form, UploadFile, File, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -210,6 +211,31 @@ def reconstruct_text_from_segments(userId: str, story_id: str, segments_count: i
             
     return full_text
 
+def _safe_export_filename(metadata: dict, story_id: str) -> str:
+    """Return a filesystem-safe UTF-8 filename for text exports."""
+    raw_name = metadata.get("filename") or metadata.get("title") or story_id
+    raw_name = os.path.basename(str(raw_name)).strip() or story_id
+    if not raw_name.lower().endswith(".txt"):
+        raw_name += ".txt"
+    # Keep Unicode letters (including Vietnamese) while removing Windows-invalid
+    # path characters and control characters.
+    raw_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", raw_name)
+    return raw_name[:180]
+
+def _verify_export_owner(request: Request, user_id: str):
+    """Verify the Firebase ID token when the export endpoint is called."""
+    authorization = request.headers.get("authorization", "")
+    if not authorization.lower().startswith("bearer "):
+        return JSONResponse({"error": "Authentication required"}, status_code=401)
+    try:
+        token = authorization.split(" ", 1)[1].strip()
+        decoded = auth.verify_id_token(token)
+        if decoded.get("uid") != user_id:
+            return JSONResponse({"error": "Forbidden"}, status_code=403)
+    except Exception:
+        return JSONResponse({"error": "Invalid or expired authentication token"}, status_code=401)
+    return None
+
 def convert_firestore_data(data: dict):
     """Convert Firestore-specific types (like DatetimeWithNanoseconds) to JSON serializable formats."""
     if not data:
@@ -325,6 +351,7 @@ async def upload_story(
         master_blob_path = f"users/{userId}/files/{file.filename}"
         master_blob = bucket.blob(master_blob_path)
         master_blob.upload_from_filename(tmp_path)
+        story_metadata["masterPath"] = master_blob_path
         
         if story_metadata["isSegmented"]:
             segments = partition_chapters(chapters)
@@ -405,6 +432,109 @@ async def get_segment_data(userId: str, storyId: str, segmentIndex: int):
     
     data = json.loads(blob.download_as_text())
     return JSONResponse({"chapters": data})
+
+@app.get("/api/stories/{userId}/{storyId}/export-text")
+async def export_story_text(userId: str, storyId: str, request: Request):
+    """Download the canonical TXT, rebuilding it from segments only as a fallback."""
+    if not firebase_admin_initialized or db_admin is None:
+        return JSONResponse({"error": "Firebase Admin not initialized"}, status_code=500)
+
+    auth_error = _verify_export_owner(request, userId)
+    if auth_error:
+        return auth_error
+
+    story_ref = db_admin.collection("users").document(userId).collection("stories").document(storyId)
+    story_doc = story_ref.get()
+    if not story_doc.exists:
+        return JSONResponse({"error": "Story not found"}, status_code=404)
+
+    metadata = story_doc.to_dict() or {}
+    filename = _safe_export_filename(metadata, storyId)
+    bucket = storage.bucket()
+    master_path = metadata.get("masterPath") or f"users/{userId}/files/{metadata.get('filename', filename)}"
+    master_blob = bucket.blob(master_path)
+
+    if master_blob.exists():
+        # Download to a temporary file so the response can stream without keeping
+        # the entire book in server memory.
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+        tmp_path = tmp.name
+        tmp.close()
+        try:
+            master_blob.download_to_filename(tmp_path)
+        except Exception as exc:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            return JSONResponse({"error": f"Unable to read source file: {exc}"}, status_code=502)
+
+        def master_stream():
+            try:
+                with open(tmp_path, "rb") as source:
+                    while chunk := source.read(1024 * 1024):
+                        yield chunk
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+
+        headers = {
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+            "X-Export-Source": "master"
+        }
+        return StreamingResponse(master_stream(), media_type="text/plain; charset=utf-8", headers=headers)
+
+    segments_count = int(metadata.get("segmentsCount") or 0)
+    if not metadata.get("isSegmented") or segments_count <= 0:
+        return JSONResponse({"error": "Source text file not found"}, status_code=404)
+
+    # Validate every required segment before sending response headers. This avoids
+    # producing a partial, silently truncated TXT when one segment is missing.
+    segment_blobs = []
+    for segment_index in range(segments_count):
+        blob = bucket.blob(f"users/{userId}/stories/{storyId}/segments/seg_{segment_index}.json")
+        if not blob.exists():
+            return JSONResponse({
+                "error": "Book segments are incomplete",
+                "missingSegment": segment_index
+            }, status_code=409)
+        segment_blobs.append(blob)
+
+    # Validate JSON before sending headers. A malformed segment should produce a
+    # clear error response instead of a partially downloaded TXT file.
+    for segment_index, blob in enumerate(segment_blobs):
+        try:
+            json.loads(blob.download_as_text())
+        except Exception as exc:
+            print(f"[Export] Invalid segment {segment_index}: {exc}")
+            return JSONResponse({
+                "error": "Book segments are corrupted",
+                "invalidSegment": segment_index
+            }, status_code=409)
+
+    def reconstructed_stream():
+        first_chapter = True
+        try:
+            for blob in segment_blobs:
+                data = json.loads(blob.download_as_text())
+                for chapter in data:
+                    if not first_chapter:
+                        yield b"\n\n===\n\n"
+                    title = str(chapter.get("title") or "Ch\u01b0\u01a1ng kh\u00f4ng t\u00ean").strip()
+                    sentences = chapter.get("sentences") or []
+                    text = title
+                    if sentences:
+                        text += "\n" + "\n".join(str(sentence) for sentence in sentences)
+                    yield text.encode("utf-8")
+                    first_chapter = False
+                del data
+                gc.collect()
+        except Exception as exc:
+            print(f"[Export] Segment reconstruction failed: {exc}")
+
+    headers = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+        "X-Export-Source": "reconstructed"
+    }
+    return StreamingResponse(reconstructed_stream(), media_type="text/plain; charset=utf-8", headers=headers)
 
 @app.post("/api/get-chapter-sentences")
 async def get_chapter_sentences(

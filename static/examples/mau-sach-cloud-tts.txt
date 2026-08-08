@@ -1,0 +1,15 @@
+Chương 1: Khởi đầu
+
+Đây là nội dung mẫu của chương đầu tiên. Mỗi đoạn văn sẽ được ứng dụng chuẩn bị để đọc thành tiếng.
+
+===
+
+Chương 2: Hành trình
+
+Đây là nội dung mẫu của chương thứ hai. Hãy đặt dấu === trên một dòng riêng để bắt đầu chương mới.
+
+===
+
+Chương 3: Kết thúc
+
+Đây là nội dung mẫu của chương cuối cùng.

@@ -1319,6 +1319,15 @@ async function refreshLibrary() {
                 document.getElementById(`merge-input-${bookId}`).click();
             };
 
+            const downloadTextBtn = document.createElement('button');
+            downloadTextBtn.className = 'w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-slate-300';
+            downloadTextBtn.innerHTML = '<i class="fas fa-file-download w-4 text-center"></i> Tải file TXT';
+            downloadTextBtn.onclick = (e) => {
+                e.stopPropagation();
+                toggleKebabMenu(bookId);
+                downloadTextBook(bookId, data.title);
+            };
+
             const deleteBtn = document.createElement('button');
             deleteBtn.className = 'w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 hover:bg-red-500/10 hover:text-red-400 transition-colors text-slate-300';
             deleteBtn.innerHTML = '<i class="fas fa-trash-alt w-4 text-center"></i> Xóa truyện';
@@ -1328,6 +1337,7 @@ async function refreshLibrary() {
             };
 
             dropdown.appendChild(mergeBtn);
+            dropdown.appendChild(downloadTextBtn);
             dropdown.appendChild(deleteBtn);
 
             wrapper.appendChild(div);
@@ -1378,6 +1388,15 @@ async function refreshLibrary() {
                     document.getElementById(`merge-input-discovery-${bookId}`).click();
                 };
 
+                const downloadTextBtn = document.createElement('button');
+                downloadTextBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-slate-300 font-bold';
+                downloadTextBtn.innerHTML = '<i class="fas fa-file-download w-4 text-center"></i> Tải file TXT';
+                downloadTextBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    toggleKebabMenu(bookId, true);
+                    downloadTextBook(bookId, data.title);
+                };
+
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-red-500/10 hover:text-red-400 transition-colors text-slate-300 font-bold';
                 deleteBtn.innerHTML = '<i class="fas fa-trash-alt w-4 text-center"></i> Xóa truyện';
@@ -1387,6 +1406,7 @@ async function refreshLibrary() {
                 };
 
                 dropdown.appendChild(mergeBtn);
+                dropdown.appendChild(downloadTextBtn);
                 dropdown.appendChild(deleteBtn);
 
                 discCard.innerHTML = `
@@ -1426,6 +1446,62 @@ async function refreshLibrary() {
         console.error("Library Refresh Error:", err);
         bookList.innerHTML = '<div class="text-center p-8 text-red-400 italic text-sm">Error updating library.</div>';
         if (discoveryGrid) discoveryGrid.innerHTML = '<div class="text-center p-8 text-red-400 italic">Error loading recent reads.</div>';
+    }
+}
+
+/** Download the canonical source TXT for a book. The backend handles master
+ * files and segmented-book reconstruction so the browser never assembles JSON
+ * segments in memory. */
+async function downloadTextBook(bookId, title = 'book') {
+    if (!STATE.user || !bookId) {
+        alert('Please login first to download books.');
+        return;
+    }
+
+    const status = document.getElementById('status-indicator');
+    const previousStatus = status?.innerText || 'Ready';
+    if (status) status.innerText = 'Preparing TXT...';
+
+    try {
+        const token = await STATE.user.getIdToken();
+        const response = await fetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/export-text`, {
+            headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!response.ok) {
+            let message = 'Unable to download the TXT file.';
+            try {
+                const errorData = await response.json();
+                if (errorData.error) message = errorData.error;
+            } catch (_) { /* Keep the friendly fallback message. */ }
+            throw new Error(message);
+        }
+
+        const blob = await response.blob();
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1];
+        const filename = encodedName
+            ? decodeURIComponent(encodedName)
+            : `${String(title || 'book').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')}.txt`;
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = filename.toLowerCase().endsWith('.txt') ? filename : `${filename}.txt`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        if (status) status.innerText = 'TXT download started';
+    } catch (err) {
+        console.error('[Export TXT]', err);
+        alert(`Không thể tải file TXT: ${err.message}`);
+        if (status) status.innerText = 'TXT download failed';
+    } finally {
+        setTimeout(() => {
+            if (status && (status.innerText === 'TXT download started' || status.innerText === 'TXT download failed')) {
+                status.innerText = previousStatus || 'Ready';
+            }
+        }, 2500);
     }
 }
 
@@ -1641,6 +1717,22 @@ const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
+    if (!file.name.toLowerCase().endsWith('.txt')) {
+        alert('Chỉ hỗ trợ file .txt.');
+        e.target.value = '';
+        return;
+    }
+    if (file.size === 0) {
+        alert('File đang trống. Vui lòng chọn file có nội dung.');
+        e.target.value = '';
+        return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+        alert('File vượt quá giới hạn 100 MB. Hãy chia nhỏ nội dung trước khi tải lên.');
+        e.target.value = '';
+        return;
+    }
+
     if (!STATE.user) {
         alert("Please login first to upload books.");
         return;
@@ -1653,6 +1745,16 @@ const handleFileUpload = async (e) => {
 
     document.getElementById('status-indicator').innerText = "Processing Story...";
     try {
+        // Give the user a useful preview without reading a large file into memory:
+        // inspect only the first 4 MB for chapter separators.
+        const preview = await file.slice(0, 4 * 1024 * 1024).text();
+        const separatorCount = (preview.match(/^\s*={3,}\s*$/gm) || []).length;
+        if (separatorCount === 0 && !confirm('Không tìm thấy dòng === để phân cách chương. File sẽ được nhập thành một chương. Tiếp tục?')) {
+            hideLoading();
+            return;
+        }
+        const estimatedChapters = separatorCount + 1;
+        document.getElementById('status-indicator').innerText = `Found ~${estimatedChapters} chapters. Preparing...`;
         const response = await fetch('/api/upload-story', {
             method: 'POST',
             body: formData
@@ -3159,6 +3261,9 @@ document.getElementById('toc-btn').onclick = () => {
 document.getElementById('close-toc').onclick = () => closeTOC();
 document.getElementById('sync-btn').onclick = () => refreshLibrary();
 document.getElementById('edit-title-btn').onclick = () => editTitle();
+document.getElementById('toc-download-txt-btn').onclick = () => {
+    if (STATE.currentBookId) downloadTextBook(STATE.currentBookId, STATE.currentBook?.title);
+};
 
 // TOC Select Mode & Download
 document.getElementById('toc-select-mode-btn').onclick = () => toggleSelectMode();

@@ -28,3 +28,4 @@
 **/*.txt
 !**/README.md
 !**/requirements.txt
+!**/static/examples/*.txt
