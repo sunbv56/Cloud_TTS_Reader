@@ -1367,7 +1367,13 @@ async function loadImageManifest(bookId) {
         STATE.imageManifestCache.set(bookId, normalized);
         return normalized;
     } catch (err) {
-        if (err.code !== 'storage/object-not-found') console.debug('[Images] Manifest lookup skipped:', err.code || err.message);
+        if (err.code === 'storage/object-not-found') {
+            // Repair stale progress flags left by older image experiments so
+            // this book is not queried again on every library refresh.
+            await setDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId), { has_images: false }, { merge: true }).catch(() => {});
+        } else {
+            console.debug('[Images] Manifest lookup skipped:', err.code || err.message);
+        }
         STATE.imageManifestCache.set(bookId, emptyManifest);
         return emptyManifest;
     }
@@ -1384,7 +1390,12 @@ async function saveImageManifest(bookId, manifest) {
 
 async function uploadBookImages(bookId, files, bookTitle = '') {
     if (!STATE.user || !bookId || !files?.length) return null;
-    const manifest = await loadImageManifest(bookId);
+    // New books (and legacy books with no images) do not have a manifest yet.
+    // Reuse the currently loaded manifest when this is the open book; otherwise
+    // start empty instead of making an expected 404 request before first upload.
+    const manifest = STATE.currentBookId === bookId && STATE.imageManifest
+        ? STATE.imageManifest
+        : { version: 1, coverId: null, images: [] };
     for (const sourceFile of files) {
         const file = await compressImageForStorage(sourceFile);
         if (file.size > IMAGE_MAX_BYTES) throw new Error(`${sourceFile.name} vượt quá 150 KB sau tối ưu.`);
