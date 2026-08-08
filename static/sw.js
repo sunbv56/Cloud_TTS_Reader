@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cloud-tts-v3-energy';
+const CACHE_NAME = 'cloud-tts-v4-pip-redesign';
 const ASSETS = [
     '/',
     '/static/index.html',

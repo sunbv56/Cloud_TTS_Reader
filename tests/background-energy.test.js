@@ -36,12 +36,14 @@ test('websocket wait reports both success and timeout', () => {
     assert.match(appJs, /WebSocket connection timeout\."\);\s*resolve\(false\)/);
 });
 
-test('native PiP keeps the full layout and offers a compact layout', () => {
-    assert.match(miniPlayerJs, /full:\s*\{\s*width:\s*480,\s*height:\s*140\s*\}/);
-    assert.match(miniPlayerJs, /compact:\s*\{\s*width:\s*50,\s*height:\s*50\s*\}/);
+test('native PiP keeps one polished full layout', () => {
+    assert.match(miniPlayerJs, /full:\s*\{\s*width:\s*560,\s*height:\s*200\s*\}/);
     assert.match(miniPlayerJs, /PIP_FRAME_RATE\s*=\s*1/);
-    assert.match(miniPlayerJs, /openBestPiP\('full'\)/);
-    assert.match(miniPlayerJs, /id="mpw-pip-round-btn"/);
+    assert.match(miniPlayerJs, /openBestPiP\(\)/);
+    assert.match(miniPlayerJs, /NOW READING/);
+    assert.match(miniPlayerJs, /id="mpw-pip-btn"/);
+    assert.doesNotMatch(miniPlayerJs, /compact|mpw-pip-round-btn|mpw-player-round-pip-btn|drawCompactPipFrame/);
+    assert.doesNotMatch(miniPlayerCss, /mpw-pip-compact|mpw-player-round-pip-btn/);
     assert.doesNotMatch(miniPlayerJs, /captureStream\(5\)/);
 });
 
@@ -52,7 +54,7 @@ test('in-app player can collapse to a circle', () => {
 });
 
 test('service worker updates the shell and caches mini-player assets', () => {
-    assert.doesNotMatch(serviceWorker, /cloud-tts-v1/);
+    assert.match(serviceWorker, /cloud-tts-v4-pip-redesign/);
     assert.match(serviceWorker, /\/static\/js\/mini-player-widget\.js/);
     assert.match(serviceWorker, /\/static\/css\/mini-player\.css/);
     assert.match(serviceWorker, /self\.skipWaiting\(\)/);

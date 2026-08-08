@@ -37,10 +37,8 @@
     let pipDrawTimer = null;
     let isExitingPip = false;
     let lastPipTime = 0;
-    let pipLayout = 'full';
     const PIP_LAYOUTS = Object.freeze({
-        full: { width: 480, height: 140 },
-        compact: { width: 50, height: 50 },
+        full: { width: 560, height: 200 },
     });
     const PIP_DPR = 1;
     const PIP_FRAME_RATE = 1;
@@ -62,8 +60,7 @@
                 <button class="mpw-btn mpw-play" id="mpw-play-btn" title="Play/Pause"><i class="fas fa-play"></i></button>
                 <button class="mpw-btn" id="mpw-next-btn" title="Next"><i class="fas fa-step-forward"></i></button>
                 <button class="mpw-btn" id="mpw-collapse-btn" title="Thu gọn thành nút tròn"><i class="fas fa-compress-alt"></i></button>
-                <button class="mpw-btn" id="mpw-pip-btn" title="Picture-in-Picture" hidden><i class="fas fa-external-link-alt"></i></button>
-                <button class="mpw-btn" id="mpw-pip-round-btn" title="PiP dạng tròn" hidden><i class="fas fa-circle"></i></button>
+                <button class="mpw-btn" id="mpw-pip-btn" title="Mở cửa sổ PiP" hidden><i class="fas fa-external-link-alt"></i></button>
                 <button class="mpw-btn" id="mpw-close-btn" title="Stop & close"><i class="fas fa-times"></i></button>
                 <div class="mpw-progress-track"><div class="mpw-progress" id="mpw-progress"></div></div>
             </div>`;
@@ -95,22 +92,11 @@
 
         // Tier 3: PiP — only shown when the browser supports either flavor
         const pipBtn = root.querySelector('#mpw-pip-btn');
-        const roundPipBtn = root.querySelector('#mpw-pip-round-btn');
         if (document.pictureInPictureEnabled || 'documentPictureInPicture' in window) {
             pipBtn.hidden = false;
-            roundPipBtn.hidden = false;
             pipBtn.addEventListener('click', (e) => {
                 e.stopPropagation();
-                openBestPiP('full').catch(err => console.error('[MPW] PiP failed:', err));
-            });
-            roundPipBtn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                if (pipWindow) {
-                    const compact = pipWindow.document.body.classList.contains('mpw-pip-compact');
-                    setDocumentPipLayout(compact ? 'full' : 'compact');
-                    return;
-                }
-                openBestPiP('compact').catch(err => console.error('[MPW] Round PiP failed:', err));
+                openBestPiP().catch(err => console.error('[MPW] PiP failed:', err));
             });
         }
 
@@ -142,18 +128,10 @@
             pipBtn.title = 'Picture-in-Picture (floating window)';
             pipBtn.innerHTML = '<i class="fas fa-window-restore"></i>';
             pipBtn.addEventListener('click', () => {
-                openBestPiP('full').catch(err => console.error('[MPW] PiP failed:', err));
+                openBestPiP().catch(err => console.error('[MPW] PiP failed:', err));
             });
             mediaPlayer.appendChild(pipBtn);
 
-            const roundBtn = document.createElement('button');
-            roundBtn.id = 'mpw-player-round-pip-btn';
-            roundBtn.title = 'PiP dạng tròn';
-            roundBtn.innerHTML = '<i class="fas fa-circle"></i>';
-            roundBtn.addEventListener('click', () => {
-                openBestPiP('compact').catch(err => console.error('[MPW] Round PiP failed:', err));
-            });
-            mediaPlayer.appendChild(roundBtn);
         }
     }
 
@@ -422,11 +400,8 @@
         document.body.appendChild(pipVideo);
     }
 
-    function configurePipCanvas(layout) {
-        const nextLayout = PIP_LAYOUTS[layout] ? layout : 'full';
-        const dimensions = PIP_LAYOUTS[nextLayout];
-        pipLayout = nextLayout;
-
+    function configurePipCanvas() {
+        const dimensions = PIP_LAYOUTS.full;
         if (pipCanvas.width === dimensions.width * PIP_DPR
             && pipCanvas.height === dimensions.height * PIP_DPR) return;
 
@@ -468,91 +443,75 @@
     function drawFullPipFrame(ctx, primary, progress) {
         const dimensions = PIP_LAYOUTS.full;
         const chapterTitle = document.getElementById('player-title')?.textContent || '';
+        const bookTitle = document.getElementById('player-author')?.textContent || 'Cloud TTS Reader';
         const pair = getSentencePair();
-        const textX = 20;
-        const textWidth = dimensions.width - textX * 2;
+        const left = 28;
+        const artSize = 64;
+        const contentX = left + artSize + 18;
+        const contentWidth = dimensions.width - contentX - 28;
 
         const background = ctx.createLinearGradient(0, 0, dimensions.width, dimensions.height);
-        background.addColorStop(0, '#10151f');
-        background.addColorStop(0.6, '#0b0f17');
-        background.addColorStop(1, '#0e1a22');
+        background.addColorStop(0, '#0a101b');
+        background.addColorStop(0.55, '#101827');
+        background.addColorStop(1, '#122a35');
         ctx.fillStyle = background;
         ctx.fillRect(0, 0, dimensions.width, dimensions.height);
 
+        const glow = ctx.createRadialGradient(dimensions.width - 40, 16, 4, dimensions.width - 40, 16, 180);
+        glow.addColorStop(0, `${primary}33`);
+        glow.addColorStop(1, `${primary}00`);
+        ctx.fillStyle = glow;
+        ctx.fillRect(dimensions.width - 220, 0, 220, 150);
+
+        ctx.fillStyle = `${primary}22`;
+        ctx.fillRect(0, 0, 5, dimensions.height);
+        const art = ctx.createLinearGradient(left, 0, left + artSize, artSize);
+        art.addColorStop(0, `${primary}cc`);
+        art.addColorStop(1, '#142333');
+        ctx.fillStyle = art;
+        ctx.fillRect(left, 28, artSize, artSize);
+        ctx.strokeStyle = `${primary}88`;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(left + 0.5, 28.5, artSize - 1, artSize - 1);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '700 28px Arial, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('♪', left + artSize / 2, 60);
+
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = '#64748b';
-        ctx.font = '700 10px Inter, system-ui, sans-serif';
-        ctx.fillText(
-            wrapText(ctx, chapterTitle.toUpperCase(), textWidth, 1)[0] || '',
-            textX,
-            22
-        );
-
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '600 15px Inter, system-ui, sans-serif';
-        const lines = wrapText(ctx, pair?.current || chapterTitle, textWidth, 3);
-        const lineHeight = 20;
-        let textY = 52 - Math.round(((lines.length - 1) * lineHeight) / 2);
-        for (const line of lines) {
-            ctx.fillText(line, textX, textY);
-            textY += lineHeight;
-        }
-
-        if (pair?.next) {
-            ctx.fillStyle = primary;
-            ctx.font = '400 12px Inter, system-ui, sans-serif';
-            ctx.fillText('▸', textX, dimensions.height - 17);
-            ctx.fillStyle = '#64748b';
-            ctx.fillText(
-                wrapText(ctx, pair.next, textWidth - 14, 1)[0] || '',
-                textX + 14,
-                dimensions.height - 17
-            );
-        }
-
-        ctx.fillStyle = 'rgba(255,255,255,0.08)';
-        ctx.fillRect(0, dimensions.height - 5, dimensions.width, 5);
         ctx.fillStyle = primary;
-        ctx.fillRect(0, dimensions.height - 5, dimensions.width * progress / 100, 5);
-    }
+        ctx.font = '700 10px Arial, sans-serif';
+        ctx.fillText('NOW READING  •  CLOUD TTS', contentX, 28);
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '700 16px Arial, sans-serif';
+        ctx.fillText(wrapText(ctx, chapterTitle, contentWidth, 1)[0] || 'Đang đọc', contentX, 51);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '500 11px Arial, sans-serif';
+        ctx.fillText(wrapText(ctx, bookTitle, contentWidth, 1)[0] || 'Cloud TTS Reader', contentX, 69);
 
-    function drawCompactPipFrame(ctx, primary, progress) {
-        const dimensions = PIP_LAYOUTS.compact;
-        const center = dimensions.width / 2;
-        const radius = 21;
-
-        ctx.fillStyle = '#070a10';
-        ctx.fillRect(0, 0, dimensions.width, dimensions.height);
-
-        const bubble = ctx.createRadialGradient(center - 6, center - 7, 2, center, center, radius);
-        bubble.addColorStop(0, '#1f2937');
-        bubble.addColorStop(1, '#0b0f17');
-        ctx.beginPath();
-        ctx.arc(center, center, radius, 0, Math.PI * 2);
-        ctx.fillStyle = bubble;
-        ctx.fill();
-
-        ctx.beginPath();
-        ctx.arc(center, center, radius - 1, -Math.PI / 2,
-            -Math.PI / 2 + Math.PI * 2 * progress / 100);
-        ctx.strokeStyle = primary;
-        ctx.lineWidth = 2;
-        ctx.lineCap = 'round';
-        ctx.stroke();
-
-        ctx.fillStyle = '#ffffff';
-        if (bridge.audio.paused) {
-            ctx.beginPath();
-            ctx.moveTo(center - 4, center - 7);
-            ctx.lineTo(center + 8, center);
-            ctx.lineTo(center - 4, center + 7);
-            ctx.closePath();
-            ctx.fill();
-        } else {
-            ctx.fillRect(center - 6, center - 7, 4, 14);
-            ctx.fillRect(center + 2, center - 7, 4, 14);
+        ctx.fillStyle = '#f8fafc';
+        ctx.font = '600 15px Arial, sans-serif';
+        const lines = wrapText(ctx, pair?.current || 'Sẵn sàng phát nội dung', dimensions.width - 56, 2);
+        let textY = 120;
+        for (const line of lines) {
+            ctx.fillText(line, left, textY);
+            textY += 19;
         }
+        if (pair?.next) {
+            ctx.fillStyle = '#64748b';
+            ctx.font = '500 11px Arial, sans-serif';
+            ctx.fillText(`Tiếp theo  ${wrapText(ctx, pair.next, dimensions.width - 110, 1)[0] || ''}`, left, 160);
+        }
+
+        ctx.fillStyle = 'rgba(255,255,255,0.10)';
+        ctx.fillRect(left, dimensions.height - 17, dimensions.width - left * 2, 3);
+        ctx.fillStyle = primary;
+        ctx.fillRect(left, dimensions.height - 17, (dimensions.width - left * 2) * progress / 100, 3);
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '600 10px Arial, sans-serif';
+        ctx.fillText(`${Math.round(progress)}%`, dimensions.width - 52, dimensions.height - 21);
     }
 
     function drawPipFrame() {
@@ -565,16 +524,15 @@
 
         ctx.save();
         ctx.scale(PIP_DPR, PIP_DPR);
-        if (pipLayout === 'compact') drawCompactPipFrame(ctx, primary, progress);
-        else drawFullPipFrame(ctx, primary, progress);
+        drawFullPipFrame(ctx, primary, progress);
         ctx.restore();
     }
 
-    async function openVideoPiP(layout = 'full') {
+    async function openVideoPiP() {
         if (!bridge.STATE.currentBook) return;
         if (document.pictureInPictureElement) return; // already open
         ensureVideoPipElements();
-        configurePipCanvas(layout);
+        configurePipCanvas();
         drawPipFrame();
         if (!pipVideo.srcObject) pipVideo.srcObject = pipCanvas.captureStream(PIP_FRAME_RATE);
         const startPaused = bridge.audio.paused;
@@ -599,11 +557,11 @@
     }
 
     // Prefer the borderless Canvas Video PiP; fall back to Document PiP.
-    function openBestPiP(layout = 'full') {
+    function openBestPiP() {
         if (document.pictureInPictureEnabled) {
-            return openVideoPiP(layout);
+            return openVideoPiP();
         } else if ('documentPictureInPicture' in window) {
-            return openPiP(layout);
+            return openPiP();
         } else {
             return Promise.reject(new Error('Picture-in-Picture unsupported'));
         }
@@ -612,27 +570,8 @@
     // ---------------------------------------------------------
     // Tier 3b: Document Picture-in-Picture (fallback — has origin bar)
     // ---------------------------------------------------------
-    function setDocumentPipLayout(layout) {
-        if (!pipWindow) return;
-        const compact = layout === 'compact';
-        pipWindow.document.body.classList.toggle('mpw-pip-compact', compact);
-        const button = pipWindow.document.getElementById('mpw-pip-round-btn');
-        if (button) {
-            button.title = compact ? 'Trở lại PiP đầy đủ' : 'PiP dạng tròn';
-            button.innerHTML = compact
-                ? '<i class="fas fa-expand-alt"></i>'
-                : '<i class="fas fa-circle"></i>';
-        }
-        try {
-            pipWindow.resizeTo(compact ? 50 : 480, compact ? 50 : 148);
-        } catch (_) {
-            // Window sizing is controlled by the browser/OS on some platforms.
-        }
-    }
-
-    async function openPiP(layout = 'full') {
+    async function openPiP() {
         if (pipWindow) {
-            setDocumentPipLayout(layout);
             pipWindow.focus();
             return;
         }
@@ -642,10 +581,9 @@
         // (null) means closing PiP should NOT leave the in-page widget behind.
         pipReturnReason = floatReason;
 
-        const compact = layout === 'compact';
         pipWindow = await window.documentPictureInPicture.requestWindow({
-            width: compact ? 50 : 480,
-            height: compact ? 50 : 148,
+            width: 560,
+            height: 200,
         });
 
         // Copy only the two sheets the PiP content needs: Font Awesome + our own.
@@ -672,7 +610,6 @@
         // the PiP window shares this page's JS realm.
         pipWindow.document.body.appendChild(card);
         root.classList.remove('mpw-visible'); // in-page shell hides while PiP owns the card
-        setDocumentPipLayout(layout);
 
         pipWindow.addEventListener('pagehide', () => {
             // Return the card to the in-page widget when the PiP window closes.
