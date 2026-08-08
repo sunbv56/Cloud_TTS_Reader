@@ -1742,6 +1742,10 @@ async function refreshLibrary() {
         const q = query(collection(db, "users", STATE.user.uid, "progress"));
         const querySnapshot = await getDocs(q);
         bookList.innerHTML = '';
+        // A second refresh can start while this Firestore request is pending.
+        // Clear the discovery grid again after the await so overlapping
+        // refreshes cannot append the same snapshot on top of the first one.
+        if (discoveryGrid) discoveryGrid.innerHTML = '';
 
         if (querySnapshot.empty) {
             bookList.innerHTML = '<div class="text-center p-8 text-slate-500 italic text-sm">No books loaded. Upload a .txt file!</div>';
