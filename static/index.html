@@ -790,7 +790,7 @@
                             title="Sync Cloud">
                             <i class="fas fa-sync-alt text-sm"></i>
                         </button>
-                        <label class="group cursor-pointer">
+                        <button id="upload-book-btn" type="button" class="group cursor-pointer">
                             <div class="w-8 h-8 rounded-lg bg-primary text-black flex items-center justify-center shadow-[0_0_12px_rgba(0,229,255,0.4)] group-hover:scale-110 group-hover:shadow-[0_0_20px_rgba(0,229,255,0.6)] transition-all duration-300 relative overflow-hidden"
                                 title="Upload File">
                                 <div
@@ -798,8 +798,15 @@
                                 </div>
                                 <i class="fas fa-plus text-sm font-black relative z-10"></i>
                             </div>
-                            <input type="file" id="file-input" class="hidden" accept=".txt">
-                        </label>
+                        </button>
+                        <input type="file" id="file-input" class="hidden" accept=".txt">
+                        <button id="select-images-btn" type="button"
+                            class="w-8 h-8 rounded-lg bg-white/5 text-primary hover:bg-primary hover:text-black transition-all"
+                            title="Quản lý ảnh của truyện hiện tại">
+                            <i class="fas fa-image text-sm"></i>
+                        </button>
+                        <input type="file" id="image-input" class="hidden"
+                            accept=".jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.image" multiple>
                     </div>
                 </div>
                 <div id="book-list" class="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
@@ -1420,7 +1427,7 @@
                     <h2 class="text-xl font-bold text-white flex items-center gap-2 mb-6"><i
                             class="fas fa-cloud-upload-alt text-primary"></i> <span data-i18n="import-book">Import
                             Book</span></h2>
-                    <label id="discovery-drop-zone"
+                    <div id="discovery-drop-zone"
                         class="glass flex flex-col items-center justify-center h-80 rounded-3xl border-2 border-dashed border-white/20 hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer group relative overflow-hidden">
                         <div
                             class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity glow-pulse">
@@ -1432,9 +1439,14 @@
                         <div class="text-xl font-bold text-white mb-2 relative z-10" data-i18n="click-or-drag-file">
                             Click or Drag File</div>
                         <div class="text-slate-400 text-sm relative z-10" data-i18n="supported-formats">Supported
-                            formats: .txt</div>
+                            formats: .txt (kéo-thả)</div>
                         <input type="file" id="discovery-file-input" class="hidden" accept=".txt">
-                    </label>
+                    </div>
+                    <button id="discovery-select-images-btn" type="button"
+                        class="mt-3 w-full py-3 rounded-2xl border border-primary/30 bg-primary/5 text-primary text-sm font-bold hover:bg-primary/15 transition-all">
+                        <i class="fas fa-images mr-2"></i> Quản lý ảnh truyện hiện tại
+                    </button>
+                    <p class="mt-2 text-center text-xs text-slate-500">Mở một truyện trước để thêm, thay hoặc xóa ảnh.</p>
                     <details class="mt-4 rounded-2xl border border-white/10 bg-surface-low/50 p-4 text-sm">
                         <summary class="cursor-pointer font-bold text-primary" data-i18n="view-format-example">Xem định dạng chương</summary>
                         <p class="mt-3 text-xs leading-relaxed text-slate-400" data-i18n="chapter-format-hint">
@@ -1463,6 +1475,43 @@ Nội dung chương hai...</pre>
     <audio id="main-audio" class="hidden"></audio>
 
     <!-- Import Logic -->
+    <div id="upload-options-modal" class="fixed inset-0 z-[180] hidden items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/70 backdrop-blur-md" data-close-upload-options></div>
+        <div class="glass w-full max-w-md rounded-3xl p-6 relative">
+            <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-upload-options aria-label="Đóng"><i class="fas fa-times"></i></button>
+            <h2 class="text-xl font-black text-white mb-2">Thêm truyện mới</h2>
+            <p class="text-sm text-slate-400 mb-6">Bạn có muốn chọn ảnh minh họa cùng lúc với file TXT không?</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button id="upload-txt-only-btn" type="button" data-upload-mode="txt" class="group rounded-2xl border border-white/10 bg-white/5 p-4 text-left hover:-translate-y-1 hover:border-primary/70 hover:bg-primary/10 hover:shadow-[0_12px_30px_rgba(0,229,255,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-all duration-200">
+                    <i class="fas fa-file-alt text-primary text-xl mb-2 transition-transform duration-200 group-hover:scale-110"></i>
+                    <span class="block font-bold text-white group-hover:text-primary transition-colors">Chỉ file TXT</span>
+                    <span class="block text-xs text-slate-400 mt-1">Định dạng: <b>.txt</b></span>
+                    <span class="block text-xs text-slate-500 mt-1">Có thể thêm ảnh sau</span>
+                </button>
+                <button id="upload-txt-images-btn" type="button" data-upload-mode="txt-images" class="group rounded-2xl border border-primary/40 bg-primary/10 p-4 text-left hover:-translate-y-1 hover:border-primary hover:bg-primary/20 hover:shadow-[0_12px_30px_rgba(0,229,255,0.22)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-all duration-200">
+                    <i class="fas fa-images text-primary text-xl mb-2 transition-transform duration-200 group-hover:scale-110"></i>
+                    <span class="block font-bold text-white group-hover:text-primary transition-colors">TXT + ảnh</span>
+                    <span class="block text-xs text-slate-400 mt-1">TXT: <b>.txt</b></span>
+                    <span class="block text-xs text-slate-500 mt-1">Ảnh: <b>.jpg .jpeg .png .webp .gif .bmp .avif .image</b></span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="image-manager-modal" class="fixed inset-0 z-[180] hidden items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/70 backdrop-blur-md" data-close-image-manager></div>
+        <div class="glass w-full max-w-2xl max-h-[85vh] rounded-3xl p-6 relative flex flex-col">
+            <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-image-manager aria-label="Đóng"><i class="fas fa-times"></i></button>
+            <h2 class="text-xl font-black text-white">Quản lý ảnh truyện</h2>
+            <p id="image-manager-book-title" class="text-sm text-slate-400 mt-1 mb-4"></p>
+            <div id="image-manager-list" class="flex-1 overflow-y-auto space-y-3 pr-1 rounded-2xl border border-dashed border-white/10 p-2" title="Có thể kéo-thả hoặc dán ảnh tại đây"></div>
+            <div class="mt-5 flex items-center justify-between gap-3">
+                <span class="text-xs text-slate-500">Kéo-thả hoặc Ctrl+V để dán ảnh · tự chuyển WebP, tối đa 150 KB.</span>
+                <button id="image-manager-add-btn" type="button" class="shrink-0 rounded-xl bg-primary text-black px-4 py-2 text-sm font-black hover:scale-105 transition-all"><i class="fas fa-plus mr-2"></i>Thêm ảnh</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Reading Stats Modal -->
     <div id="stats-modal" class="fixed inset-0 z-[150] hidden items-center justify-center p-4">
         <div class="absolute inset-0 bg-black/60 backdrop-blur-md" id="stats-modal-overlay"></div>

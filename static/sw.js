@@ -3,6 +3,7 @@ const ASSETS = [
     '/',
     '/static/index.html',
     '/static/app.js',
+    '/static/js/image-manager.js',
     '/static/icon.svg',
     '/static/manifest.json',
     '/static/js/mini-player-widget.js',
