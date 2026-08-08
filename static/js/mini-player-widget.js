@@ -38,7 +38,7 @@
     let isExitingPip = false;
     let lastPipTime = 0;
     const PIP_LAYOUTS = Object.freeze({
-        full: { width: 640, height: 300 },
+        full: { width: 640, height: 260 },
     });
     const PIP_DPR = 1;
     const PIP_FRAME_RATE = 1;
@@ -203,8 +203,12 @@
         const subtitleEl = doc.getElementById('mpw-subtitle');
         const progressEl = doc.getElementById('mpw-progress');
 
-        if (titleEl && titleSrc) titleEl.textContent = titleSrc.textContent;
-        if (subtitleEl && subtitleSrc) subtitleEl.textContent = subtitleSrc.textContent;
+        if (titleEl && titleSrc) {
+            titleEl.textContent = pipWindow && subtitleSrc?.textContent
+                ? `${titleSrc.textContent} • ${subtitleSrc.textContent}`
+                : titleSrc.textContent;
+        }
+        if (subtitleEl && subtitleSrc) subtitleEl.textContent = pipWindow ? '' : subtitleSrc.textContent;
         if (progressEl && progressSrc) progressEl.style.width = progressSrc.style.width || '0%';
         updatePlayIcon();
     }
@@ -466,9 +470,8 @@
         const bookTitle = document.getElementById('player-author')?.textContent || 'Cloud TTS Reader';
         const pair = getSentencePair();
         const left = 24;
-        const artSize = 48;
-        const contentX = left + artSize + 18;
-        const contentWidth = dimensions.width - contentX - 28;
+        const contentWidth = dimensions.width - left * 2;
+        const headerText = [chapterTitle, bookTitle].filter(Boolean).join(' • ');
 
         const background = ctx.createLinearGradient(0, 0, dimensions.width, dimensions.height);
         background.addColorStop(0, '#0a101b');
@@ -485,44 +488,26 @@
 
         ctx.fillStyle = `${primary}22`;
         ctx.fillRect(0, 0, 5, dimensions.height);
-        const art = ctx.createLinearGradient(left, 0, left + artSize, artSize);
-        art.addColorStop(0, `${primary}cc`);
-        art.addColorStop(1, '#142333');
-        ctx.fillStyle = art;
-        ctx.fillRect(left, 20, artSize, artSize);
-        ctx.strokeStyle = `${primary}88`;
-        ctx.lineWidth = 1;
-        ctx.strokeRect(left + 0.5, 20.5, artSize - 1, artSize - 1);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '700 28px Arial, sans-serif';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText('♪', left + artSize / 2, 44);
-
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = primary;
-        ctx.font = '700 10px Arial, sans-serif';
-        ctx.fillText('NOW READING  •  CLOUD TTS', contentX, 23);
         ctx.fillStyle = '#f8fafc';
-        const chapterLines = fitText(ctx, chapterTitle || 'Đang đọc', contentWidth, 1, '700', 15, 11);
-        ctx.fillText(chapterLines[0] || 'Đang đọc', contentX, 45);
-        ctx.fillStyle = '#94a3b8';
-        const bookLines = fitText(ctx, bookTitle, contentWidth, 1, '500', 10, 9);
-        ctx.fillText(bookLines[0] || 'Cloud TTS Reader', contentX, 61);
+        const headerLines = fitText(ctx, headerText || 'Cloud TTS Reader', contentWidth, 1, '700', 15, 9);
+        ctx.fillText(headerLines[0] || 'Cloud TTS Reader', left, 34);
+        ctx.fillStyle = `${primary}88`;
+        ctx.fillRect(left, 47, contentWidth, 2);
 
         ctx.fillStyle = '#f8fafc';
-        const lines = fitText(ctx, pair?.current || 'Sẵn sàng phát nội dung', dimensions.width - 64, 4, '600', 17, 12);
-        let textY = 108;
+        const lines = fitText(ctx, pair?.current || 'Sẵn sàng phát nội dung', contentWidth, 6, '600', 20, 11);
+        let textY = 78;
         for (const line of lines) {
             ctx.fillText(line, left, textY);
-            textY += 22;
+            textY += 20;
         }
         if (pair?.next) {
             ctx.fillStyle = '#64748b';
             const nextLines = fitText(ctx, pair.next, dimensions.width - 118, 2, '500', 12, 10);
-            ctx.fillText(`Tiếp theo  ${nextLines[0] || ''}`, left, Math.min(textY + 5, dimensions.height - 53));
-            if (nextLines[1]) ctx.fillText(nextLines[1], left + 70, Math.min(textY + 22, dimensions.height - 31));
+            ctx.fillText(`Tiếp theo  ${nextLines[0] || ''}`, left, Math.min(textY + 5, dimensions.height - 43));
+            if (nextLines[1]) ctx.fillText(nextLines[1], left + 70, Math.min(textY + 22, dimensions.height - 22));
         }
 
         ctx.fillStyle = 'rgba(255,255,255,0.10)';
@@ -603,7 +588,7 @@
 
         pipWindow = await window.documentPictureInPicture.requestWindow({
             width: 640,
-            height: 300,
+            height: 260,
         });
 
         // Copy only the two sheets the PiP content needs: Font Awesome + our own.

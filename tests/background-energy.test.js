@@ -37,12 +37,12 @@ test('websocket wait reports both success and timeout', () => {
 });
 
 test('native PiP keeps one polished full layout', () => {
-    assert.match(miniPlayerJs, /full:\s*\{\s*width:\s*640,\s*height:\s*300\s*\}/);
+    assert.match(miniPlayerJs, /full:\s*\{\s*width:\s*640,\s*height:\s*260\s*\}/);
     assert.match(miniPlayerJs, /PIP_FRAME_RATE\s*=\s*1/);
     assert.match(miniPlayerJs, /openBestPiP\(\)/);
-    assert.match(miniPlayerJs, /NOW READING/);
-    assert.match(miniPlayerJs, /const artSize = 48/);
-    assert.match(miniPlayerJs, /let textY = 108/);
+    assert.match(miniPlayerJs, /const headerText = \[chapterTitle, bookTitle\]/);
+    assert.doesNotMatch(miniPlayerJs, /NOW READING\s+•\s+CLOUD TTS/);
+    assert.doesNotMatch(miniPlayerJs, /artSize|fillText\('♪'/);
     assert.match(miniPlayerJs, /function fitText\(/);
     assert.match(miniPlayerJs, /fitText\(ctx, pair\?\.current/);
     assert.match(miniPlayerJs, /id="mpw-pip-btn"/);
