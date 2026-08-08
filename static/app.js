@@ -25,6 +25,8 @@ let STATE = {
     pendingImageFiles: [],
     uploadImagesChoice: false,
     uploadInputTarget: 'sidebar',
+    pendingUploadTextFile: null,
+    pendingUploadImageFiles: [],
     imageEditTargetId: null,
     currentChapterIndex: 0,
     currentSentenceIndex: 0,
@@ -698,18 +700,72 @@ function beginBookUpload(withImages, inputTarget = STATE.uploadInputTarget || 's
     STATE.uploadImagesChoice = withImages;
     STATE.uploadInputTarget = inputTarget;
     setModalVisibility('upload-options-modal', false);
+    if (withImages) {
+        STATE.pendingUploadTextFile = null;
+        STATE.pendingUploadImageFiles = [];
+        document.getElementById('book-text-path')?.setAttribute('value', '');
+        document.getElementById('book-image-path')?.setAttribute('value', '');
+        const textPath = document.getElementById('book-text-path');
+        const imagePath = document.getElementById('book-image-path');
+        if (textPath) textPath.value = '';
+        if (imagePath) imagePath.value = '';
+        const textInput = document.getElementById('book-text-input');
+        const imagesInput = document.getElementById('book-image-input');
+        if (textInput) textInput.value = '';
+        if (imagesInput) imagesInput.value = '';
+        setModalVisibility('upload-files-modal', true);
+        return;
+    }
     const input = inputTarget === 'discovery'
         ? document.getElementById('discovery-file-input')
         : fileInput;
     if (input) {
-        input.accept = withImages
-            ? '.txt,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.image'
-            : '.txt';
-        input.multiple = withImages;
+        input.accept = '.txt';
+        input.multiple = false;
         input.value = '';
         input.click();
     }
 }
+
+function closeUploadFilesModal() {
+    STATE.pendingUploadTextFile = null;
+    STATE.pendingUploadImageFiles = [];
+    STATE.uploadImagesChoice = false;
+    setModalVisibility('upload-files-modal', false);
+}
+
+function updateUploadFilePaths() {
+    const textPath = document.getElementById('book-text-path');
+    const imagePath = document.getElementById('book-image-path');
+    if (textPath) textPath.value = STATE.pendingUploadTextFile?.name || '';
+    if (imagePath) {
+        const images = STATE.pendingUploadImageFiles;
+        imagePath.value = images.length ? `${images.length} ảnh: ${images.map(file => file.name).join(', ')}` : '';
+    }
+}
+
+document.getElementById('browse-book-text-btn')?.addEventListener('click', () => document.getElementById('book-text-input')?.click());
+document.getElementById('browse-book-image-btn')?.addEventListener('click', () => document.getElementById('book-image-input')?.click());
+document.getElementById('book-text-input')?.addEventListener('change', event => {
+    STATE.pendingUploadTextFile = event.target.files?.[0] || null;
+    updateUploadFilePaths();
+});
+document.getElementById('book-image-input')?.addEventListener('change', event => {
+    STATE.pendingUploadImageFiles = Array.from(event.target.files || []);
+    updateUploadFilePaths();
+});
+document.getElementById('confirm-upload-files-btn')?.addEventListener('click', () => {
+    if (!STATE.pendingUploadTextFile) {
+        alert('Vui lòng chọn file .txt trước.');
+        return;
+    }
+    const files = [STATE.pendingUploadTextFile, ...STATE.pendingUploadImageFiles];
+    setModalVisibility('upload-files-modal', false);
+    STATE.uploadImagesChoice = true;
+    handleFileUpload({ target: { files, value: '' } });
+});
+document.getElementById('cancel-upload-files-btn')?.addEventListener('click', closeUploadFilesModal);
+document.querySelectorAll('[data-close-upload-files]').forEach(el => el.addEventListener('click', closeUploadFilesModal));
 
 async function processImageFiles(fileList) {
     const files = Array.from(fileList || []).filter(file => file && (file.type?.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|bmp|avif|image)$/i.test(file.name || '')));
