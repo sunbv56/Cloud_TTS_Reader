@@ -17,7 +17,6 @@
         const visibilityTargets = [
             'discovery-mode',
             'reader-container',
-            'toc-overlay',
             'upload-options-modal',
             'upload-files-modal',
             'image-manager-modal',
@@ -39,11 +38,6 @@
         function panelFor(element) {
             if (element.id === 'discovery-mode' || element.id === 'reader-container') {
                 return element;
-            }
-            // TOC owns its own translate-x-full transition in app CSS. Animate
-            // its children so GSAP never overwrites that transform.
-            if (element.id === 'toc-overlay') {
-                return Array.from(element.children);
             }
             return element.querySelector('.glass') || element;
         }
@@ -118,13 +112,16 @@
                 if (record.type !== 'childList' || !record.addedNodes.length) return;
                 if (record.target.id === 'discovery-grid') {
                     animateAddedItems(record.target, '[data-title], .book-card');
-                } else if (record.target.id === 'book-list' || record.target.id === 'toc-list') {
+                } else if (record.target.id === 'book-list') {
                     animateAddedItems(record.target);
                 }
             });
         });
 
-        ['discovery-grid', 'book-list', 'toc-list'].forEach(id => {
+        // TOC is intentionally excluded: it is a metadata-only navigation
+        // surface and must not create one tween per chapter or touch its load
+        // behavior. Its existing CSS slide transition remains in place.
+        ['discovery-grid', 'book-list'].forEach(id => {
             const element = document.getElementById(id);
             if (element) listObserver.observe(element, { childList: true });
         });

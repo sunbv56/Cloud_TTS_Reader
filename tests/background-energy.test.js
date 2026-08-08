@@ -6,6 +6,7 @@ const test = require('node:test');
 const root = path.resolve(__dirname, '..');
 const read = (...parts) => fs.readFileSync(path.join(root, ...parts), 'utf8');
 const appJs = read('static', 'app.js');
+const motionJs = read('static', 'js', 'gsap-animations.js');
 const miniPlayerJs = read('static', 'js', 'mini-player-widget.js');
 const miniPlayerCss = read('static', 'css', 'mini-player.css');
 const serviceWorker = read('static', 'sw.js');
@@ -34,6 +35,18 @@ test('intentional websocket close does not reconnect', () => {
 test('websocket wait reports both success and timeout', () => {
     assert.match(appJs, /readyState === WebSocket\.OPEN\) return true/);
     assert.match(appJs, /WebSocket connection timeout\."\);\s*resolve\(false\)/);
+});
+
+test('TOC motion layer stays metadata-only', () => {
+    assert.doesNotMatch(motionJs, /toc-list|toc-overlay/);
+    assert.doesNotMatch(motionJs, /fetchChapterSentences|renderChapter|playFromSentence/);
+});
+
+test('MSE quota errors requeue audio and release played history', () => {
+    assert.match(appJs, /MAX_BUFFER_AHEAD_SECONDS\s*=\s*180/);
+    assert.match(appJs, /e\?\.name\s*===\s*['"]QuotaExceededError['"]/);
+    assert.match(appJs, /STATE\.appendQueue\.unshift\(chunk\)/);
+    assert.match(appJs, /STATE\.sourceBuffer\.remove\(0, removeEnd\)/);
 });
 
 test('native PiP keeps one polished full layout', () => {
