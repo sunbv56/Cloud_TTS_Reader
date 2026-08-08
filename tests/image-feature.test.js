@@ -26,9 +26,13 @@ test('image upload uses per-book Storage paths and no new database collection', 
     assert.match(app, /dataTransfer/);
     assert.match(app, /uploadInputTarget = 'discovery'/);
     assert.match(app, /Drag-and-drop is intentionally TXT-only/);
-    assert.match(app, /input\.accept = withImages/);
+    assert.match(app, /input\.accept = '\.txt'/);
+    assert.match(app, /book-text-input/);
+    assert.match(app, /book-image-input/);
+    assert.match(app, /confirm-upload-files-btn/);
     assert.match(html, /id="image-input"/);
     assert.match(html, /id="image-manager-modal"/);
+    assert.match(html, /id="upload-files-modal"/);
     assert.match(html, /id="discovery-drop-zone"/);
     assert.match(html, /Định dạng: <b>\.txt<\/b>/);
 });
