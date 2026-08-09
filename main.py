@@ -80,7 +80,8 @@ TTS_CHUNK_TIMEOUT_SECONDS = float(os.getenv("TTS_CHUNK_TIMEOUT_SECONDS", "30"))
 ALLOWED_BOOK_EXTENSIONS = {".txt", ".epub", ".pdf"}
 ALLOWED_BOOK_CONTENT_TYPES = {
     "text/plain", "application/octet-stream", "",
-    "application/epub+zip", "application/pdf",
+    "application/epub+zip", "application/zip", "application/x-zip-compressed",
+    "application/pdf",
 }
 _active_ws_by_uid = {}
 _active_ws_lock = asyncio.Lock()

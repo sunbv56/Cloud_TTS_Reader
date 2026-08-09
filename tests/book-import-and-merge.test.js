@@ -10,6 +10,7 @@ const html = fs.readFileSync(path.join(root, 'static', 'index.html'), 'utf8');
 
 test('book parser supports TXT, EPUB and text PDFs', () => {
     assert.match(mainPy, /ALLOWED_BOOK_EXTENSIONS = \{"\.txt", "\.epub", "\.pdf"\}/);
+    assert.match(mainPy, /"application\/zip", "application\/x-zip-compressed"/);
     assert.match(mainPy, /def parse_epub_chapters\(/);
     assert.match(mainPy, /def parse_pdf_chapters\(/);
     assert.match(mainPy, /def parse_book_file\(/);
