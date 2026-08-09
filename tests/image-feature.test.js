@@ -38,7 +38,7 @@ test('image upload uses per-book Storage paths and no new database collection', 
     assert.match(html, /id="image-manager-modal"/);
     assert.match(html, /id="upload-files-modal"/);
     assert.match(html, /id="discovery-drop-zone"/);
-    assert.match(html, /Định dạng: <b>\.txt<\/b>/);
+    assert.match(html, /Định dạng: <b>\.txt, \.epub, \.pdf<\/b>/);
 });
 
 test('Storage rules enforce WebP and 150 KB asset limits', () => {

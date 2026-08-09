@@ -364,8 +364,51 @@ async function authFetch(url, options = {}) {
     const token = await user.getIdToken();
     const headers = new Headers(options.headers || {});
     headers.set('Authorization', `Bearer ${token}`);
-    return fetch(url, { ...options, headers });
+    try {
+        const response = await fetch(url, { ...options, headers });
+        if (response.status === 401) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
+        if (response.status === 403) throw new Error('Bạn không có quyền thực hiện thao tác này.');
+        return response;
+    } catch (error) {
+        if (error instanceof TypeError) throw new Error('Không thể kết nối máy chủ. Hãy kiểm tra mạng và thử lại.');
+        throw error;
+    }
 }
+
+const APP_STATUS = {
+    set(text) {
+        const indicator = document.getElementById('status-indicator');
+        if (indicator) indicator.innerText = text;
+    },
+    toast(message, kind = 'error') {
+        const region = document.getElementById('app-toast-region');
+        if (!region) return;
+        const colors = kind === 'success' ? 'border-emerald-400/40 text-emerald-100' : kind === 'info' ? 'border-primary/40 text-slate-100' : 'border-red-400/40 text-red-100';
+        const toast = document.createElement('div');
+        toast.className = `rounded-2xl border bg-slate-950/95 px-4 py-3 text-sm shadow-2xl ${colors}`;
+        toast.innerText = message;
+        region.appendChild(toast);
+        setTimeout(() => toast.remove(), 5000);
+    },
+    error(error, fallback = 'Đã xảy ra lỗi. Vui lòng thử lại.') {
+        const message = error?.message || fallback;
+        this.set('Lỗi');
+        this.toast(message, 'error');
+    }
+};
+
+function updateNetworkStatus() {
+    const banner = document.getElementById('network-status');
+    if (!banner) return;
+    banner.classList.toggle('hidden', navigator.onLine);
+    APP_STATUS.set(navigator.onLine ? 'Ready' : 'Ngoại tuyến');
+}
+window.addEventListener('offline', updateNetworkStatus);
+window.addEventListener('online', () => {
+    updateNetworkStatus();
+    APP_STATUS.toast('Đã kết nối lại mạng.', 'success');
+});
+updateNetworkStatus();
 
 startFirebase();
 
@@ -1791,7 +1834,7 @@ async function refreshLibrary() {
             // ── Hidden file input for merge ────────────────────────────────────
             const mergeInput = document.createElement('input');
             mergeInput.type = 'file';
-            mergeInput.accept = '.txt';
+            mergeInput.accept = '.txt,.epub,.pdf';
             mergeInput.className = 'hidden';
             mergeInput.id = `merge-input-${bookId}`;
             mergeInput.onchange = (e) => mergeChapterFile(e, bookId, data);
@@ -1860,7 +1903,7 @@ async function refreshLibrary() {
                 // ── Hidden file input for merge ────────────────────────────────────
                 const mergeInput = document.createElement('input');
                 mergeInput.type = 'file';
-                mergeInput.accept = '.txt';
+                mergeInput.accept = '.txt,.epub,.pdf';
                 mergeInput.className = 'hidden';
                 mergeInput.id = `merge-input-discovery-${bookId}`;
                 mergeInput.onchange = (e) => mergeChapterFile(e, bookId, data);
@@ -2114,66 +2157,106 @@ async function deleteBook(bookId, filename, title, bypassConfirm = false) {
 
 // ── Feature 2: Merge Chapter File ────────────────────────────────────────────
 
-/**
- * Appends the content of a new .txt file to the existing book file on Storage.
- * Uses TextEncoder to guarantee UTF-8 encoding and preserve Vietnamese characters.
- */
+let mergeSession = null;
+
+function renderMergeChapter() {
+    if (!mergeSession) return;
+    const { chapters, activeIndex } = mergeSession;
+    const chapter = chapters[activeIndex];
+    document.getElementById('merge-chapter-position').innerText = `Chương ${activeIndex + 1}/${chapters.length}`;
+    document.getElementById('merge-chapter-textarea').value = chapter.content;
+    document.getElementById('merge-include-chapter').checked = chapter.included;
+    document.getElementById('merge-prev-btn').disabled = activeIndex === 0;
+    document.getElementById('merge-next-btn').disabled = activeIndex === chapters.length - 1;
+}
+
+function saveMergeDraft() {
+    if (!mergeSession) return;
+    const chapter = mergeSession.chapters[mergeSession.activeIndex];
+    chapter.content = document.getElementById('merge-chapter-textarea').value;
+    chapter.included = document.getElementById('merge-include-chapter').checked;
+}
+
+function closeMergeModal() {
+    mergeSession = null;
+    document.getElementById('merge-chapters-modal').classList.add('hidden');
+}
+
 async function mergeChapterFile(event, bookId, bookData) {
     const newFile = event.target.files[0];
-    event.target.value = ''; // reset so same file can be picked again later
+    event.target.value = '';
     if (!newFile || !STATE.user) return;
-
     const filename = bookData.filename || (bookId.replace('book_', '') + '.txt');
-    document.getElementById('status-indicator').innerText = 'Đang nối chương (Server)...';
-
+    APP_STATUS.set('Đang phân tích chương...');
     try {
-        // ── 1. Gửi tệp mới lên server để xử lý nối và phân tách ────────────────
         const formData = new FormData();
         formData.append('userId', STATE.user.uid);
-        formData.append('bookId', bookId);
-        formData.append('filename', filename);
         formData.append('file', newFile);
-
-        const response = await authFetch('/api/append-chapter', {
-            method: 'POST',
-            body: formData
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`Server error (${response.status}): ${errorText}`);
-        }
-
-        const newBookData = await response.json();
-
-        // Calculate total chunks from metadata chapters
-        const newTotalChunks = newBookData.chapters.reduce((sum, ch) => sum + (ch.count || 0), 0);
-
-        // ── 2. Cập nhật total_chunks trong Firestore ──────────────────────────
-        const progressRef = doc(db, 'users', STATE.user.uid, 'progress', bookId);
-        await setDoc(progressRef, { total_chunks: newTotalChunks }, { merge: true });
-
-        console.log(`[Merge] Success! total_chunks updated to ${newTotalChunks}`);
-        document.getElementById('status-indicator').innerText = 'Nối chương thành công!';
-        alert(`✅ Đã nối chương thành công!\nFile: ${filename}\nTổng chunks mới: ${newTotalChunks}`);
-
-        // ── 3. Nếu sách này đang mở, tải lại dữ liệu mới ──────────────────────
-        if (STATE.currentBookId === bookId) {
-            await loadBook(newBookData, bookId, filename);
-        }
-
-        // ── 4. Cập nhật lại giao diện danh sách truyện ────────────────────────
-        await refreshLibrary();
-
-        setTimeout(() => document.getElementById('status-indicator').innerText = 'Ready', 3000);
-
-    } catch (err) {
-        console.error('[Merge] Error:', err);
-        alert(`Nối chương thất bại: ${err.message}`);
-        document.getElementById('status-indicator').innerText = 'Error';
-        setTimeout(() => document.getElementById('status-indicator').innerText = 'Ready', 3000);
+        const response = await authFetch('/api/parse-import', { method: 'POST', body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Không thể phân tích file.');
+        mergeSession = {
+            bookId, filename, activeIndex: 0,
+            chapters: data.chapters.map(chapter => ({ ...chapter, included: true }))
+        };
+        renderMergeChapter();
+        document.getElementById('merge-chapters-modal').classList.remove('hidden');
+        APP_STATUS.set('Sẵn sàng');
+    } catch (error) {
+        console.error('[Merge preview] Error:', error);
+        APP_STATUS.error(error, 'Không thể mở bản xem trước nối chương.');
     }
 }
+
+async function confirmMergeChapters() {
+    if (!mergeSession || !STATE.user) return;
+    saveMergeDraft();
+    const chapters = mergeSession.chapters.filter(chapter => chapter.included && chapter.content.trim());
+    if (!chapters.length) {
+        APP_STATUS.toast('Hãy chọn ít nhất một chương có nội dung.');
+        return;
+    }
+    const button = document.getElementById('confirm-merge-btn');
+    button.disabled = true;
+    APP_STATUS.set(`Đang nối ${chapters.length} chương...`);
+    try {
+        const formData = new FormData();
+        formData.append('userId', STATE.user.uid);
+        formData.append('bookId', mergeSession.bookId);
+        formData.append('filename', mergeSession.filename);
+        formData.append('chapters', JSON.stringify(chapters));
+        const response = await authFetch('/api/append-chapters', { method: 'POST', body: formData });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Không thể nối chương.');
+        const totalChunks = data.chapters.reduce((sum, chapter) => sum + (chapter.count || 0), 0);
+        await setDoc(doc(db, 'users', STATE.user.uid, 'progress', mergeSession.bookId), { total_chunks: totalChunks }, { merge: true });
+        const { bookId, filename } = mergeSession;
+        closeMergeModal();
+        if (STATE.currentBookId === bookId) await loadBook(data, bookId, filename);
+        await refreshLibrary();
+        APP_STATUS.set('Nối chương thành công');
+        APP_STATUS.toast(`Đã nối ${chapters.length} chương.`, 'success');
+    } catch (error) {
+        console.error('[Merge save] Error:', error);
+        APP_STATUS.error(error, 'Nối chương thất bại; bạn có thể thử lại.');
+    } finally {
+        button.disabled = false;
+    }
+}
+
+document.getElementById('merge-prev-btn')?.addEventListener('click', () => {
+    saveMergeDraft();
+    mergeSession.activeIndex -= 1;
+    renderMergeChapter();
+});
+document.getElementById('merge-next-btn')?.addEventListener('click', () => {
+    saveMergeDraft();
+    mergeSession.activeIndex += 1;
+    renderMergeChapter();
+});
+document.getElementById('close-merge-modal')?.addEventListener('click', closeMergeModal);
+document.getElementById('cancel-merge-btn')?.addEventListener('click', closeMergeModal);
+document.getElementById('confirm-merge-btn')?.addEventListener('click', confirmMergeChapters);
 
 async function loadBookFromStorage(bookId, bookData) {
     // Close sidebar immediately on selection
@@ -2235,17 +2318,17 @@ async function loadBookFromStorage(bookId, bookData) {
 // --- File Handling ---
 const handleFileUpload = async (e) => {
     const selectedFiles = Array.from(e.target.files || []);
-    const file = selectedFiles.find(candidate => candidate.name.toLowerCase().endsWith('.txt'));
+    const file = selectedFiles.find(candidate => /\.(txt|epub|pdf)$/i.test(candidate.name));
     const includeImages = STATE.uploadImagesChoice;
     STATE.uploadImagesChoice = false;
     if (!file) {
-        alert('Hãy chọn một file .txt cho truyện.');
+        APP_STATUS.toast('Hãy chọn file .txt, .epub hoặc .pdf cho truyện.');
         e.target.value = '';
         return;
     }
 
-    if (!file.name.toLowerCase().endsWith('.txt')) {
-        alert('Chỉ hỗ trợ file .txt.');
+    if (!/\.(txt|epub|pdf)$/i.test(file.name)) {
+        APP_STATUS.toast('Chỉ hỗ trợ file .txt, .epub hoặc .pdf.');
         e.target.value = '';
         return;
     }
@@ -2276,14 +2359,17 @@ const handleFileUpload = async (e) => {
     try {
         // Give the user a useful preview without reading a large file into memory:
         // inspect only the first 4 MB for chapter separators.
-        const preview = await file.slice(0, 4 * 1024 * 1024).text();
-        const separatorCount = (preview.match(/^\s*={3,}\s*$/gm) || []).length;
-        if (separatorCount === 0 && !confirm('Không tìm thấy dòng === để phân cách chương. File sẽ được nhập thành một chương. Tiếp tục?')) {
-            hideLoading();
-            return;
+        let separatorCount = 0;
+        if (file.name.toLowerCase().endsWith('.txt')) {
+            const preview = await file.slice(0, 4 * 1024 * 1024).text();
+            separatorCount = (preview.match(/^\s*={3,}\s*$/gm) || []).length;
+            if (separatorCount === 0 && !confirm('Không tìm thấy dòng === để phân cách chương. File sẽ được nhập thành một chương. Tiếp tục?')) {
+                hideLoading();
+                return;
+            }
         }
         const estimatedChapters = separatorCount + 1;
-        document.getElementById('status-indicator').innerText = `Found ~${estimatedChapters} chapters. Preparing...`;
+        APP_STATUS.set(file.name.toLowerCase().endsWith('.txt') ? `Found ~${estimatedChapters} chapters. Preparing...` : 'Đang phân tích nội dung...');
         const response = await authFetch('/api/upload-story', {
             method: 'POST',
             body: formData
@@ -2317,13 +2403,13 @@ const handleFileUpload = async (e) => {
         }
 
         // --- FIX BUG 6: Await loadBook and call refreshLibrary directly ---
-        await loadBook(bookInfo, data.storyId, file.name);
+        await loadBook(bookInfo, data.storyId, data.filename || file.name);
         await refreshLibrary();
         STATE.pendingImageFiles = [];
         if (imageInput) imageInput.value = '';
     } catch (err) {
         console.error(err);
-        alert("Error uploading story: " + err.message);
+        APP_STATUS.error(err, 'Không thể import sách.');
     } finally {
         hideLoading();
     }

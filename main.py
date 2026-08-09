@@ -8,6 +8,9 @@ import asyncio
 import edge_tts
 import tempfile
 import gc
+from ebooklib import epub, ITEM_DOCUMENT
+from bs4 import BeautifulSoup
+from pypdf import PdfReader
 import firebase_admin
 from firebase_admin import credentials, storage, firestore, auth
 from urllib.parse import quote
@@ -70,7 +73,17 @@ MAX_DOWNLOAD_CHAPTERS = int(os.getenv("MAX_DOWNLOAD_CHAPTERS", "50"))
 MAX_DOWNLOAD_SENTENCES = int(os.getenv("MAX_DOWNLOAD_SENTENCES", "50000"))
 MAX_WS_WORKERS = int(os.getenv("MAX_WS_WORKERS", "5"))
 MAX_WS_QUEUE = int(os.getenv("MAX_WS_QUEUE", "100"))
+MAX_WS_PER_USER = int(os.getenv("MAX_WS_PER_USER", "2"))
 MAX_NEW_CONTENT_CHARS = int(os.getenv("MAX_NEW_CONTENT_CHARS", "1000000"))
+TTS_CHUNK_TIMEOUT_SECONDS = float(os.getenv("TTS_CHUNK_TIMEOUT_SECONDS", "30"))
+
+ALLOWED_BOOK_EXTENSIONS = {".txt", ".epub", ".pdf"}
+ALLOWED_BOOK_CONTENT_TYPES = {
+    "text/plain", "application/octet-stream", "",
+    "application/epub+zip", "application/pdf",
+}
+_active_ws_by_uid = {}
+_active_ws_lock = asyncio.Lock()
 
 
 def _authorization_error(request: Request, user_id: str):
@@ -111,6 +124,67 @@ def _validate_text_size(text: str, field_name: str = "text"):
             "error": f"{field_name} exceeds the {MAX_TTS_TEXT_CHARS}-character limit"
         }, status_code=413)
     return None
+
+
+def _validate_book_upload(upload: UploadFile):
+    """Reject uploads outside the supported book formats before parsing them."""
+    filename = (upload.filename or "").strip()
+    extension = os.path.splitext(filename)[1].lower()
+    content_type = (upload.content_type or "").lower().split(";", 1)[0].strip()
+    if extension not in ALLOWED_BOOK_EXTENSIONS:
+        return JSONResponse({"error": "Only .txt, .epub and .pdf files are supported"}, status_code=415)
+    if content_type not in ALLOWED_BOOK_CONTENT_TYPES:
+        return JSONResponse({"error": "The uploaded file type is not supported"}, status_code=415)
+    return None
+
+
+def _validate_text_upload(upload: UploadFile):
+    """Backward-compatible name for the shared book upload validator."""
+    return _validate_book_upload(upload)
+
+
+def _detect_text_encoding(file_path: str):
+    """Detect the supported Unicode TXT encodings without loading the full file."""
+    with open(file_path, "rb") as source:
+        prefix = source.read(4)
+        sample = prefix + source.read(64 * 1024)
+    if sample.startswith(b"\xef\xbb\xbf"):
+        return "utf-8-sig"
+    if sample.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return "utf-16"
+    sample.decode("utf-8")
+    return "utf-8"
+
+
+def _validate_supported_text_encoding(file_path: str):
+    """Accept UTF-8/UTF-16 only; reject legacy encodings such as Windows-1258."""
+    with open(file_path, "rb") as source:
+        raw = source.read()
+    try:
+        if raw.startswith(b"\xef\xbb\xbf"):
+            raw[3:].decode("utf-8")
+        elif raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+            raw.decode("utf-16")
+        else:
+            raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return JSONResponse({
+            "error": "Unsupported text encoding. Please save the file as UTF-8 or UTF-16."
+        }, status_code=415)
+    return None
+
+
+async def _iter_tts_chunks(communicate):
+    """Yield TTS chunks while bounding every upstream read."""
+    stream = communicate.stream().__aiter__()
+    while True:
+        try:
+            chunk = await asyncio.wait_for(
+                stream.__anext__(), timeout=TTS_CHUNK_TIMEOUT_SECONDS
+            )
+        except StopAsyncIteration:
+            return
+        yield chunk
 
 
 async def _save_upload_with_limit(upload: UploadFile, target_path: str, max_bytes: int):
@@ -182,7 +256,12 @@ def parse_chapters_from_file(file_path: str):
                 break
         chapters.append({'title': title, 'content': raw_text})
 
-    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+    encoding = _detect_text_encoding(file_path)
+    try:
+        source = open(file_path, 'r', encoding=encoding)
+    except (LookupError, UnicodeError):
+        source = open(file_path, 'r', encoding='utf-8', errors='replace')
+    with source as f:
         for line in f:
             if re.match(r'={3,}', line.strip()):
                 process_raw_chapter(current_raw_lines)
@@ -196,15 +275,73 @@ def parse_chapters_from_file(file_path: str):
     # Handle empty case
     if not chapters:
         # Check if file has any content
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+        with open(file_path, 'r', encoding=encoding, errors='replace') as f:
             full_text = f.read(1000).strip() # just a peek
             if full_text:
                 # If no delimiters found, treat entire file as one chapter
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f2:
+                with open(file_path, 'r', encoding=encoding, errors='replace') as f2:
                     content = f2.read().strip()
                     if content:
                         chapters.append({'title': "Mở đầu", 'content': content})
     return chapters
+
+
+def _chapter_from_text(text: str, fallback_title: str):
+    """Normalize one imported document fragment into the reader chapter shape."""
+    content = re.sub(r'\n{3,}', '\n\n', text or '').strip()
+    if not content:
+        return None
+    title = next((line.strip() for line in content.splitlines() if line.strip()), fallback_title)
+    return {"title": title[:300], "content": content}
+
+
+def parse_epub_chapters(file_path: str):
+    book = epub.read_epub(file_path, options={"ignore_ncx": False})
+    chapters = []
+    for item in book.get_items_of_type(ITEM_DOCUMENT):
+        soup = BeautifulSoup(item.get_content(), "html.parser")
+        for node in soup(["script", "style", "nav"]):
+            node.decompose()
+        text = soup.get_text("\n", strip=True)
+        chapter = _chapter_from_text(text, f"Chương {len(chapters) + 1}")
+        if chapter:
+            chapters.append(chapter)
+    return chapters
+
+
+def parse_pdf_chapters(file_path: str):
+    reader = PdfReader(file_path)
+    if reader.is_encrypted:
+        raise ValueError("PDF is encrypted or password protected")
+    chapters = []
+    for page_number, page in enumerate(reader.pages, start=1):
+        chapter = _chapter_from_text(page.extract_text() or "", f"Trang {page_number}")
+        if chapter:
+            chapters.append(chapter)
+    if not chapters:
+        raise ValueError("PDF has no extractable text. Scanned PDFs are not supported yet.")
+    return chapters
+
+
+def parse_book_file(file_path: str, filename: str):
+    """Parse TXT, EPUB or text-based PDF into the canonical chapter format."""
+    extension = os.path.splitext(filename or file_path)[1].lower()
+    if extension == ".txt":
+        return parse_chapters_from_file(file_path)
+    if extension == ".epub":
+        return parse_epub_chapters(file_path)
+    if extension == ".pdf":
+        return parse_pdf_chapters(file_path)
+    raise ValueError("Unsupported book format")
+
+
+def write_canonical_text(file_path: str, chapters: List[dict]):
+    """Persist every format as UTF-8 text so edit/export flows stay format-agnostic."""
+    with open(file_path, "w", encoding="utf-8") as target:
+        for index, chapter in enumerate(chapters):
+            if index:
+                target.write("\n\n===\n\n")
+            target.write((chapter.get("content") or "").strip())
 
 def split_text_into_chunks(text: str, max_chars: int = 500):
     chunks = []
@@ -334,7 +471,7 @@ async def stream_audio(request: Request, text: str, voice: str, rate: str = "+0%
     communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume=volume)
     
     async def audio_generator():
-        async for chunk in communicate.stream():
+        async for chunk in _iter_tts_chunks(communicate):
             if chunk["type"] == "audio":
                 yield chunk["data"]
     
@@ -349,7 +486,7 @@ async def stream_metadata(request: Request, text: str, voice: str, rate: str = "
         return text_error
     communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume=volume)
     metadata = []
-    async for chunk in communicate.stream():
+    async for chunk in _iter_tts_chunks(communicate):
         if chunk["type"] == "WordBoundary":
             metadata.append({
                 "start": chunk["offset"] / 10_000_000, # Convert 100ns to seconds
@@ -360,6 +497,9 @@ async def stream_metadata(request: Request, text: str, voice: str, rate: str = "
 
 @app.post("/api/parse-book")
 async def parse_book(file: UploadFile = File(...)):
+    upload_error = _validate_text_upload(file)
+    if upload_error:
+        return upload_error
     # Memory optimization: Stream upload to a temporary file
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
     tmp_path = tmp.name
@@ -370,7 +510,14 @@ async def parse_book(file: UploadFile = File(...)):
             await _save_upload_with_limit(file, tmp_path, MAX_UPLOAD_BYTES)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=413)
-        chapters = parse_chapters_from_file(tmp_path)
+        if (file.filename or "").lower().endswith(".txt"):
+            encoding_error = _validate_supported_text_encoding(tmp_path)
+            if encoding_error:
+                return encoding_error
+        try:
+            chapters = parse_book_file(tmp_path, file.filename)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=422)
         
         # Optimization: Generate metadata in a single pass and remove redundant processed_chapters loop
         chapters_metadata = []
@@ -382,7 +529,7 @@ async def parse_book(file: UploadFile = File(...)):
             })
 
         return JSONResponse({
-            "title": file.filename.replace(".txt", ""),
+            "title": os.path.splitext(file.filename or "book")[0],
             "chapters": chapters_metadata
         })
     finally:
@@ -402,9 +549,12 @@ async def upload_story(
     auth_error = _authorization_error(request, userId)
     if auth_error:
         return auth_error
+    upload_error = _validate_text_upload(file)
+    if upload_error:
+        return upload_error
 
     # Sanitize title
-    story_title = file.filename.replace(".txt", "")
+    story_title = os.path.splitext(file.filename or "story.txt")[0]
     story_id = sanitize_slug(story_title)
     if not story_id:
         story_id = "story"
@@ -419,8 +569,17 @@ async def upload_story(
             await _save_upload_with_limit(file, tmp_path, MAX_UPLOAD_BYTES)
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=413)
-        chapters = parse_chapters_from_file(tmp_path)
+        if (file.filename or "").lower().endswith(".txt"):
+            encoding_error = _validate_supported_text_encoding(tmp_path)
+            if encoding_error:
+                return encoding_error
+        try:
+            chapters = parse_book_file(tmp_path, file.filename)
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=422)
         total_chapters = len(chapters)
+        canonical_filename = f"{story_id}.txt"
+        write_canonical_text(tmp_path, chapters)
         
         # Metadata for Firestore
         story_metadata = {
@@ -429,13 +588,15 @@ async def upload_story(
             "totalChapters": total_chapters,
             "isSegmented": total_chapters > 200,
             "createdAt": firestore.SERVER_TIMESTAMP,
-            "filename": file.filename
+            "filename": canonical_filename,
+            "sourceFilename": file.filename,
+            "sourceFormat": os.path.splitext(file.filename or "")[1].lower().lstrip(".") or "txt"
         }
 
         bucket = storage.bucket()
         
         # ── 1. Always upload the master .txt file (used for future appends/edits) ──
-        master_blob_path = f"users/{userId}/files/{file.filename}"
+        master_blob_path = f"users/{userId}/files/{canonical_filename}"
         master_blob = bucket.blob(master_blob_path)
         master_blob.upload_from_filename(tmp_path)
         story_metadata["masterPath"] = master_blob_path
@@ -484,6 +645,7 @@ async def upload_story(
             "status": "ok",
             "storyId": story_id,
             "title": story_title,
+            "filename": canonical_filename,
             "isSegmented": story_metadata["isSegmented"],
             "totalChapters": total_chapters,
             "chapters": chapters_summary if not story_metadata["isSegmented"] else [],
@@ -492,6 +654,115 @@ async def upload_story(
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
+
+@app.post("/api/parse-import")
+async def parse_import(
+    request: Request,
+    userId: str = Form(...),
+    file: UploadFile = File(...)
+):
+    """Return editable chapter preview without modifying a book."""
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
+    upload_error = _validate_book_upload(file)
+    if upload_error:
+        return upload_error
+    suffix = os.path.splitext(file.filename or "")[1] or ".tmp"
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp_path = tmp.name
+    try:
+        await _save_upload_with_limit(file, tmp_path, MAX_APPEND_BYTES)
+        if suffix.lower() == ".txt":
+            encoding_error = _validate_supported_text_encoding(tmp_path)
+            if encoding_error:
+                return encoding_error
+        chapters = parse_book_file(tmp_path, file.filename)
+        if not chapters:
+            return JSONResponse({"error": "No readable chapters found"}, status_code=422)
+        return JSONResponse({
+            "title": os.path.splitext(file.filename or "book")[0],
+            "sourceFormat": suffix.lower().lstrip("."),
+            "chapters": chapters,
+        })
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=422)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+async def _append_prepared_chapters(user_id: str, book_id: str, filename: str, additions: List[dict]):
+    """Append already-reviewed chapters and refresh the same storage metadata as TXT append."""
+    bucket = storage.bucket()
+    blob = bucket.blob(f"users/{user_id}/files/{filename}")
+    if not blob.exists():
+        return None, JSONResponse({"error": "File not found"}, status_code=404)
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+        tmp_path = tmp.name
+    try:
+        blob.download_to_filename(tmp_path)
+        chapters = parse_chapters_from_file(tmp_path)
+        chapters.extend(additions)
+        write_canonical_text(tmp_path, chapters)
+        blob.upload_from_filename(tmp_path)
+        total_chapters = len(chapters)
+        story_ref = db_admin.collection("users").document(user_id).collection("stories").document(book_id)
+        is_segmented = total_chapters > 200
+        metadata = {"totalChapters": total_chapters, "isSegmented": is_segmented, "updatedAt": firestore.SERVER_TIMESTAMP}
+        if is_segmented:
+            chapter_counts = []
+            segments = partition_chapters(chapters)
+            for index, segment in enumerate(segments):
+                data = []
+                for chapter in segment:
+                    sentences = split_text_into_chunks(chapter["content"])
+                    chapter_counts.append(len(sentences))
+                    data.append({"title": chapter["title"], "sentences": sentences})
+                bucket.blob(f"users/{user_id}/stories/{book_id}/segments/seg_{index}.json").upload_from_string(json.dumps(data), content_type="application/json")
+            metadata.update({"segmentsCount": len(segments), "chapterCounts": chapter_counts})
+        else:
+            summary = [{"title": chapter["title"], "count": len(split_text_into_chunks(chapter["content"]))} for chapter in chapters]
+            metadata["chaptersSummary"] = summary
+        story_ref.set(metadata, merge=True)
+        response_chapters = [{"title": chapter["title"], "count": len(split_text_into_chunks(chapter["content"]))} for chapter in chapters]
+        return {"title": filename.replace(".txt", ""), "filename": filename, "chapters": response_chapters, "totalChapters": total_chapters, "isSegmented": is_segmented}, None
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+@app.post("/api/append-chapters")
+async def append_chapters(
+    request: Request,
+    userId: str = Form(...),
+    bookId: str = Form(...),
+    filename: str = Form(...),
+    chapters: str = Form(...)
+):
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
+    try:
+        raw_chapters = json.loads(chapters)
+        if not isinstance(raw_chapters, list) or not raw_chapters:
+            raise ValueError("At least one chapter is required")
+        if len(raw_chapters) > 200:
+            raise ValueError("Too many chapters selected")
+        additions = []
+        for raw in raw_chapters:
+            if not isinstance(raw, dict):
+                raise ValueError("Invalid chapter format")
+            chapter = _chapter_from_text(str(raw.get("content") or ""), str(raw.get("title") or "Chương không tên"))
+            if chapter:
+                additions.append(chapter)
+        if not additions:
+            raise ValueError("No non-empty chapters selected")
+    except (ValueError, json.JSONDecodeError) as exc:
+        return JSONResponse({"error": str(exc)}, status_code=400)
+    result, error = await _append_prepared_chapters(userId, bookId, filename, additions)
+    return error or JSONResponse(result)
+
 
 @app.get("/api/stories/{userId}/{storyId}/metadata")
 async def get_story_metadata(request: Request, userId: str, storyId: str):
@@ -1205,7 +1476,7 @@ async def download_chapters(request: Request, req: ChapterDownloadRequest):
                     full_text, req.voice,
                     rate=req.rate, pitch=req.pitch, volume=req.volume
                 )
-                async for chunk in communicate.stream():
+                async for chunk in _iter_tts_chunks(communicate):
                     if chunk["type"] == "audio":
                         yield chunk["data"]
             except Exception as e:
@@ -1234,7 +1505,7 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     queue = asyncio.Queue(maxsize=MAX_WS_QUEUE)
-    state = {"active_session": -1, "current_workers": 0, "authenticated": False}
+    state = {"active_session": -1, "current_workers": 0, "authenticated": False, "uid": None}
     worker_pool = {} # worker_id -> Task
     ws_lock = asyncio.Lock()
 
@@ -1250,6 +1521,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     if claims is None:
                         await websocket.close(code=1008, reason="Invalid or expired authentication token")
                         return
+                    uid = claims.get("uid")
+                    async with _active_ws_lock:
+                        if _active_ws_by_uid.get(uid, 0) >= MAX_WS_PER_USER:
+                            await websocket.close(code=1013, reason="Too many active connections")
+                            return
+                        _active_ws_by_uid[uid] = _active_ws_by_uid.get(uid, 0) + 1
+                    state["uid"] = uid
                     state["authenticated"] = True
                     async with ws_lock:
                         await websocket.send_json({"type": "AUTH_OK"})
@@ -1335,7 +1613,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     metadata = []
                     audio_data = b""
 
-                    async for chunk in communicate.stream():
+                    async for chunk in _iter_tts_chunks(communicate):
                         # CANCEL MID-STREAM instantly if a new session starts
                         if state["active_session"] > sid:
                             print(f"[Worker {worker_id}] Aborting mid-stream: new session detected ({state['active_session']} > {sid})")
@@ -1406,6 +1684,14 @@ async def websocket_endpoint(websocket: WebSocket):
     receiver_task.cancel()
     for w_task in worker_pool.values():
         w_task.cancel()
+
+    if state["uid"]:
+        async with _active_ws_lock:
+            remaining = _active_ws_by_uid.get(state["uid"], 0) - 1
+            if remaining > 0:
+                _active_ws_by_uid[state["uid"]] = remaining
+            else:
+                _active_ws_by_uid.pop(state["uid"], None)
 
     # Cancel whatever is left (usually the worker)
     for task in pending:
