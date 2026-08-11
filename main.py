@@ -111,7 +111,10 @@ def _authorization_error(request: Request, user_id: str):
         decoded = auth.verify_id_token(token)
         if decoded.get("uid") != user_id:
             return JSONResponse({"error": "Forbidden"}, status_code=403)
-    except Exception:
+    except Exception as exc:
+        # Never log the bearer token. The exception type/message is enough to
+        # distinguish an expired token from a project, clock, or network issue.
+        print(f"[Auth] Firebase ID token verification failed: {type(exc).__name__}: {exc}")
         return JSONResponse({"error": "Invalid or expired authentication token"}, status_code=401)
     return None
 

@@ -359,11 +359,18 @@ async function startFirebase() {
 async function authFetch(url, options = {}) {
     const user = STATE.user || auth?.currentUser;
     if (!user) throw new Error('Authentication required');
-    const token = await user.getIdToken();
     const headers = new Headers(options.headers || {});
+    let token = await user.getIdToken();
     headers.set('Authorization', `Bearer ${token}`);
     try {
-        const response = await fetch(url, { ...options, headers });
+        let response = await fetch(url, { ...options, headers });
+        if (response.status === 401) {
+            // A local server restart can coincide with an old cached Firebase
+            // token. Force one refresh before asking the user to log in again.
+            token = await user.getIdToken(true);
+            headers.set('Authorization', `Bearer ${token}`);
+            response = await fetch(url, { ...options, headers });
+        }
         if (response.status === 401) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
         if (response.status === 403) throw new Error('Bạn không có quyền thực hiện thao tác này.');
         return response;
