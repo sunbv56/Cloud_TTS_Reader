@@ -5,6 +5,7 @@ load_dotenv()  # Load variables from .env if it exists
 import re
 import json
 import asyncio
+import codecs
 import edge_tts
 import tempfile
 import gc
@@ -189,7 +190,11 @@ def _detect_text_encoding(file_path: str):
         return "utf-8-sig"
     if sample.startswith((b"\xff\xfe", b"\xfe\xff")):
         return "utf-16"
-    sample.decode("utf-8")
+    # The sample can end halfway through a multi-byte UTF-8 character (for
+    # example when a Vietnamese character crosses the 64 KiB boundary). An
+    # incremental decoder accepts that incomplete trailing sequence while
+    # still rejecting invalid bytes in the middle of the sample.
+    codecs.getincrementaldecoder("utf-8")().decode(sample, final=False)
     return "utf-8"
 
 

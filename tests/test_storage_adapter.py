@@ -4,6 +4,7 @@ import types
 import unittest
 
 from storage_adapter import _B2Blob
+from main import _detect_text_encoding
 
 
 class _FakeBody:
@@ -36,6 +37,18 @@ class B2DownloadTest(unittest.TestCase):
                 self.assertEqual(source.read(), b"chapter text")
             self.assertTrue(body.closed)
             os.remove(path)
+        finally:
+            if os.path.exists(path):
+                os.remove(path)
+
+    def test_utf8_detection_handles_multibyte_character_at_sample_boundary(self):
+        fd, path = tempfile.mkstemp(suffix=".txt")
+        os.close(fd)
+        try:
+            with open(path, "wb") as target:
+                target.write(b"a" * 65538)
+                target.write("ế".encode("utf-8"))
+            self.assertEqual(_detect_text_encoding(path), "utf-8")
         finally:
             if os.path.exists(path):
                 os.remove(path)
