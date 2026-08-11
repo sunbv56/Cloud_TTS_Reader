@@ -108,11 +108,21 @@ class _B2Blob:
         return response["Body"].read()
 
     def download_to_filename(self, filename):
-        self._backend.client.download_file(
-            self._backend.bucket_name,
-            self.path,
-            filename,
+        # Use an explicitly managed response stream instead of boto3's
+        # threaded transfer helper. On Windows the helper can briefly retain
+        # the destination handle after returning, which makes the caller's
+        # tempfile cleanup fail with WinError 32.
+        response = self._backend.client.get_object(
+            Bucket=self._backend.bucket_name,
+            Key=self.path,
         )
+        body = response["Body"]
+        try:
+            with open(filename, "wb") as target:
+                while chunk := body.read(1024 * 1024):
+                    target.write(chunk)
+        finally:
+            body.close()
 
     def delete(self):
         return self._backend.client.delete_object(
