@@ -20,8 +20,10 @@ test('image upload uses per-book Storage paths and no new database collection', 
     assert.match(app, /uploadBookImages/);
     assert.match(app, /loadImageManifest/);
     assert.match(app, /imageManifestCache/);
-    assert.match(app, /getDownloadURL\(imageManifestRef\(bookId\)\)/);
-    assert.match(app, /has_images: false/);
+    assert.match(app, /\/api\/stories\/\$\{encodeURIComponent\(STATE\.user\.uid\)\}\/\$\{encodeURIComponent\(bookId\)\}\/images\/manifest/);
+    assert.match(app, /method: 'POST'/);
+    assert.match(app, /method: 'PUT'/);
+    assert.match(app, /method: 'DELETE'/);
     assert.match(app, /start empty instead of making an expected 404 request/);
     assert.match(app, /deleteBookImages/);
     assert.match(app, /replaceBookImage/);

@@ -2,11 +2,10 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { getFirestore, doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
-import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject, listAll } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-storage.js";
 import { compressImageForStorage, IMAGE_MAX_BYTES } from "./js/image-manager.js";
 
 // Firebase placeholders (Initialized via API)
-let app, auth, db, storage, provider;
+let app, auth, db, provider;
 
 // Keep enough compressed audio for background playback without dispatching
 // hundreds of TTS jobs at once. The old 150/500-chunk policy caused large
@@ -314,7 +313,6 @@ async function startFirebase() {
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
         db = getFirestore(app);
-        storage = getStorage(app);
         provider = new GoogleAuthProvider();
 
         // Bind Auth Change
@@ -1434,60 +1432,31 @@ function processAppendQueue() {
 initWebSocket();
 initMSE();
 
-// --- Firebase Sync Helpers ---
-async function uploadToStorage(file) {
-    if (!STATE.user) return;
-    try {
-        const fileRef = ref(storage, `users/${STATE.user.uid}/files/${file.name}`);
-        const snapshot = await uploadBytes(fileRef, file);
-        console.log("File uploaded to Storage:", snapshot.metadata.fullPath);
-        return snapshot;
-    } catch (err) {
-        console.error("Storage Error:", err);
-    }
-}
-
-function imageManifestRef(bookId) {
-    return ref(storage, `users/${STATE.user.uid}/images/${bookId}/manifest.json`);
-}
-
-function imageAssetRef(bookId, imageId) {
-    return ref(storage, `users/${STATE.user.uid}/images/${bookId}/assets/${imageId}.webp`);
-}
-
 async function loadImageManifest(bookId) {
     if (!STATE.user || !bookId) return { version: 1, coverId: null, images: [] };
     if (STATE.imageManifestCache.has(bookId)) return STATE.imageManifestCache.get(bookId);
     const emptyManifest = { version: 1, coverId: null, images: [] };
     try {
-        // Read the manifest directly. This is compatible with the existing
-        // Storage Rules and avoids requiring directory-list permissions.
-        const url = await getDownloadURL(imageManifestRef(bookId));
-        const response = await fetch(url, { cache: 'no-store' });
+        const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images/manifest`, { cache: 'no-store' });
         if (!response.ok) throw new Error(`Manifest HTTP ${response.status}`);
         const manifest = await response.json();
         const normalized = { version: 1, coverId: null, images: [], ...manifest };
         STATE.imageManifestCache.set(bookId, normalized);
         return normalized;
     } catch (err) {
-        if (err.code === 'storage/object-not-found') {
-            // Repair stale progress flags left by older image experiments so
-            // this book is not queried again on every library refresh.
-            await setDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId), { has_images: false }, { merge: true }).catch(() => {});
-        } else {
-            console.debug('[Images] Manifest lookup skipped:', err.code || err.message);
-        }
+        console.debug('[Images] Manifest lookup skipped:', err.message);
         STATE.imageManifestCache.set(bookId, emptyManifest);
         return emptyManifest;
     }
 }
 
 async function saveImageManifest(bookId, manifest) {
-    const blob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-    await uploadBytes(imageManifestRef(bookId), blob, {
-        contentType: 'application/json',
-        customMetadata: { bookId, schemaVersion: '1' }
+    const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images/manifest`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(manifest)
     });
+    if (!response.ok) throw new Error(`Manifest save failed (${response.status})`);
     STATE.imageManifestCache.set(bookId, manifest);
 }
 
@@ -1503,14 +1472,17 @@ async function uploadBookImages(bookId, files, bookTitle = '') {
         const file = await compressImageForStorage(sourceFile);
         if (file.size > IMAGE_MAX_BYTES) throw new Error(`${sourceFile.name} vượt quá 150 KB sau tối ưu.`);
         const imageId = `img_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
-        const asset = imageAssetRef(bookId, imageId);
-        await uploadBytes(asset, file, {
-            contentType: 'image/webp',
-            customMetadata: { bookId, title: bookTitle, role: manifest.images.length === 0 ? 'cover' : 'illustration' }
+        const formData = new FormData();
+        formData.append('imageId', imageId);
+        formData.append('file', file, `${imageId}.webp`);
+        const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images`, {
+            method: 'POST',
+            body: formData
         });
+        if (!response.ok) throw new Error(`Image upload failed (${response.status})`);
         manifest.images.push({
             id: imageId,
-            path: asset.fullPath,
+            path: `users/${STATE.user.uid}/images/${bookId}/assets/${imageId}.webp`,
             chapterIndex: null,
             alt: sourceFile.name.replace(/\.[^.]+$/, ''),
             size: file.size,
@@ -1531,7 +1503,9 @@ async function getImageURL(bookId, image) {
     if (!image?.id) return null;
     if (STATE.imageURLCache.has(image.id)) return STATE.imageURLCache.get(image.id);
     try {
-        const url = await getDownloadURL(imageAssetRef(bookId, image.id));
+        const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images/${encodeURIComponent(image.id)}`);
+        if (!response.ok) throw new Error(`Image HTTP ${response.status}`);
+        const url = URL.createObjectURL(await response.blob());
         STATE.imageURLCache.set(image.id, url);
         return url;
     } catch (err) {
@@ -1559,29 +1533,10 @@ async function hydrateBookCover(bookId, elements) {
 
 async function deleteBookImages(bookId) {
     if (!STATE.user || !bookId) return;
-    const base = ref(storage, `users/${STATE.user.uid}/images/${bookId}`);
-    try {
-        const listing = await listAll(base);
-        await Promise.all(listing.items.map(item => deleteObject(item).catch(err => {
-            if (err.code !== 'storage/object-not-found') throw err;
-        })));
-        await Promise.all(listing.prefixes.map(prefix => deleteBookImagesFromPrefix(prefix)));
-    } catch (err) {
-        if (err.code !== 'storage/object-not-found') console.debug('[Images] Cleanup skipped:', err.code || err.message);
-    }
-    try { await deleteObject(imageManifestRef(bookId)); } catch (err) {
-        if (err.code !== 'storage/object-not-found') throw err;
-    }
+    const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images`, { method: 'DELETE' });
+    if (!response.ok) throw new Error(`Image cleanup failed (${response.status})`);
     STATE.imageManifestCache.delete(bookId);
     STATE.imageURLCache.clear();
-}
-
-async function deleteBookImagesFromPrefix(prefix) {
-    const listing = await listAll(prefix);
-    await Promise.all(listing.items.map(item => deleteObject(item).catch(err => {
-        if (err.code !== 'storage/object-not-found') throw err;
-    })));
-    await Promise.all(listing.prefixes.map(child => deleteBookImagesFromPrefix(child)));
 }
 
 async function replaceBookImage(bookId, imageId, sourceFile) {
@@ -1589,11 +1544,13 @@ async function replaceBookImage(bookId, imageId, sourceFile) {
     const manifest = await loadImageManifest(bookId);
     const image = manifest.images.find(item => item.id === imageId);
     if (!image) throw new Error('Ảnh không còn tồn tại.');
-    const asset = imageAssetRef(bookId, imageId);
-    await uploadBytes(asset, file, {
-        contentType: 'image/webp',
-        customMetadata: { bookId, title: STATE.currentBook?.title || '', role: manifest.coverId === imageId ? 'cover' : 'illustration' }
+    const formData = new FormData();
+    formData.append('file', file, `${imageId}.webp`);
+    const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images/${encodeURIComponent(imageId)}`, {
+        method: 'PUT',
+        body: formData
     });
+    if (!response.ok) throw new Error(`Image replace failed (${response.status})`);
     image.alt = sourceFile.name.replace(/\.[^.]+$/, '');
     image.size = file.size;
     image.updatedAt = new Date().toISOString();
@@ -1605,9 +1562,8 @@ async function replaceBookImage(bookId, imageId, sourceFile) {
 async function removeBookImage(bookId, imageId) {
     const manifest = await loadImageManifest(bookId);
     if (!manifest.images.some(item => item.id === imageId)) return;
-    await deleteObject(imageAssetRef(bookId, imageId)).catch(err => {
-        if (err.code !== 'storage/object-not-found') throw err;
-    });
+    const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images/${encodeURIComponent(imageId)}`, { method: 'DELETE' });
+    if (!response.ok) throw new Error(`Image delete failed (${response.status})`);
     manifest.images = manifest.images.filter(item => item.id !== imageId);
     if (manifest.coverId === imageId) manifest.coverId = manifest.images[0]?.id || null;
     await saveImageManifest(bookId, manifest);
@@ -2108,22 +2064,14 @@ async function deleteBook(bookId, filename, title, bypassConfirm = false) {
         // ── 1. Firestore delete ──────────────────────────────────────────────
         const deleteFirestore = deleteDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId));
 
-        // ── 2. Storage delete (ignore "not found" gracefully) ────────────────
-        let deleteStorage = Promise.resolve();
-        if (filename) {
-            const fileRef = ref(storage, `users/${STATE.user.uid}/files/${filename}`);
-            deleteStorage = deleteObject(fileRef).catch(err => {
-                if (err.code === 'storage/object-not-found') {
-                    console.warn('[Delete] Storage file not found, skipping:', filename);
-                } else {
-                    throw err; // re-throw unexpected errors
-                }
-            });
-        }
-        const deleteImages = deleteBookImages(bookId);
+        // ── 2. Delete all file/segment/image objects through the backend ─────
+        const storageQuery = filename ? `?filename=${encodeURIComponent(filename)}` : '';
+        const deleteStorage = authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/storage${storageQuery}`, { method: 'DELETE' }).then(response => {
+            if (!response.ok) throw new Error(`Storage delete failed (${response.status})`);
+        });
 
-        // ── 3. Run both in PARALLEL ──────────────────────────────────────────
-        await Promise.all([deleteFirestore, deleteStorage, deleteImages]);
+        // ── 3. Run Firestore and storage cleanup in parallel ────────────────
+        await Promise.all([deleteFirestore, deleteStorage]);
         console.log(`[Delete] "${title}" deleted successfully.`);
 
         // ── 4. If the deleted book is currently open, reset the reader ────────
@@ -2285,10 +2233,8 @@ async function loadBookFromStorage(bookId, bookData) {
         } else {
             // Traditional Load Flow
             const filename = bookData.filename || (bookId.replace("book_", "") + ".txt");
-            const fileRef = ref(storage, `users/${STATE.user.uid}/files/${filename}`);
-            const url = await getDownloadURL(fileRef);
-
-            const response = await fetch(url);
+            const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/file?filename=${encodeURIComponent(filename)}`);
+            if (!response.ok) throw new Error(`Book file HTTP ${response.status}`);
             const blob = await response.blob();
             const file = new File([blob], filename, { type: "text/plain" });
 

@@ -12,9 +12,10 @@ from ebooklib import epub, ITEM_DOCUMENT
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
 import firebase_admin
-from firebase_admin import credentials, storage, firestore, auth
+from firebase_admin import credentials, storage as firebase_storage, firestore, auth
+from storage_adapter import get_storage_backend
 from urllib.parse import quote
-from fastapi import FastAPI, Request, Response, Form, UploadFile, File, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, Response, Form, UploadFile, File, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -60,6 +61,14 @@ except Exception as e:
     print(f"Firestore client could not be initialized: {e}")
     db_admin = None
 
+# Keep the existing bucket/blob interface while allowing the storage provider
+# to be switched through STORAGE_BACKEND=b2 without changing Firestore paths.
+try:
+    storage = get_storage_backend(firebase_storage)
+except Exception as e:
+    print(f"Storage backend could not be initialized: {e}")
+    storage = None
+
 app = FastAPI()
 NUM_WORKERS = 3  # Tăng số lượng worker nếu muốn nạp song song nhanh hơn
 
@@ -76,6 +85,7 @@ MAX_WS_QUEUE = int(os.getenv("MAX_WS_QUEUE", "100"))
 MAX_WS_PER_USER = int(os.getenv("MAX_WS_PER_USER", "2"))
 MAX_NEW_CONTENT_CHARS = int(os.getenv("MAX_NEW_CONTENT_CHARS", "1000000"))
 TTS_CHUNK_TIMEOUT_SECONDS = float(os.getenv("TTS_CHUNK_TIMEOUT_SECONDS", "30"))
+MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(150 * 1024)))
 
 ALLOWED_BOOK_EXTENSIONS = {".txt", ".epub", ".pdf"}
 ALLOWED_BOOK_CONTENT_TYPES = {
@@ -142,6 +152,18 @@ def _validate_book_upload(upload: UploadFile):
 def _validate_text_upload(upload: UploadFile):
     """Backward-compatible name for the shared book upload validator."""
     return _validate_book_upload(upload)
+
+
+def _valid_image_id(image_id: str) -> bool:
+    return bool(re.fullmatch(r"img_[A-Za-z0-9_-]{8,80}", image_id or ""))
+
+
+def _image_asset_path(user_id: str, story_id: str, image_id: str) -> str:
+    return f"users/{user_id}/images/{story_id}/assets/{image_id}.webp"
+
+
+def _image_manifest_path(user_id: str, story_id: str) -> str:
+    return f"users/{user_id}/images/{story_id}/manifest.json"
 
 
 def _detect_text_encoding(file_path: str):
@@ -793,6 +815,150 @@ async def get_segment_data(request: Request, userId: str, storyId: str, segmentI
     
     data = json.loads(blob.download_as_text())
     return JSONResponse({"chapters": data})
+
+
+@app.get("/api/stories/{userId}/{storyId}/images/manifest")
+async def get_image_manifest(request: Request, userId: str, storyId: str):
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
+    if storage is None:
+        return JSONResponse({"error": "Storage backend is not configured"}, status_code=503)
+    blob = storage.bucket().blob(_image_manifest_path(userId, storyId))
+    if not blob.exists():
+        return JSONResponse({"version": 1, "coverId": None, "images": []})
+    try:
+        return JSONResponse(json.loads(blob.download_as_text()))
+    except (ValueError, json.JSONDecodeError):
+        return JSONResponse({"error": "Image manifest is invalid"}, status_code=502)
+
+
+@app.put("/api/stories/{userId}/{storyId}/images/manifest")
+async def put_image_manifest(request: Request, userId: str, storyId: str, manifest: dict):
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
+    if storage is None:
+        return JSONResponse({"error": "Storage backend is not configured"}, status_code=503)
+    payload = json.dumps(manifest, ensure_ascii=False)
+    if len(payload.encode("utf-8")) > 100 * 1024:
+        return JSONResponse({"error": "Image manifest is too large"}, status_code=413)
+    storage.bucket().blob(_image_manifest_path(userId, storyId)).upload_from_string(
+        payload,
+        content_type="application/json",
+    )
+    return JSONResponse({"status": "ok"})
+
+
+async def _save_image_object(request: Request, userId: str, storyId: str, imageId: str, file: UploadFile):
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
+    if storage is None:
+        return JSONResponse({"error": "Storage backend is not configured"}, status_code=503)
+    if not _valid_image_id(imageId):
+        return JSONResponse({"error": "Invalid image id"}, status_code=400)
+    content_type = (file.content_type or "").lower().split(";", 1)[0].strip()
+    if content_type != "image/webp":
+        return JSONResponse({"error": "Only WebP images are supported"}, status_code=415)
+    data = await file.read(MAX_IMAGE_BYTES + 1)
+    if len(data) > MAX_IMAGE_BYTES:
+        return JSONResponse({"error": f"Image exceeds the {MAX_IMAGE_BYTES} byte limit"}, status_code=413)
+    storage.bucket().blob(_image_asset_path(userId, storyId, imageId)).upload_from_string(
+        data,
+        content_type="image/webp",
+    )
+    return JSONResponse({
+        "status": "ok",
+        "id": imageId,
+        "path": _image_asset_path(userId, storyId, imageId),
+    })
+
+
+@app.post("/api/stories/{userId}/{storyId}/images")
+async def upload_story_image(
+    request: Request,
+    userId: str,
+    storyId: str,
+    imageId: str = Form(...),
+    file: UploadFile = File(...),
+):
+    return await _save_image_object(request, userId, storyId, imageId, file)
+
+
+@app.put("/api/stories/{userId}/{storyId}/images/{imageId}")
+async def replace_story_image(
+    request: Request,
+    userId: str,
+    storyId: str,
+    imageId: str,
+    file: UploadFile = File(...),
+):
+    return await _save_image_object(request, userId, storyId, imageId, file)
+
+
+@app.get("/api/stories/{userId}/{storyId}/images/{imageId}")
+async def get_story_image(request: Request, userId: str, storyId: str, imageId: str):
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
+    if storage is None or not _valid_image_id(imageId):
+        return JSONResponse({"error": "Image not found"}, status_code=404)
+    blob = storage.bucket().blob(_image_asset_path(userId, storyId, imageId))
+    if not blob.exists():
+        return JSONResponse({"error": "Image not found"}, status_code=404)
+    return Response(content=blob.download_as_bytes(), media_type="image/webp")
+
+
+@app.delete("/api/stories/{userId}/{storyId}/images/{imageId}")
+async def delete_story_image(request: Request, userId: str, storyId: str, imageId: str):
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
+    if storage is None or not _valid_image_id(imageId):
+        return JSONResponse({"status": "ok"})
+    blob = storage.bucket().blob(_image_asset_path(userId, storyId, imageId))
+    if blob.exists():
+        blob.delete()
+    return JSONResponse({"status": "ok"})
+
+
+@app.delete("/api/stories/{userId}/{storyId}/images")
+async def delete_story_images(request: Request, userId: str, storyId: str):
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
+    if storage is not None:
+        storage.delete_prefix(f"users/{userId}/images/{storyId}/")
+    return JSONResponse({"status": "ok"})
+
+
+@app.get("/api/stories/{userId}/{storyId}/file")
+async def get_story_file(request: Request, userId: str, storyId: str, filename: str = Query(...)):
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
+    if storage is None:
+        return JSONResponse({"error": "Storage backend is not configured"}, status_code=503)
+    blob = storage.bucket().blob(f"users/{userId}/files/{filename}")
+    if not blob.exists():
+        return JSONResponse({"error": "File not found"}, status_code=404)
+    return Response(content=blob.download_as_bytes(), media_type="text/plain")
+
+
+@app.delete("/api/stories/{userId}/{storyId}/storage")
+async def delete_story_storage(request: Request, userId: str, storyId: str, filename: Optional[str] = Query(None)):
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
+    if storage is not None:
+        if filename:
+            file_blob = storage.bucket().blob(f"users/{userId}/files/{filename}")
+            if file_blob.exists():
+                file_blob.delete()
+        storage.delete_prefix(f"users/{userId}/stories/{storyId}/")
+        storage.delete_prefix(f"users/{userId}/images/{storyId}/")
+    return JSONResponse({"status": "ok"})
 
 @app.get("/api/stories/{userId}/{storyId}/export-text")
 async def export_story_text(userId: str, storyId: str, request: Request):

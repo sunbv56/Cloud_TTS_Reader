@@ -10,3 +10,4 @@ python-dotenv
 EbookLib
 beautifulsoup4
 pypdf
+boto3

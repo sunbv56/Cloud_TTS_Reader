@@ -13,6 +13,9 @@ test('protected backend routes verify Firebase ownership', () => {
 
     const protectedRoutes = [
         'upload_story', 'get_story_metadata', 'get_segment_data',
+        'get_image_manifest', 'put_image_manifest', 'upload_story_image',
+        'replace_story_image', 'get_story_image', 'delete_story_image',
+        'delete_story_images', 'get_story_file', 'delete_story_storage',
         'get_chapter_sentences', 'append_chapter', 'delete_chapters',
         'get_chapter_content', 'update_chapter', 'parse_import', 'append_chapters'
     ];
@@ -20,7 +23,11 @@ test('protected backend routes verify Firebase ownership', () => {
         const start = mainPy.indexOf(`async def ${route}`);
         assert.notEqual(start, -1, `${route} must exist`);
         const body = mainPy.slice(start, mainPy.indexOf('\n@app.', start + 1));
-        assert.match(body, /_authorization_error\(request, userId\)/, `${route} must verify owner`);
+        if (route === 'upload_story_image' || route === 'replace_story_image') {
+            assert.match(body, /_save_image_object\(request, userId, storyId, imageId, file\)/, `${route} must use the protected image helper`);
+        } else {
+            assert.match(body, /_authorization_error\(request, userId\)/, `${route} must verify owner`);
+        }
     }
 });
 
