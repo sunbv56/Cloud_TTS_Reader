@@ -2328,7 +2328,25 @@ const handleFileUpload = async (e) => {
             body: formData
         });
 
-        if (!response.ok) throw new Error("Upload failed");
+        if (!response.ok) {
+            let detail = `Upload failed (${response.status})`;
+            try {
+                const payload = await response.clone().json();
+                if (typeof payload?.error === 'string' && payload.error.trim()) {
+                    detail = payload.error;
+                } else if (Array.isArray(payload?.detail)) {
+                    detail = payload.detail.map(item => {
+                        const location = Array.isArray(item?.loc) ? item.loc.join('.') : 'request';
+                        return `${location}: ${item?.msg || 'invalid value'}`;
+                    }).join('; ') || detail;
+                } else if (typeof payload?.detail === 'string' && payload.detail.trim()) {
+                    detail = payload.detail;
+                }
+            } catch (_) {
+                // Keep the status-based fallback when the server response is not JSON.
+            }
+            throw new Error(detail);
+        }
         const data = await response.json();
 
         // Fetch fresh metadata
