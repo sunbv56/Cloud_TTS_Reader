@@ -86,6 +86,12 @@ MAX_WS_PER_USER = int(os.getenv("MAX_WS_PER_USER", "2"))
 MAX_NEW_CONTENT_CHARS = int(os.getenv("MAX_NEW_CONTENT_CHARS", "1000000"))
 TTS_CHUNK_TIMEOUT_SECONDS = float(os.getenv("TTS_CHUNK_TIMEOUT_SECONDS", "30"))
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(150 * 1024)))
+# Firebase ID tokens are time-bound. A small tolerance keeps local development
+# usable when the machine clock drifts by a few seconds, while the OS clock
+# should still be synchronized (Firebase Admin accepts at most 60 seconds).
+FIREBASE_CLOCK_SKEW_SECONDS = max(
+    0, min(60, int(os.getenv("FIREBASE_CLOCK_SKEW_SECONDS", "30")))
+)
 
 ALLOWED_BOOK_EXTENSIONS = {".txt", ".epub", ".pdf"}
 ALLOWED_BOOK_CONTENT_TYPES = {
@@ -108,7 +114,10 @@ def _authorization_error(request: Request, user_id: str):
 
     try:
         token = authorization.split(" ", 1)[1].strip()
-        decoded = auth.verify_id_token(token)
+        # Equivalent to auth.verify_id_token(token), with bounded clock skew.
+        decoded = auth.verify_id_token(
+            token, clock_skew_seconds=FIREBASE_CLOCK_SKEW_SECONDS
+        )
         if decoded.get("uid") != user_id:
             return JSONResponse({"error": "Forbidden"}, status_code=403)
     except Exception as exc:
@@ -125,7 +134,9 @@ def _verify_bearer_token(authorization: str):
         return None
     try:
         token = authorization.split(" ", 1)[1].strip()
-        return auth.verify_id_token(token)
+        return auth.verify_id_token(
+            token, clock_skew_seconds=FIREBASE_CLOCK_SKEW_SECONDS
+        )
     except Exception:
         return None
 
@@ -461,7 +472,9 @@ def _verify_export_owner(request: Request, user_id: str):
         return JSONResponse({"error": "Authentication required"}, status_code=401)
     try:
         token = authorization.split(" ", 1)[1].strip()
-        decoded = auth.verify_id_token(token)
+        decoded = auth.verify_id_token(
+            token, clock_skew_seconds=FIREBASE_CLOCK_SKEW_SECONDS
+        )
         if decoded.get("uid") != user_id:
             return JSONResponse({"error": "Forbidden"}, status_code=403)
     except Exception:
