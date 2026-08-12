@@ -401,6 +401,8 @@ const APP_STATUS = {
         this.toast(message, 'error');
     }
 };
+let imageManagerBookId = null;
+let imageManagerBookTitle = '';
 
 function updateNetworkStatus() {
     const banner = document.getElementById('network-status');
@@ -893,11 +895,12 @@ async function processImageFiles(fileList) {
     const files = Array.from(fileList || []).filter(file => file && (file.type?.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|bmp|avif|image)$/i.test(file.name || '')));
     if (!files.length) return;
     try {
-        if (!STATE.currentBookId || !STATE.user) throw new Error('Hãy mở một truyện và đăng nhập trước.');
+        const bookId = imageManagerBookId || STATE.currentBookId;
+        if (!bookId || !STATE.user) throw new Error('Hãy mở một truyện và đăng nhập trước.');
         if (STATE.imageEditTargetId) {
-            await replaceBookImage(STATE.currentBookId, STATE.imageEditTargetId, files[0]);
+            await replaceBookImage(bookId, STATE.imageEditTargetId, files[0]);
         } else {
-            await uploadBookImages(STATE.currentBookId, files, STATE.currentBook?.title || '');
+            await uploadBookImages(bookId, files, imageManagerBookTitle || STATE.currentBook?.title || '');
         }
         await renderImageManager();
         await refreshLibrary();
@@ -960,7 +963,7 @@ if (imageManagerList) {
 }
 document.addEventListener('paste', event => {
     const modal = document.getElementById('image-manager-modal');
-    if (!modal || modal.classList.contains('hidden') || !STATE.currentBookId) return;
+    if (!modal || modal.classList.contains('hidden') || !(imageManagerBookId || STATE.currentBookId)) return;
     const clipboardFiles = Array.from(event.clipboardData?.files || []);
     if (clipboardFiles.length) {
         event.preventDefault();
@@ -1594,6 +1597,18 @@ async function hydrateBookCover(bookId, elements) {
     elements.forEach(el => {
         if (el) {
             el.src = url;
+            const crop = cover.coverCrop;
+            if (crop && Number.isFinite(crop.x) && Number.isFinite(crop.y) && Number.isFinite(crop.width) && Number.isFinite(crop.height)) {
+                el.style.position = 'absolute';
+                el.style.maxWidth = 'none';
+                el.style.width = `${100 / crop.width}%`;
+                el.style.height = 'auto';
+                el.style.left = `${-(crop.x / crop.width * 100)}%`;
+                el.style.top = `${-(crop.y / crop.height * 100)}%`;
+                el.style.objectFit = 'fill';
+            } else {
+                el.removeAttribute('style');
+            }
             el.classList.remove('hidden');
             const fallbackIcon = el.parentElement?.querySelector('i.fa-book, i.fa-volume-up');
             if (fallbackIcon) fallbackIcon.remove();
@@ -1610,11 +1625,26 @@ async function deleteBookImages(bookId) {
     STATE.imageURLCache.clear();
 }
 
-async function replaceBookImage(bookId, imageId, sourceFile) {
-    const file = await compressImageForStorage(sourceFile);
+async function saveBookImageCrop(bookId, imageId, crop, sourceWidth, sourceHeight) {
     const manifest = await loadImageManifest(bookId);
     const image = manifest.images.find(item => item.id === imageId);
     if (!image) throw new Error('Ảnh không còn tồn tại.');
+    image.coverCrop = {
+        x: crop.x / sourceWidth,
+        y: crop.y / sourceHeight,
+        width: crop.width / sourceWidth,
+        height: crop.height / sourceHeight
+    };
+    image.updatedAt = new Date().toISOString();
+    await saveImageManifest(bookId, manifest);
+    STATE.imageManifest = manifest;
+}
+
+async function replaceBookImage(bookId, imageId, sourceFile, { cropSquare, crop } = {}) {
+    const manifest = await loadImageManifest(bookId);
+    const image = manifest.images.find(item => item.id === imageId);
+    if (!image) throw new Error('Ảnh không còn tồn tại.');
+    const file = await compressImageForStorage(sourceFile, { cropSquare: cropSquare ?? false, crop });
     const formData = new FormData();
     formData.append('file', file, `${imageId}.webp`);
     const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images/${encodeURIComponent(imageId)}`, {
@@ -1647,7 +1677,8 @@ async function removeBookImage(bookId, imageId) {
 
 async function setBookCover(bookId, imageId) {
     const manifest = await loadImageManifest(bookId);
-    if (!manifest.images.some(item => item.id === imageId)) throw new Error('Ảnh không còn tồn tại.');
+    const image = manifest.images.find(item => item.id === imageId);
+    if (!image) throw new Error('Ảnh không còn tồn tại.');
     manifest.coverId = imageId;
     manifest.images.forEach(image => { image.role = image.id === imageId ? 'cover' : 'illustration'; });
     await saveImageManifest(bookId, manifest);
@@ -1657,10 +1688,11 @@ async function setBookCover(bookId, imageId) {
 async function renderImageManager() {
     const list = document.getElementById('image-manager-list');
     const title = document.getElementById('image-manager-book-title');
-    if (!list || !STATE.currentBookId) return;
-    const manifest = await loadImageManifest(STATE.currentBookId);
+    const bookId = imageManagerBookId || STATE.currentBookId;
+    if (!list || !bookId) return;
+    const manifest = await loadImageManifest(bookId);
     STATE.imageManifest = manifest;
-    if (title) title.textContent = `${STATE.currentBook?.title || 'Truyện hiện tại'} · ${manifest.images.length} ảnh`;
+    if (title) title.textContent = `${imageManagerBookTitle || STATE.currentBook?.title || 'Truyện hiện tại'} · ${manifest.images.length} ảnh`;
     list.innerHTML = '';
     if (!manifest.images.length) {
         list.innerHTML = '<div class="rounded-2xl border border-dashed border-white/10 p-8 text-center text-sm text-slate-500">Chưa có ảnh. Bấm “Thêm ảnh” để bắt đầu.</div>';
@@ -1672,7 +1704,7 @@ async function renderImageManager() {
         const thumb = document.createElement('img');
         thumb.className = 'w-16 h-16 rounded-xl object-cover bg-black/20 shrink-0';
         thumb.alt = image.alt || 'Ảnh minh họa';
-        thumb.src = await getImageURL(STATE.currentBookId, image) || '/static/icon.svg';
+        thumb.src = await getImageURL(bookId, image) || '/static/icon.svg';
         const info = document.createElement('div');
         info.className = 'min-w-0 flex-1';
         const name = document.createElement('div');
@@ -1683,12 +1715,17 @@ async function renderImageManager() {
         meta.textContent = `${Math.round((image.size || 0) / 1024)} KB${manifest.coverId === image.id ? ' · Cover' : ''}`;
         info.append(name, meta);
         const actions = document.createElement('div');
-        actions.className = 'flex items-center gap-2 shrink-0';
+        actions.className = 'flex flex-wrap justify-end items-center gap-2 shrink-0';
         const coverBtn = document.createElement('button');
         coverBtn.className = 'rounded-lg px-2.5 py-2 text-xs font-bold hover:bg-primary/15 hover:text-primary transition-colors';
         coverBtn.textContent = manifest.coverId === image.id ? 'Đang là bìa' : 'Đặt bìa';
         coverBtn.disabled = manifest.coverId === image.id;
-        coverBtn.onclick = async () => { await setBookCover(STATE.currentBookId, image.id); await renderImageManager(); await refreshLibrary(); };
+        coverBtn.onclick = async () => { await setBookCover(bookId, image.id); await renderImageManager(); await refreshLibrary(); };
+        const cropBtn = document.createElement('button');
+        cropBtn.className = 'rounded-lg px-2.5 py-2 text-xs font-bold hover:bg-primary/15 hover:text-primary transition-colors';
+        cropBtn.textContent = 'Crop bìa';
+        cropBtn.title = 'Chọn vùng artwork hiển thị trong Discovery';
+        cropBtn.onclick = () => openImageCropper(bookId, image);
         const replaceBtn = document.createElement('button');
         replaceBtn.className = 'rounded-lg px-2.5 py-2 text-xs font-bold hover:bg-primary/15 hover:text-primary transition-colors';
         replaceBtn.textContent = 'Thay';
@@ -1698,17 +1735,23 @@ async function renderImageManager() {
         deleteBtn.textContent = 'Xóa';
         deleteBtn.onclick = async () => {
             if (!confirm(`Xóa ảnh “${image.alt || 'minh họa'}”?`)) return;
-            await removeBookImage(STATE.currentBookId, image.id);
+            await removeBookImage(bookId, image.id);
             await renderImageManager();
             await refreshLibrary();
         };
-        actions.append(coverBtn, replaceBtn, deleteBtn);
+        actions.append(coverBtn, cropBtn, replaceBtn, deleteBtn);
         row.append(thumb, info, actions);
         list.appendChild(row);
     }
 }
 
-async function openImageManager() {
+async function openImageManager(bookId = STATE.currentBookId, bookTitle = STATE.currentBook?.title || '') {
+    if (!bookId) {
+        alert('Hãy mở một truyện trước.');
+        return;
+    }
+    imageManagerBookId = bookId;
+    imageManagerBookTitle = bookTitle;
     setModalVisibility('image-manager-modal', true);
     try { await renderImageManager(); } catch (err) {
         console.error('[Images] Manager load error:', err);
@@ -1925,7 +1968,7 @@ async function refreshLibrary() {
                 const discCard = document.createElement('div');
                 const isActive = bookId === STATE.currentBookId;
                 discCard.dataset.bookId = bookId;
-                discCard.className = `glass p-6 rounded-3xl flex flex-col gap-4 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 transition-all border group relative ${isActive ? 'border-primary bg-primary/10 ring-2 ring-primary/20 shadow-2xl shadow-primary/20' : 'border-white/5 border-t-white/10'}`;
+                discCard.className = `discovery-book-card glass rounded-3xl cursor-pointer hover:shadow-lg hover:shadow-primary/10 transition-all border group relative ${isActive ? 'border-primary bg-primary/10 ring-2 ring-primary/20 shadow-2xl shadow-primary/20' : 'border-white/5 border-t-white/10'}`;
                 discCard.dataset.title = removeVietnameseTones(data.title.toLowerCase()) + " " + data.title.toLowerCase();
 
                 // ── Hidden file input for merge ────────────────────────────────────
@@ -1939,7 +1982,7 @@ async function refreshLibrary() {
 
                 // ── Kebab (⋮) button ──────────────────────────────────────────────
                 const kebabBtn = document.createElement('button');
-                kebabBtn.className = 'icon-btn absolute top-4 right-4 w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:text-primary hover:bg-white/10 transition-all z-20';
+                kebabBtn.className = 'icon-btn absolute top-3 right-3 w-11 h-11 rounded-2xl flex items-center justify-center border border-white/20 bg-black/55 text-white shadow-lg shadow-black/30 backdrop-blur-md hover:scale-105 hover:border-primary/80 hover:bg-primary hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-all z-20';
                 kebabBtn.title = 'Tùy chọn';
                 kebabBtn.setAttribute('aria-label', `Tùy chọn cho ${data.title}`);
                 kebabBtn.innerHTML = '<i class="fas fa-ellipsis-v text-sm"></i>';
@@ -1972,6 +2015,15 @@ async function refreshLibrary() {
                     downloadTextBook(bookId, data.title);
                 };
 
+                const imagesBtn = document.createElement('button');
+                imagesBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-slate-300 font-bold';
+                imagesBtn.innerHTML = '<i class="fas fa-images w-4 text-center"></i> Quản lý ảnh & crop';
+                imagesBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    toggleKebabMenu(bookId, true);
+                    openImageManager(bookId, data.title);
+                };
+
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-red-500/10 hover:text-red-400 transition-colors text-slate-300 font-bold';
                 deleteBtn.innerHTML = '<i class="fas fa-trash-alt w-4 text-center"></i> Xóa truyện';
@@ -1982,30 +2034,29 @@ async function refreshLibrary() {
 
                 dropdown.appendChild(mergeBtn);
                 dropdown.appendChild(downloadTextBtn);
+                dropdown.appendChild(imagesBtn);
                 dropdown.appendChild(deleteBtn);
 
                 discCard.innerHTML = `
-                    <div class="absolute inset-0 bg-primary/0 group-hover:bg-primary/5 transition-colors duration-500"></div>
-                    <div class="flex items-center gap-4 relative z-10">
-                        <div class="w-12 h-12 rounded-xl overflow-hidden ${isActive ? 'bg-primary text-black shadow-lg shadow-primary/30' : 'bg-white/5 border border-white/10 text-primary'} flex items-center justify-center shrink-0">
-                            <img data-cover-image="${bookId}" class="hidden w-full h-full object-cover" alt="">
-                            <i class="fas ${isActive ? 'fa-volume-up' : 'fa-book'} text-xl"></i>
-                        </div>
-                        <div class="flex-1 min-w-0 pr-8">
-                            <h3 class="${isActive ? 'text-primary' : 'text-white'} font-bold truncate group-hover:text-primary transition-colors" title="${data.title}">${data.title}</h3>
-                            <div class="text-xs ${isActive ? 'text-primary/70' : 'text-slate-400'} flex items-center gap-2 mt-1">
+                    <div class="discovery-book-art ${isActive ? 'text-black' : 'text-primary'} flex items-center justify-center">
+                        <img data-cover-image="${bookId}" class="hidden" alt="Bìa truyện ${data.title}">
+                        <i class="fas ${isActive ? 'fa-volume-up' : 'fa-book'} relative z-10 text-3xl"></i>
+                    </div>
+                    <div class="discovery-book-content">
+                        <div class="min-w-0 pr-8">
+                            <h3 class="discovery-book-title ${isActive ? 'text-primary' : 'text-white'} font-bold truncate group-hover:text-primary transition-colors" title="${data.title}">${data.title}</h3>
+                            <div class="discovery-book-meta text-xs ${isActive ? 'text-primary/70' : 'text-slate-300'} flex items-center gap-2 mt-1">
                                 <i class="fas ${isActive ? 'fa-play' : 'fa-bookmark'} text-[10px]"></i> ${isActive ? 'Currently Reading' : 'Continue Reading'}
                             </div>
                         </div>
-                    </div>
-                    
-                    <div class="mt-auto relative z-10">
-                        <div class="flex justify-between items-center text-xs font-mono font-bold mb-2">
-                            <span class="text-slate-400">PROGRESS</span>
-                            <span class="text-primary">${progress}%</span>
-                        </div>
-                        <div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                            <div class="bg-gradient-to-r from-primary/50 to-primary h-full transition-all duration-500" style="width: ${progress}%"></div>
+                        <div class="discovery-book-progress mt-5">
+                            <div class="flex justify-between items-center text-xs font-mono font-bold mb-2">
+                                <span class="text-slate-300">PROGRESS</span>
+                                <span class="text-primary">${progress}%</span>
+                            </div>
+                            <div class="w-full bg-black/25 h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-gradient-to-r from-primary/50 to-primary h-full transition-all duration-500" style="width: ${progress}%"></div>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -2228,6 +2279,143 @@ async function mergeChapterFile(event, bookId, bookData) {
         APP_STATUS.error(error, 'Không thể mở bản xem trước nối chương.');
     }
 }
+
+let imageCropSession = null;
+
+function renderImageCropPreview() {
+    const preview = document.getElementById('image-crop-preview');
+    const stage = document.getElementById('image-crop-stage');
+    const zoomValue = document.getElementById('image-crop-zoom-value');
+    if (!imageCropSession || !preview || !stage) return;
+    const stageWidth = stage.clientWidth;
+    const stageHeight = stage.clientHeight;
+    const { width, height, scale, offsetX, offsetY, baseScale } = imageCropSession;
+    preview.style.width = `${width}px`;
+    preview.style.height = `${height}px`;
+    preview.style.transform = `translate(-50%, -50%) translate(${offsetX}px, ${offsetY}px) scale(${scale})`;
+    if (zoomValue) zoomValue.textContent = `${Math.round(scale / baseScale * 100)}%`;
+    imageCropSession.stageWidth = stageWidth;
+    imageCropSession.stageHeight = stageHeight;
+}
+
+function clampImageCropPosition() {
+    if (!imageCropSession) return;
+    const { width, height, scale, stageWidth, stageHeight } = imageCropSession;
+    const maxX = Math.max(0, (width * scale - stageWidth) / 2);
+    const maxY = Math.max(0, (height * scale - stageHeight) / 2);
+    imageCropSession.offsetX = Math.max(-maxX, Math.min(maxX, imageCropSession.offsetX));
+    imageCropSession.offsetY = Math.max(-maxY, Math.min(maxY, imageCropSession.offsetY));
+}
+
+function closeImageCropper() {
+    if (imageCropSession?.objectURL) URL.revokeObjectURL(imageCropSession.objectURL);
+    imageCropSession = null;
+    setModalVisibility('image-crop-modal', false);
+}
+
+async function openImageCropper(bookId, image) {
+    try {
+        const sourceURL = await getImageURL(bookId, image);
+        if (!sourceURL) throw new Error('Không thể tải ảnh để crop.');
+        const sourceBlob = await fetch(sourceURL).then(response => {
+            if (!response.ok) throw new Error(`Không thể tải ảnh (${response.status}).`);
+            return response.blob();
+        });
+        const sourceFile = new File([sourceBlob], `${image.alt || 'image'}.webp`, { type: sourceBlob.type || 'image/webp' });
+        const objectURL = URL.createObjectURL(sourceFile);
+        const preview = document.getElementById('image-crop-preview');
+        const stage = document.getElementById('image-crop-stage');
+        const zoom = document.getElementById('image-crop-zoom');
+        if (!preview || !stage || !zoom) throw new Error('Không thể mở công cụ crop.');
+
+        preview.src = objectURL;
+        await preview.decode();
+        setModalVisibility('image-crop-modal', true);
+        await new Promise(resolve => requestAnimationFrame(resolve));
+        const stageWidth = stage.clientWidth;
+        const stageHeight = stage.clientHeight;
+        const width = preview.naturalWidth;
+        const height = preview.naturalHeight;
+        const baseScale = Math.max(stageWidth / width, stageHeight / height);
+        imageCropSession = {
+            bookId, imageId: image.id, sourceFile, objectURL, width, height,
+            stageWidth, stageHeight, baseScale, scale: baseScale, offsetX: 0, offsetY: 0
+        };
+        zoom.value = '1';
+        renderImageCropPreview();
+    } catch (err) {
+        console.error('[Images] Crop open error:', err);
+        alert(`Không thể mở crop: ${err.message}`);
+    }
+}
+
+function getImageCropArea() {
+    if (!imageCropSession) return null;
+    const { width, height, scale, offsetX, offsetY, stageWidth, stageHeight } = imageCropSession;
+    const cropWidth = stageWidth / scale;
+    const cropHeight = stageHeight / scale;
+    return {
+        x: Math.max(0, Math.min(width - cropWidth, width / 2 - cropWidth / 2 - offsetX / scale)),
+        y: Math.max(0, Math.min(height - cropHeight, height / 2 - cropHeight / 2 - offsetY / scale)),
+        width: cropWidth,
+        height: cropHeight
+    };
+}
+
+const cropStage = document.getElementById('image-crop-stage');
+const cropZoom = document.getElementById('image-crop-zoom');
+let cropDrag = null;
+cropZoom?.addEventListener('input', () => {
+    if (!imageCropSession) return;
+    imageCropSession.scale = imageCropSession.baseScale * Number(cropZoom.value);
+    clampImageCropPosition();
+    renderImageCropPreview();
+});
+cropStage?.addEventListener('pointerdown', event => {
+    if (!imageCropSession) return;
+    cropDrag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, offsetX: imageCropSession.offsetX, offsetY: imageCropSession.offsetY };
+    cropStage.setPointerCapture(event.pointerId);
+});
+cropStage?.addEventListener('pointermove', event => {
+    if (!imageCropSession || !cropDrag || event.pointerId !== cropDrag.pointerId) return;
+    imageCropSession.offsetX = cropDrag.offsetX + event.clientX - cropDrag.x;
+    imageCropSession.offsetY = cropDrag.offsetY + event.clientY - cropDrag.y;
+    clampImageCropPosition();
+    renderImageCropPreview();
+});
+const endCropDrag = event => {
+    if (!cropDrag || event.pointerId !== cropDrag.pointerId) return;
+    cropDrag = null;
+};
+cropStage?.addEventListener('pointerup', endCropDrag);
+cropStage?.addEventListener('pointercancel', endCropDrag);
+document.querySelectorAll('[data-close-image-crop]').forEach(element => element.addEventListener('click', closeImageCropper));
+document.getElementById('close-image-crop-btn')?.addEventListener('click', closeImageCropper);
+document.getElementById('cancel-image-crop-btn')?.addEventListener('click', closeImageCropper);
+document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && imageCropSession) closeImageCropper();
+});
+document.getElementById('save-image-crop-btn')?.addEventListener('click', async event => {
+    if (!imageCropSession) return;
+    const button = event.currentTarget;
+    const session = imageCropSession;
+    const crop = getImageCropArea();
+    try {
+        button.disabled = true;
+        button.textContent = 'Đang lưu…';
+        await saveBookImageCrop(session.bookId, session.imageId, crop, session.width, session.height);
+        closeImageCropper();
+        await renderImageManager();
+        await refreshLibrary();
+        APP_STATUS.toast('Đã lưu crop ảnh.', 'success');
+    } catch (err) {
+        console.error('[Images] Crop save error:', err);
+        alert(`Không thể lưu crop: ${err.message}`);
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Lưu crop';
+    }
+});
 
 async function confirmMergeChapters() {
     if (!mergeSession || !STATE.user) return;
@@ -2674,34 +2862,34 @@ function updateLibraryHighlight() {
     discoveryCards.forEach(card => {
         const isActive = card.dataset.bookId === STATE.currentBookId;
         const titleH3 = card.querySelector('h3');
-        const iconDiv = card.querySelector('.shrink-0');
+        const iconDiv = card.querySelector('.discovery-book-art');
         const statusDiv = card.querySelector('.text-xs');
 
         if (isActive) {
-            card.className = `glass p-6 rounded-3xl flex flex-col gap-4 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 transition-all border border-primary bg-primary/10 ring-2 ring-primary/20 shadow-2xl shadow-primary/20 group relative`;
+            card.className = `discovery-book-card glass rounded-3xl cursor-pointer hover:shadow-lg hover:shadow-primary/10 transition-all border border-primary bg-primary/10 ring-2 ring-primary/20 shadow-2xl shadow-primary/20 group relative`;
             if (titleH3) {
                 titleH3.classList.add('text-primary');
                 titleH3.classList.remove('text-white');
             }
             if (iconDiv) {
-                iconDiv.className = `w-12 h-12 rounded-xl bg-primary text-black shadow-lg shadow-primary/30 flex items-center justify-center shrink-0`;
+                iconDiv.className = `discovery-book-art text-black flex items-center justify-center`;
                 const fallbackIcon = iconDiv.querySelector('i');
-                if (fallbackIcon) fallbackIcon.className = 'fas fa-volume-up text-xl';
+                if (fallbackIcon) fallbackIcon.className = 'fas fa-volume-up relative z-10 text-3xl';
             }
             if (statusDiv) {
                 statusDiv.className = `text-xs text-primary/70 flex items-center gap-2 mt-1`;
                 statusDiv.innerHTML = '<i class="fas fa-play text-[10px]"></i> Currently Reading';
             }
         } else {
-            card.className = `glass p-6 rounded-3xl flex flex-col gap-4 cursor-pointer hover:-translate-y-1 hover:shadow-lg hover:shadow-primary/10 transition-all border border-white/5 border-t-white/10 group relative`;
+            card.className = `discovery-book-card glass rounded-3xl cursor-pointer hover:shadow-lg hover:shadow-primary/10 transition-all border border-white/5 border-t-white/10 group relative`;
             if (titleH3) {
                 titleH3.classList.remove('text-primary');
                 titleH3.classList.add('text-white');
             }
             if (iconDiv) {
-                iconDiv.className = `w-12 h-12 rounded-xl bg-white/5 border border-white/10 text-primary flex items-center justify-center shrink-0`;
+                iconDiv.className = `discovery-book-art text-primary flex items-center justify-center`;
                 const fallbackIcon = iconDiv.querySelector('i');
-                if (fallbackIcon) fallbackIcon.className = 'fas fa-book text-xl';
+                if (fallbackIcon) fallbackIcon.className = 'fas fa-book relative z-10 text-3xl';
             }
             if (statusDiv) {
                 statusDiv.className = `text-xs text-slate-400 flex items-center gap-2 mt-1`;

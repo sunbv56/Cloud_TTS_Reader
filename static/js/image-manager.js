@@ -33,7 +33,7 @@ async function decodeImage(file) {
     }
 }
 
-export async function compressImageForStorage(file) {
+export async function compressImageForStorage(file, { cropSquare = false, crop = null } = {}) {
     const extension = (file?.name || '').toLowerCase().match(/\.[^.]+$/)?.[0];
     const extensionAllowed = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif', '.image'].includes(extension);
     if (!file || (!SUPPORTED_TYPES.has((file.type || '').toLowerCase()) && !extensionAllowed)) {
@@ -49,8 +49,26 @@ export async function compressImageForStorage(file) {
     const sourceHeight = image.height || image.naturalHeight;
     if (!sourceWidth || !sourceHeight) throw new Error('Ảnh không có kích thước hợp lệ.');
 
-    let width = sourceWidth;
-    let height = sourceHeight;
+    const requestedCrop = crop && Number.isFinite(crop.x) && Number.isFinite(crop.y)
+        && Number.isFinite(crop.width) && Number.isFinite(crop.height)
+        ? crop
+        : null;
+    const cropWidth = requestedCrop
+        ? Math.max(1, Math.min(Math.round(requestedCrop.width), sourceWidth))
+        : cropSquare ? Math.min(sourceWidth, sourceHeight) : null;
+    const cropHeight = requestedCrop
+        ? Math.max(1, Math.min(Math.round(requestedCrop.height), sourceHeight))
+        : cropSquare ? cropWidth : null;
+    const cropX = requestedCrop
+        ? Math.max(0, Math.min(Math.round(requestedCrop.x), sourceWidth - cropWidth))
+        : cropSquare ? Math.max(0, Math.round((sourceWidth - cropWidth) / 2)) : 0;
+    // Covers are anchored at the beginning of an illustration, matching the
+    // Discovery card's top-aligned crop instead of cutting off its title art.
+    const cropY = requestedCrop
+        ? Math.max(0, Math.min(Math.round(requestedCrop.y), sourceHeight - cropHeight))
+        : 0;
+    let width = cropWidth || sourceWidth;
+    let height = cropHeight || sourceHeight;
     const fit = Math.min(1, IMAGE_MAX_DIMENSION / Math.max(width, height));
     width = Math.max(1, Math.round(width * fit));
     height = Math.max(1, Math.round(height * fit));
@@ -61,7 +79,11 @@ export async function compressImageForStorage(file) {
         canvas.width = width;
         canvas.height = height;
         const ctx = canvas.getContext('2d', { alpha: true });
-        ctx.drawImage(image, 0, 0, width, height);
+        if (cropSquare || requestedCrop) {
+            ctx.drawImage(image, cropX, cropY, cropWidth, cropHeight, 0, 0, width, height);
+        } else {
+            ctx.drawImage(image, 0, 0, width, height);
+        }
 
         let low = 0.42;
         let high = 0.86;

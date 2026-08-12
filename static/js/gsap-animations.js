@@ -26,8 +26,19 @@
         ].map(id => document.getElementById(id)).filter(Boolean);
         const visibility = new WeakMap();
         const animatedChildren = new WeakSet();
+        const spotlightCards = new WeakSet();
+        let spotlightEnabled = false;
 
         gsap.defaults({ overwrite: 'auto' });
+
+        const motionMedia = gsap.matchMedia();
+        motionMedia.add({
+            desktopPointer: '(hover: hover) and (pointer: fine)',
+            reduceMotion: '(prefers-reduced-motion: reduce)'
+        }, context => {
+            spotlightEnabled = context.conditions.desktopPointer && !context.conditions.reduceMotion;
+            return () => { spotlightEnabled = false; };
+        });
 
         function isVisible(element) {
             if (!element) return false;
@@ -105,6 +116,67 @@
                 { autoAlpha: 0, y: 10 },
                 { autoAlpha: 1, y: 0, duration: 0.26, ease, stagger: 0.045 }
             );
+            if (container.id === 'discovery-grid') items.forEach(wireDiscoverySpotlight);
+        }
+
+        function wireDiscoverySpotlight(card) {
+            if (spotlightCards.has(card)) return;
+            spotlightCards.add(card);
+
+            const grid = document.getElementById('discovery-grid');
+            const art = card.querySelector('.discovery-book-art');
+            const image = art?.querySelector('img');
+            const content = card.querySelector('.discovery-book-content');
+            const meta = card.querySelector('.discovery-book-meta');
+            const progress = card.querySelector('.discovery-book-progress');
+
+            const restore = () => {
+                if (!grid) return;
+                grid.classList.remove('is-spotlight-active');
+                const cards = Array.from(grid.querySelectorAll('.discovery-book-card'));
+                cards.forEach(item => item.classList.remove('is-spotlit'));
+                gsap.to(cards, {
+                    scale: 1, y: 0, autoAlpha: 1,
+                    filter: 'saturate(1) brightness(1)',
+                    duration: 0.24, ease: 'power2.out', overwrite: 'auto'
+                });
+                gsap.to(art, {
+                    y: 0, scale: 1, clipPath: 'inset(0 0 22% 0)',
+                    duration: 0.28, ease: 'power3.out', overwrite: 'auto'
+                });
+                gsap.to(image, { scale: 1, duration: 0.3, ease: 'power3.out', overwrite: 'auto' });
+                gsap.to([content, meta, progress].filter(Boolean), {
+                    y: 0, autoAlpha: 1, duration: 0.22, ease: 'power2.out', overwrite: 'auto'
+                });
+            };
+
+            card.addEventListener('pointerenter', () => {
+                if (!spotlightEnabled || !grid) return;
+                const cards = Array.from(grid.querySelectorAll('.discovery-book-card'));
+                grid.classList.add('is-spotlight-active');
+                cards.forEach(item => item.classList.toggle('is-spotlit', item === card));
+                gsap.to(cards.filter(item => item !== card), {
+                    scale: 0.97, autoAlpha: 0.46,
+                    filter: 'saturate(0.48) brightness(0.68)',
+                    duration: 0.26, ease: 'power2.out', overwrite: 'auto'
+                });
+                gsap.to(card, {
+                    y: -9, scale: 1.045, autoAlpha: 1,
+                    filter: 'saturate(1.1) brightness(1.06)',
+                    duration: 0.34, ease: 'power3.out', overwrite: 'auto'
+                });
+                gsap.to(art, {
+                    y: -7, scale: 1, clipPath: 'inset(0 0 0% 0)',
+                    duration: 0.42, ease: 'power3.out', overwrite: 'auto'
+                });
+                gsap.to(image, { scale: 1.015, duration: 0.42, ease: 'power3.out', overwrite: 'auto' });
+                gsap.to(content, { y: -7, duration: 0.3, ease: 'power3.out', overwrite: 'auto' });
+                gsap.fromTo([meta, progress].filter(Boolean),
+                    { autoAlpha: 0.68, y: 7 },
+                    { autoAlpha: 1, y: 0, duration: 0.28, stagger: 0.035, ease: 'power2.out', overwrite: 'auto' }
+                );
+            });
+            card.addEventListener('pointerleave', restore);
         }
 
         const listObserver = new MutationObserver(records => {

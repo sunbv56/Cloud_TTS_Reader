@@ -676,6 +676,102 @@
         #discovery-mode {
             padding-bottom: 5.5rem;
         }
+        .discovery-book-card {
+            aspect-ratio: 1;
+            overflow: hidden;
+            isolation: isolate;
+            transform-origin: center center;
+            will-change: transform, filter;
+            background: linear-gradient(
+                160deg,
+                color-mix(in srgb, var(--theme-primary, #00E5FF) 23%, var(--theme-surface, #131b2e)),
+                color-mix(in srgb, var(--theme-primary, #00E5FF) 9%, #070b14) 58%,
+                var(--theme-surface, #131b2e)
+            );
+        }
+        .discovery-book-art {
+            position: absolute;
+            inset: 0 0 auto;
+            height: 74%;
+            overflow: hidden;
+            clip-path: inset(0 0 22% 0);
+            background: color-mix(in srgb, var(--theme-primary, #00E5FF) 22%, #101827);
+            will-change: clip-path, transform;
+        }
+        .discovery-book-art::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(
+                180deg,
+                transparent 24%,
+                color-mix(in srgb, var(--theme-primary, #00E5FF) 38%, transparent) 70%,
+                var(--theme-surface, #131b2e) 100%
+            );
+            pointer-events: none;
+        }
+        .discovery-book-art img {
+            height: 100%;
+            width: 100%;
+            object-fit: cover;
+            object-position: top;
+        }
+        .discovery-book-content {
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            padding: 1.25rem;
+            background: linear-gradient(
+                180deg,
+                transparent 28%,
+                rgba(4, 7, 14, 0.16) 44%,
+                rgba(4, 7, 14, 0.78) 67%,
+                rgba(4, 7, 14, 0.96) 100%
+            );
+        }
+        .discovery-book-title,
+        .discovery-book-meta,
+        .discovery-book-progress {
+            transition: color 0.24s ease, text-shadow 0.24s ease;
+        }
+        .discovery-book-card .discovery-book-title {
+            color: #fff !important;
+            line-height: 1.35;
+            text-shadow: 0 2px 12px rgba(0, 0, 0, 0.9);
+        }
+        .discovery-book-card .discovery-book-meta {
+            color: rgba(255, 255, 255, 0.88) !important;
+            text-shadow: 0 1px 8px rgba(0, 0, 0, 0.85);
+        }
+        .discovery-book-card .discovery-book-progress {
+            padding-top: 0.75rem;
+            border-top: 1px solid rgba(255, 255, 255, 0.14);
+        }
+        .discovery-book-card.is-spotlit .discovery-book-title {
+            white-space: normal;
+            overflow: visible;
+            text-overflow: clip;
+            color: white;
+            text-shadow: 0 2px 16px rgba(0, 0, 0, 0.7);
+        }
+        .discovery-book-card.is-spotlit .discovery-book-meta {
+            color: color-mix(in srgb, white 82%, var(--theme-primary, #00E5FF));
+        }
+        .discovery-book-card.is-spotlit .discovery-book-progress {
+            filter: brightness(1.15);
+        }
+        @media (hover: hover) and (pointer: fine) {
+            #discovery-grid.is-spotlight-active {
+                isolation: isolate;
+            }
+        }
+        .discovery-book-card:focus-visible {
+            outline: 2px solid var(--theme-primary, #00E5FF);
+            outline-offset: 3px;
+        }
         #media-player-shell.player-discovery-dock #media-player {
             width: min(100%, 42rem);
             margin: 0 0 0 auto;
@@ -1750,7 +1846,7 @@ Nội dung chương hai...</pre>
             <p id="image-manager-book-title" class="text-sm text-slate-400 mt-1 mb-4"></p>
             <div id="image-manager-list" class="flex-1 overflow-y-auto space-y-3 pr-1 rounded-2xl border border-dashed border-white/10 p-2" title="Có thể kéo-thả hoặc dán ảnh tại đây"></div>
             <div class="mt-5 flex items-center justify-between gap-3">
-                <span class="text-xs text-slate-500">Kéo-thả hoặc Ctrl+V để dán ảnh · tự chuyển WebP, tối đa 150 KB.</span>
+                <span class="text-xs text-slate-500">Chọn “Crop vuông” để tự căn bìa · tự chuyển WebP, tối đa 150 KB.</span>
                 <button id="image-manager-add-btn" type="button" class="shrink-0 rounded-xl bg-primary text-black px-4 py-2 text-sm font-black hover:scale-105 transition-all"><i class="fas fa-plus mr-2"></i>Thêm ảnh</button>
             </div>
         </div>
@@ -2103,6 +2199,28 @@ Nội dung chương hai...</pre>
             <div class="flex justify-end gap-3 border-t border-white/10 bg-white/5 p-5">
                 <button id="cancel-merge-btn" class="rounded-xl px-5 py-2 text-slate-300 hover:bg-white/10">Hủy</button>
                 <button id="confirm-merge-btn" class="btn-primary">Nối các chương đã chọn</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="image-crop-modal" class="fixed inset-0 z-[200] hidden items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="image-crop-title">
+        <div class="absolute inset-0 bg-black/75 backdrop-blur-md" data-close-image-crop></div>
+        <div class="glass relative flex w-full max-w-xl flex-col rounded-3xl p-5 sm:p-6">
+            <button id="close-image-crop-btn" type="button" class="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-xl text-slate-400 hover:bg-white/10 hover:text-white" aria-label="Đóng crop ảnh"><i class="fas fa-times"></i></button>
+            <h2 id="image-crop-title" class="pr-12 text-xl font-black text-white">Crop ảnh bìa</h2>
+            <p class="mt-1 text-sm leading-6 text-slate-400">Kéo ảnh để chọn đúng vùng artwork của Discovery. Khung này khớp tỷ lệ hiển thị, không phải toàn bộ card vuông.</p>
+            <div id="image-crop-stage" class="relative mx-auto mt-5 aspect-[1.35/1] w-full max-w-md touch-none overflow-hidden rounded-2xl border-2 border-primary/70 bg-black/50 shadow-[0_0_0_999px_rgba(0,0,0,0.18)]" aria-label="Vùng crop ảnh">
+                <img id="image-crop-preview" class="pointer-events-none absolute left-1/2 top-1/2 max-w-none select-none" alt="Xem trước vùng crop">
+                <div class="pointer-events-none absolute inset-0 border-[3px] border-white/30"></div>
+                <span class="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/55 px-3 py-1 text-[11px] font-bold text-white">Tỷ lệ artwork Discovery · kéo để căn khung</span>
+            </div>
+            <div class="mt-5">
+                <div class="mb-2 flex items-center justify-between text-xs font-bold text-slate-400"><label for="image-crop-zoom">Zoom</label><output id="image-crop-zoom-value">100%</output></div>
+                <input id="image-crop-zoom" type="range" min="1" max="3" step="0.01" value="1" class="h-2 w-full cursor-pointer accent-primary" aria-label="Phóng to hoặc thu nhỏ ảnh crop">
+            </div>
+            <div class="mt-6 flex justify-end gap-3">
+                <button id="cancel-image-crop-btn" type="button" class="min-h-11 rounded-xl border border-white/10 px-4 text-sm font-bold text-slate-300 hover:bg-white/10">Hủy</button>
+                <button id="save-image-crop-btn" type="button" class="min-h-11 rounded-xl bg-primary px-5 text-sm font-black text-black hover:scale-105 active:scale-95">Lưu crop</button>
             </div>
         </div>
     </div>
