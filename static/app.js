@@ -418,35 +418,80 @@ updateNetworkStatus();
 startFirebase();
 
 // --- Utility Functions ---
-function toggleDiscoveryMode(isActive) {
+let discoveryPlayerWasMinimized = false;
+let discoveryPlayerHasDock = false;
+
+function toggleDiscoveryMode(isActive, options = {}) {
     const discoveryMode = document.getElementById('discovery-mode');
     const readerContainer = document.getElementById('reader-container');
     const sidebarContainer = document.getElementById('sidebar-container');
+    const playerShell = document.getElementById('media-player-shell');
+    const mediaPlayer = document.getElementById('media-player');
+    const playerInfoLayer = document.getElementById('player-info-layer');
+    const main = document.querySelector('main');
 
     if (isActive) {
-        // [MiniPlayer] Keep the TTS session alive while the user browses Discovery
-        // with an active book — the floating widget takes over playback controls.
-        // Opening another book still resets the engine (loadBook calls resetAudioEngine).
-        const keepAlive = !!(STATE.currentBook && (STATE.isPlaying || STATE.chunkTimings.length > 0));
-        if (!keepAlive) {
+        // Keep the current audio/session context while browsing. Opening a
+        // different book still resets it through loadBook as before.
+        const hasReaderContext = !!STATE.currentBook;
+        if (!hasReaderContext) {
             resetAudioEngine();
         }
+
+        if (hasReaderContext && playerShell && mediaPlayer && main) {
+            if (!discoveryPlayerHasDock) {
+                discoveryPlayerWasMinimized = mediaPlayer.classList.contains('minimized-player');
+                discoveryPlayerHasDock = true;
+            }
+            main.appendChild(playerShell);
+            playerShell.classList.add('player-discovery-dock');
+            // Discovery uses the same player as a compact dock.
+            toggleMinimize(true);
+            playerInfoLayer?.setAttribute('tabindex', '0');
+            playerInfoLayer?.setAttribute('aria-label', 'Bấm để quay lại trình đọc');
+        }
+
+        // PiP belongs to Reader. Close its floating surface before the player
+        // becomes Discovery's return dock.
+        if (window.MiniPlayerWidget) window.MiniPlayerWidget.onDiscoveryEnter();
 
         if (discoveryMode) discoveryMode.classList.remove('hidden');
         if (sidebarContainer) sidebarContainer.classList.add('hidden');
         if (readerContainer) readerContainer.classList.add('hidden');
         // Homepage không được litemode
         document.body.classList.remove('lite-mode');
-
-        if (window.MiniPlayerWidget) window.MiniPlayerWidget.onDiscoveryEnter(keepAlive);
     } else {
+        const wasReturningFromDiscovery = discoveryPlayerHasDock && options.restoreFocus !== false;
         if (discoveryMode) discoveryMode.classList.add('hidden');
         if (sidebarContainer) sidebarContainer.classList.remove('hidden');
+
+        if (playerShell && readerContainer) {
+            readerContainer.appendChild(playerShell);
+            playerShell.classList.remove('player-discovery-dock');
+            playerInfoLayer?.removeAttribute('tabindex');
+            playerInfoLayer?.removeAttribute('aria-label');
+            if (discoveryPlayerHasDock) {
+                toggleMinimize(discoveryPlayerWasMinimized);
+            }
+        }
         if (readerContainer) readerContainer.classList.remove('hidden');
         // Restore lite-mode if enabled in settings
         if (STATE.isLiteMode) document.body.classList.add('lite-mode');
 
+        discoveryPlayerHasDock = false;
         if (window.MiniPlayerWidget) window.MiniPlayerWidget.onDiscoveryExit();
+        // Re-establish spatial context at the exact sentence/chunk that was
+        // playing before Discovery opened.
+        if (wasReturningFromDiscovery) {
+            requestAnimationFrame(() => {
+                if (!STATE.currentBook) return;
+                const current = document.getElementById(`sentence-${STATE.currentSentenceIndex}`);
+                if (current) {
+                    highlightSentence(STATE.currentSentenceIndex);
+                    current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+            });
+        }
     }
 }
 
@@ -458,6 +503,25 @@ if (logoBtn) {
         toggleDiscoveryMode(true);
     };
 }
+
+// In Discovery, the whole dock is a return target. The play button remains
+// the only exception so playback can be controlled without leaving the page.
+const discoveryPlayer = document.getElementById('media-player');
+const discoveryPlayerShell = document.getElementById('media-player-shell');
+const discoveryPlayerInfo = document.getElementById('player-info-layer');
+discoveryPlayer?.addEventListener('click', (event) => {
+    if (!discoveryPlayerShell?.classList.contains('player-discovery-dock')) return;
+    if (event.target.closest('#play-btn')) return;
+    toggleDiscoveryMode(false);
+});
+discoveryPlayerInfo?.addEventListener('keydown', (event) => {
+    if (!discoveryPlayerShell?.classList.contains('player-discovery-dock')) return;
+    if (event.target.closest('button')) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        toggleDiscoveryMode(false);
+    }
+});
 
 const discoverySearch = document.getElementById('discovery-search');
 if (discoverySearch) {
@@ -1805,8 +1869,9 @@ async function refreshLibrary() {
 
             // ── Kebab (⋮) button ──────────────────────────────────────────────
             const kebabBtn = document.createElement('button');
-            kebabBtn.className = 'absolute top-1/2 -translate-y-1/2 right-1.5 w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:text-primary hover:bg-white/10 transition-all opacity-0 group-hover/item:opacity-100 z-10';
+            kebabBtn.className = 'icon-btn absolute top-1/2 -translate-y-1/2 right-1.5 w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-primary hover:bg-white/10 transition-all opacity-0 group-hover/item:opacity-100 z-10';
             kebabBtn.title = 'Tùy chọn';
+            kebabBtn.setAttribute('aria-label', `Tùy chọn cho ${data.title}`);
             kebabBtn.innerHTML = '<i class="fas fa-ellipsis-v text-xs"></i>';
             kebabBtn.onclick = (e) => {
                 e.stopPropagation();
@@ -1874,8 +1939,9 @@ async function refreshLibrary() {
 
                 // ── Kebab (⋮) button ──────────────────────────────────────────────
                 const kebabBtn = document.createElement('button');
-                kebabBtn.className = 'absolute top-4 right-4 w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:text-primary hover:bg-white/10 transition-all z-20';
+                kebabBtn.className = 'icon-btn absolute top-4 right-4 w-10 h-10 rounded-xl flex items-center justify-center text-slate-500 hover:text-primary hover:bg-white/10 transition-all z-20';
                 kebabBtn.title = 'Tùy chọn';
+                kebabBtn.setAttribute('aria-label', `Tùy chọn cho ${data.title}`);
                 kebabBtn.innerHTML = '<i class="fas fa-ellipsis-v text-sm"></i>';
                 kebabBtn.onclick = (e) => {
                     e.stopPropagation();
@@ -2436,7 +2502,7 @@ async function loadBook(bookData, bookId, filename) {
     await resetAudioEngine();
 
     toggleSidebar(false);
-    toggleDiscoveryMode(false);
+    toggleDiscoveryMode(false, { restoreFocus: false });
 
     await OFFLINE_MANAGER.clearCache();
 
@@ -2752,15 +2818,16 @@ async function renderChapter(index) {
     await safeViewTransition(() => {
         textContainer.innerHTML = '';
         chapterFigures.forEach(figure => textContainer.appendChild(figure));
+        const readerCopy = document.createElement('div');
+        readerCopy.className = 'reader-copy';
+        textContainer.appendChild(readerCopy);
         chapter.sentences.forEach((text, i) => {
             const span = document.createElement('span');
             span.id = `sentence-${i}`;
             span.className = 'chunk-text';
             span.innerText = text;
             span.onclick = () => playFromSentence(i);
-            textContainer.appendChild(span);
-            textContainer.appendChild(document.createElement('br'));
-            textContainer.appendChild(document.createElement('br'));
+            readerCopy.appendChild(span);
         });
 
         textContainer.scrollTop = 0;
@@ -2843,9 +2910,10 @@ function renderTOC() {
         titleSpan.title = chap.title;
 
         const editBtn = document.createElement('button');
-        editBtn.className = `ml-auto w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-primary hover:bg-white/10 transition-all ${isSelectMode ? 'hidden' : ''}`;
+        editBtn.className = `icon-btn ml-auto w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-primary hover:bg-white/10 transition-all ${isSelectMode ? 'hidden' : ''}`;
         editBtn.innerHTML = '<i class="fas fa-pen text-xs"></i>';
         editBtn.title = 'Edit Chapter';
+        editBtn.setAttribute('aria-label', `Sửa chương ${i + 1}`);
         editBtn.onclick = (e) => {
             e.stopPropagation();
             openEditChapterModal(i);
@@ -3555,7 +3623,10 @@ function highlightSentence(index) {
 async function togglePlayback() {
     if (!STATE.currentBook) return;
 
-    if (document.getElementById('media-player').classList.contains('minimized-player')) {
+    const mediaPlayer = document.getElementById('media-player');
+    const playerShell = document.getElementById('media-player-shell');
+    if (mediaPlayer.classList.contains('minimized-player') &&
+        !playerShell.classList.contains('player-discovery-dock')) {
         toggleMinimize(false);
     }
 
@@ -3589,6 +3660,7 @@ audio.onplay = async () => {
 
     playBtn.innerHTML = '<i class="fas fa-pause"></i>';
     document.getElementById('status-indicator').innerText = "Streaming";
+    updatePipUI();
 
     if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'playing';
@@ -3616,6 +3688,7 @@ audio.onpause = () => {
     STATE.pauseTimeoutHandled = false;
     playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
     document.getElementById('status-indicator').innerText = "Paused";
+    updatePipUI();
     if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused';
     }
@@ -3880,6 +3953,8 @@ function applyTypographySettings() {
 // --- UI Interactions ---
 document.getElementById('prev-btn').onclick = () => playPrevChapter();
 document.getElementById('next-btn').onclick = () => playNextChapter();
+document.getElementById('prev-chunk-btn').onclick = () => playPrevChunk();
+document.getElementById('next-chunk-btn').onclick = () => playNextChunk();
 
 document.getElementById('toc-btn').onclick = () => {
     // Tự động thu gọn trình phát nếu đang mở
@@ -3929,6 +4004,9 @@ function toggleMinimize(isMinimized) {
     minimizeBtn.innerHTML = isMinimized ?
         '<i class="fas fa-chevron-up text-[10px]"></i>' :
         '<i class="fas fa-chevron-down text-[10px]"></i>';
+    minimizeBtn.setAttribute('aria-expanded', String(!isMinimized));
+    minimizeBtn.setAttribute('aria-label', isMinimized ? 'Mở rộng trình phát' : 'Thu gọn thành PiP');
+    minimizeBtn.title = isMinimized ? 'Mở rộng trình phát' : 'Thu gọn thành PiP';
 
     localStorage.setItem('player-minimized', isMinimized);
 }
@@ -4047,6 +4125,38 @@ function updateUI() {
         authorEl.innerText = STATE.currentBook.title;
         authorEl.title = STATE.currentBook.title;
     }
+    updatePipUI();
+}
+
+function updatePipUI() {
+    const prevChapterBtn = document.getElementById('prev-btn');
+    const nextChapterBtn = document.getElementById('next-btn');
+    const prevChunkBtn = document.getElementById('prev-chunk-btn');
+    const nextChunkBtn = document.getElementById('next-chunk-btn');
+    if (!prevChapterBtn || !nextChapterBtn || !prevChunkBtn || !nextChunkBtn) return;
+
+    if (!STATE.currentBook) {
+        [prevChapterBtn, nextChapterBtn, prevChunkBtn, nextChunkBtn].forEach(btn => { btn.disabled = true; });
+        return;
+    }
+
+    const chapters = STATE.currentBook.chapters || [];
+    const chapter = chapters[STATE.currentChapterIndex] || {};
+    const sentenceCount = chapter.count || chapter.sentences?.length || 0;
+    const currentIndex = Math.max(0, STATE.currentSentenceIndex || 0);
+
+    prevChapterBtn.disabled = STATE.currentChapterIndex <= 0;
+    nextChapterBtn.disabled = STATE.currentChapterIndex >= chapters.length - 1;
+    prevChunkBtn.disabled = currentIndex <= 0;
+    nextChunkBtn.disabled = sentenceCount === 0 || currentIndex >= sentenceCount - 1;
+
+    const sentenceEl = document.getElementById('player-sentence');
+    if (sentenceEl) {
+        const sentence = chapter.sentences?.[currentIndex];
+        const text = typeof sentence === 'string' ? sentence : (sentence?.text || '');
+        sentenceEl.innerText = text || 'Chưa có câu đang đọc';
+        sentenceEl.title = text;
+    }
 }
 
 function applySettingsToUI() {
@@ -4100,7 +4210,8 @@ async function playNextChunk() {
     const curTimingIdx = STATE.chunkTimings.findIndex(
         t => t.chapterIndex === curChap && t.index === curSent
     );
-    if (curTimingIdx !== -1 && curTimingIdx < STATE.chunkTimings.length - 1) {
+    if (curTimingIdx !== -1 && curTimingIdx < STATE.chunkTimings.length - 1
+        && STATE.chunkTimings[curTimingIdx + 1].chapterIndex === curChap) {
         const nextChunk = STATE.chunkTimings[curTimingIdx + 1];
         audio.currentTime = nextChunk.startTime + 0.01;
         if (audio.paused) audio.play();
@@ -4108,9 +4219,6 @@ async function playNextChunk() {
         const sentenceCount = chapters[curChap]?.sentences?.length ?? 0;
         if (sentenceCount > 0 && curSent < sentenceCount - 1) {
             await playFromSentence(curSent + 1);
-        } else if (curChap < chapters.length - 1) {
-            await renderChapter(curChap + 1);
-            await playFromSentence(0);
         }
     }
 }
@@ -4124,18 +4232,13 @@ async function playPrevChunk() {
     const curTimingIdx = STATE.chunkTimings.findIndex(
         t => t.chapterIndex === curChap && t.index === curSent
     );
-    if (curTimingIdx > 0) {
+    if (curTimingIdx > 0 && STATE.chunkTimings[curTimingIdx - 1].chapterIndex === curChap) {
         const prevChunk = STATE.chunkTimings[curTimingIdx - 1];
         audio.currentTime = prevChunk.startTime + 0.01;
         if (audio.paused) audio.play();
     } else {
         if (curSent > 0) {
             await playFromSentence(curSent - 1);
-        } else if (curChap > 0) {
-            const prevChap = curChap - 1;
-            await renderChapter(prevChap);
-            const prevSentCount = STATE.currentBook.chapters[prevChap]?.sentences?.length ?? 1;
-            await playFromSentence(Math.max(0, prevSentCount - 1));
         }
     }
 }
@@ -4929,9 +5032,8 @@ document.querySelectorAll('.theme-swatch').forEach(sw => {
 })();
 
 // ============================================================
-// [MiniPlayer] Bridge for static/js/mini-player-widget.js
-// The widget lives outside this module, so expose the few
-// pieces of state/behavior it mirrors. It owns no audio logic.
+// [MiniPlayer] Bridge for static/js/mini-player-widget.js.
+// PiP is injected only into the Reader player; Discovery explicitly closes it.
 // ============================================================
 window.MPW_BRIDGE = {
     get STATE() { return STATE; },
@@ -4945,7 +5047,7 @@ window.MPW_BRIDGE = {
     playNextChapter,
     playPrevChapter,
 };
+
 // Apply initial settings to UI on startup
 applySettingsToUI();
-
 document.dispatchEvent(new CustomEvent('mpw-bridge-ready'));

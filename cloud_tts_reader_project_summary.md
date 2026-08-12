@@ -477,7 +477,7 @@ Cloud_TTS_Reader/
 
 - **Platform**: Fly.io (Docker-based)
 - **Resources**: 256MB RAM, 1 shared vCPU
-- **Port**: 8000 (internal), HTTPS enforced
+- **Port**: 8008 (internal), HTTPS enforced
 - **Auto-scaling**: Stop when idle, auto-start on request
 - **Docker base**: `python:3.10-slim` + `ffmpeg`
 

@@ -1,13 +1,13 @@
-const CACHE_NAME = 'cloud-tts-v5-pip-adaptive';
+const CACHE_NAME = 'cloud-tts-v7-reader-pip';
 const ASSETS = [
     '/',
     '/static/index.html',
     '/static/app.js',
+    '/static/js/mini-player-widget.js',
+    '/static/css/mini-player.css',
     '/static/js/image-manager.js',
     '/static/icon.svg',
-    '/static/manifest.json',
-    '/static/js/mini-player-widget.js',
-    '/static/css/mini-player.css'
+    '/static/manifest.json'
 ];
 
 self.addEventListener('install', (event) => {

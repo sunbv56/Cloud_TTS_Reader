@@ -56,12 +56,18 @@
                     <span class="mpw-title" id="mpw-title">—</span>
                     <span class="mpw-subtitle" id="mpw-subtitle">—</span>
                 </div>
-                <button class="mpw-btn" id="mpw-prev-btn" title="Previous"><i class="fas fa-step-backward"></i></button>
-                <button class="mpw-btn mpw-play" id="mpw-play-btn" title="Play/Pause"><i class="fas fa-play"></i></button>
-                <button class="mpw-btn" id="mpw-next-btn" title="Next"><i class="fas fa-step-forward"></i></button>
-                <button class="mpw-btn" id="mpw-collapse-btn" title="Thu gọn thành nút tròn"><i class="fas fa-compress-alt"></i></button>
-                <button class="mpw-btn" id="mpw-pip-btn" title="Mở cửa sổ PiP" hidden><i class="fas fa-external-link-alt"></i></button>
-                <button class="mpw-btn" id="mpw-close-btn" title="Stop & close"><i class="fas fa-times"></i></button>
+                <div class="mpw-transport" aria-label="Điều khiển đọc">
+                    <button class="mpw-btn" id="mpw-prev-btn" title="Chương trước" aria-label="Chương trước"><i class="fas fa-fast-backward"></i></button>
+                    <button class="mpw-btn" id="mpw-prev-chunk-btn" title="Câu trước" aria-label="Câu trước"><i class="fas fa-step-backward"></i></button>
+                    <button class="mpw-btn mpw-play" id="mpw-play-btn" title="Phát hoặc tạm dừng" aria-label="Phát hoặc tạm dừng"><i class="fas fa-play"></i></button>
+                    <button class="mpw-btn" id="mpw-next-chunk-btn" title="Câu kế" aria-label="Câu kế"><i class="fas fa-step-forward"></i></button>
+                    <button class="mpw-btn" id="mpw-next-btn" title="Chương kế" aria-label="Chương kế"><i class="fas fa-fast-forward"></i></button>
+                </div>
+                <div class="mpw-actions" aria-label="Tùy chọn trình phát">
+                    <button class="mpw-btn" id="mpw-collapse-btn" title="Thu gọn thành nút tròn" aria-label="Thu gọn trình phát"><i class="fas fa-compress-alt"></i></button>
+                    <button class="mpw-btn" id="mpw-pip-btn" title="Mở cửa sổ PiP" aria-label="Mở cửa sổ PiP" hidden><i class="fas fa-external-link-alt"></i></button>
+                    <button class="mpw-btn" id="mpw-close-btn" title="Dừng và đóng" aria-label="Dừng và đóng"><i class="fas fa-times"></i></button>
+                </div>
                 <div class="mpw-progress-track"><div class="mpw-progress" id="mpw-progress"></div></div>
             </div>`;
         document.body.appendChild(root);
@@ -74,6 +80,16 @@
         root.querySelector('#mpw-prev-btn').addEventListener('click', (e) => {
             e.stopPropagation();
             const btn = document.getElementById('prev-btn');
+            if (btn) btn.click();
+        });
+        root.querySelector('#mpw-prev-chunk-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const btn = document.getElementById('prev-chunk-btn');
+            if (btn) btn.click();
+        });
+        root.querySelector('#mpw-next-chunk-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            const btn = document.getElementById('next-chunk-btn');
             if (btn) btn.click();
         });
         root.querySelector('#mpw-next-btn').addEventListener('click', (e) => {
@@ -202,6 +218,18 @@
         const titleEl = doc.getElementById('mpw-title');
         const subtitleEl = doc.getElementById('mpw-subtitle');
         const progressEl = doc.getElementById('mpw-progress');
+
+        const buttonPairs = [
+            ['mpw-prev-btn', 'prev-btn'],
+            ['mpw-prev-chunk-btn', 'prev-chunk-btn'],
+            ['mpw-next-chunk-btn', 'next-chunk-btn'],
+            ['mpw-next-btn', 'next-btn'],
+        ];
+        buttonPairs.forEach(([widgetId, sourceId]) => {
+            const widgetButton = doc.getElementById(widgetId);
+            const sourceButton = document.getElementById(sourceId);
+            if (widgetButton && sourceButton) widgetButton.disabled = sourceButton.disabled;
+        });
 
         if (titleEl && titleSrc) {
             titleEl.textContent = pipWindow && subtitleSrc?.textContent
@@ -663,14 +691,11 @@
     window.MiniPlayerWidget = {
         show,
         hide,
-        // Discovery opened. keepAlive=true means audio session survived.
-        onDiscoveryEnter(keepAlive) {
-            if (keepAlive) {
-                show('discovery');
-            } else {
-                if (pipWindow) pipWindow.close();
-                hide();
-            }
+        // PiP is a Reader-only affordance. Discovery owns a separate return
+        // dock, so no floating widget or PiP surface may remain there.
+        onDiscoveryEnter() {
+            if (pipWindow) pipWindow.close();
+            hide();
         },
         // Back to the reader: the full player is visible again.
         onDiscoveryExit() {

@@ -9,6 +9,7 @@ const appJs = read('static', 'app.js');
 const motionJs = read('static', 'js', 'gsap-animations.js');
 const miniPlayerJs = read('static', 'js', 'mini-player-widget.js');
 const miniPlayerCss = read('static', 'css', 'mini-player.css');
+const indexHtml = read('static', 'index.html');
 const serviceWorker = read('static', 'sw.js');
 
 test('background prefetch has a bounded energy budget', () => {
@@ -71,6 +72,13 @@ test('native PiP keeps one polished full layout', () => {
     assert.doesNotMatch(miniPlayerJs, /captureStream\(5\)/);
 });
 
+test('PiP is loaded for Reader and excluded from the Discovery dock', () => {
+    assert.match(indexHtml, /static\/js\/mini-player-widget\.js/);
+    assert.match(indexHtml, /player-discovery-dock #mpw-player-pip-btn/);
+    assert.match(appJs, /MiniPlayerWidget\.onDiscoveryEnter\(\)/);
+    assert.match(miniPlayerJs, /onDiscoveryEnter\(\)\s*\{\s*if \(pipWindow\) pipWindow\.close\(\);\s*hide\(\);/);
+});
+
 test('in-app player can collapse to a circle', () => {
     assert.match(miniPlayerJs, /id="mpw-collapse-btn"/);
     assert.match(miniPlayerJs, /mpw-collapsed/);
@@ -78,7 +86,7 @@ test('in-app player can collapse to a circle', () => {
 });
 
 test('service worker updates the shell and caches mini-player assets', () => {
-    assert.match(serviceWorker, /cloud-tts-v5-pip-adaptive/);
+    assert.match(serviceWorker, /cloud-tts-v7-reader-pip/);
     assert.match(serviceWorker, /\/static\/js\/mini-player-widget\.js/);
     assert.match(serviceWorker, /\/static\/css\/mini-player\.css/);
     assert.match(serviceWorker, /self\.skipWaiting\(\)/);

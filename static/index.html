@@ -41,34 +41,36 @@
             body { 
                 @apply font-inter bg-bg-dark antialiased selection:bg-primary/30 selection:text-white;
                 color: var(--theme-text, #dae2fd);
-                transition: background-color 0.5s ease, color 0.5s ease;
+                transition: background-color 0.28s ease, color 0.28s ease;
             }
         }
         @layer components {
             .glass { 
-                @apply bg-glass backdrop-blur-xl border border-glass-border; 
+                @apply bg-glass backdrop-blur-lg border border-glass-border;
             }
             .btn-primary { 
-                @apply px-6 py-2 bg-gradient-to-br from-[#c3f5ff] to-primary text-black font-bold rounded-xl hover:shadow-[0_8px_20px_rgba(0,229,255,0.3)] transition-all active:scale-95; 
+                @apply px-6 py-2 bg-primary text-black font-bold rounded-xl hover:shadow-[0_8px_20px_rgba(0,229,255,0.22)] transition-[box-shadow,transform,background-color] duration-200 active:scale-95;
             }
             .chunk-text { 
-                @apply cursor-pointer px-5 py-2 rounded-r-2xl transition-all; 
+                @apply cursor-pointer px-4 py-2 rounded-r-2xl;
                 border-left: 4px solid transparent;
-                display: inline-block;
+                display: block;
+                width: fit-content;
+                max-width: 100%;
+                margin: 0 0 1rem;
                 background-color: transparent;
-                transition: background-color 0.8s ease-in-out, 
-                            border-color 0.6s ease-in-out, 
-                            color 0.6s ease-in-out,
-                            box-shadow 0.8s ease-in-out;
+                transition: background-color 0.22s ease,
+                            border-color 0.22s ease,
+                            color 0.22s ease,
+                            box-shadow 0.22s ease;
                 will-change: background-color, border-color;
             }
             .chunk-active { 
                 background-color: color-mix(in srgb, var(--theme-primary, #00E5FF) 15%, transparent) !important;
                 border-left-color: var(--theme-primary, #00E5FF) !important;
                 color: var(--theme-text, #dae2fd) !important;
-                box-shadow: 0 0 25px color-mix(in srgb, var(--theme-primary, #00E5FF) 12%, transparent) !important;
-                filter: brightness(1.1);
-                text-shadow: 0 0 1px color-mix(in srgb, var(--theme-text), transparent 40%);
+                box-shadow: 0 0 16px color-mix(in srgb, var(--theme-primary, #00E5FF) 10%, transparent) !important;
+                filter: brightness(1.05);
             }
             .sidebar-item {
                 @apply flex items-center gap-3 p-3 rounded-xl transition-all hover:bg-white/5 active:scale-[0.98];
@@ -81,6 +83,10 @@
             }
             .toc-active {
                 @apply border-l-4 border-primary bg-primary/20 font-bold text-primary shadow-lg shadow-primary/20 relative z-10;
+            }
+            .reader-copy {
+                width: min(100%, 92ch);
+                margin-inline: auto;
             }
         }
         
@@ -520,56 +526,248 @@
             transition: top 0.1s linear, height 0.1s linear;
         }
 
-        /* Stealth Player Minimize Logic */
+        /* Reader/player surfaces: restrained motion, predictable spacing. */
         #media-player {
-            transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            transition: transform 0.22s ease, opacity 0.18s ease, box-shadow 0.22s ease;
+        }
+
+        button, [role="button"], input, select, textarea { touch-action: manipulation; }
+        button:focus-visible, [role="button"]:focus-visible,
+        input:focus-visible, select:focus-visible, textarea:focus-visible {
+            outline: 2px solid var(--theme-primary, #00E5FF);
+            outline-offset: 2px;
+        }
+        .icon-btn { min-width: 2.75rem; min-height: 2.75rem; }
+        #media-player-shell { padding-bottom: env(safe-area-inset-bottom); }
+        #text-container {
+            scroll-padding-bottom: 12rem;
+            padding-bottom: 12rem !important;
+        }
+        @media (min-width: 1024px) {
+            #text-container { padding-left: 2.5rem !important; padding-right: 5rem !important; }
+            .reader-copy { width: min(100%, 92ch); }
         }
         #media-player.minimized-player {
             display: flex !important;
-            justify-content: center !important;
-            align-items: flex-end !important;
-            background: transparent;
-            border-color: transparent;
-            box-shadow: none;
+            justify-content: stretch !important;
+            align-items: center !important;
+            width: min(100%, 34rem);
+            margin-left: auto;
+            margin-right: 0;
+            background: color-mix(in srgb, var(--theme-surface, #101827) 94%, transparent);
+            border-color: color-mix(in srgb, var(--theme-primary, #00E5FF) 18%, transparent);
+            box-shadow: 0 14px 38px rgba(0,0,0,0.38);
             padding: 0;
-            transform: translateY(2.8rem); /* Slightly more down for deeper submerge */
+            transform: translateY(0);
+            overflow: hidden;
         }
-        #media-player.minimized-player #player-info-layer,
-        #media-player.minimized-player #player-utils-layer {
-            display: none; /* In minimized state, remove side layers for perfect centering */
-        }
-        #media-player.minimized-player #minimize-btn,
-        #media-player.minimized-player #progress-container,
-        #media-player.minimized-player #current-time-mock,
-        #media-player.minimized-player #time-display {
-            opacity: 0;
-            pointer-events: none;
-        }
-        #media-player.minimized-player #player-controls-layer {
-            width: auto;
+        #media-player.minimized-player #player-info-layer {
             display: flex;
-            justify-content: center;
-            align-items: center !important; /* Fix 1: Đổi thành center để căn giữa ngang hoàn hảo */
-            padding-bottom: 0;
-            overflow: visible;
+            width: auto;
+            min-width: 0;
+            flex: 1 1 auto;
+            padding: 0.6rem 0 0.6rem 0.75rem;
+            gap: 0.6rem;
         }
-
+        #media-player.minimized-player #player-info-layer > div:first-child {
+            width: 2.25rem;
+            height: 2.25rem;
+            border-radius: 0.75rem;
+        }
+        #media-player.minimized-player #player-info-layer > div:last-child { min-width: 0; }
+        #media-player.minimized-player #player-info-layer #player-title { font-size: 0.75rem; }
+        #media-player.minimized-player #player-info-layer #player-sentence {
+            display: block !important;
+            max-width: 11rem;
+            font-size: 0.68rem;
+            line-height: 1.25;
+        }
+        #media-player.minimized-player #player-info-layer #player-author {
+            font-size: 0.6rem;
+            letter-spacing: 0.06em;
+        }
+        #media-player.minimized-player #player-utils-layer,
+        #media-player.minimized-player #progress-container,
+        #media-player.minimized-player #time-display,
+        #media-player.minimized-player #lite-mode-toggle-mobile,
         #media-player.minimized-player #player-controls-layer > div:last-child {
             display: none !important;
         }
-        #media-player.minimized-player #play-btn {
-            width: 4.5rem; /* Slightly larger for better touch in stealth mode */
-            height: 4.5rem;
-            box-shadow: 0 0 40px color-mix(in srgb, var(--theme-primary, #00E5FF) 40%, transparent);
-            transform: scale(1);
-            margin-bottom: -1rem;
+        #media-player.minimized-player #player-controls-layer {
+            width: auto;
+            flex: 0 0 auto;
+            display: flex;
+            justify-content: center;
+            align-items: center !important;
+            padding: 0.45rem 0.55rem;
+            overflow: visible;
         }
-        #media-player.minimized-player #play-btn:hover {
-            transform: scale(1.25);
+        #media-player.minimized-player #player-controls-layer > div:first-child { gap: 0.15rem; }
+        #media-player.minimized-player #minimize-btn {
+            display: flex !important;
+            opacity: 0.7;
+            pointer-events: auto;
+            top: 0.2rem;
+            right: 0.3rem;
+            width: 1.35rem;
+            height: 1.35rem;
+            z-index: 10;
+        }
+        #media-player.minimized-player #play-btn {
+            width: 3.25rem;
+            height: 3.25rem;
+            margin: 0 0.15rem;
+            box-shadow: 0 0 28px color-mix(in srgb, var(--theme-primary, #00E5FF) 28%, transparent);
+        }
+        #media-player.minimized-player #play-btn:hover { transform: scale(1.05); }
+        #media-player.minimized-player #prev-btn,
+        #media-player.minimized-player #next-btn,
+        #media-player.minimized-player #prev-chunk-btn,
+        #media-player.minimized-player #next-chunk-btn {
+            display: inline-flex;
+            width: 2.55rem;
+            height: 2.55rem;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.85rem;
+            border-radius: 0.8rem;
         }
         #media-player.minimized-player #prev-btn,
         #media-player.minimized-player #next-btn {
-            display: none;
+            color: color-mix(in srgb, var(--theme-primary, #00E5FF) 72%, white);
+        }
+        #media-player.minimized-player #prev-btn:disabled,
+        #media-player.minimized-player #next-btn:disabled,
+        #media-player.minimized-player #prev-chunk-btn:disabled,
+        #media-player.minimized-player #next-chunk-btn:disabled {
+            opacity: 0.28;
+            cursor: not-allowed;
+        }
+        @media (max-width: 640px) {
+            #media-player-shell { left: 0.75rem; right: 0.75rem; bottom: 0.85rem; }
+            #text-container { padding-bottom: 9rem !important; scroll-padding-bottom: 9rem; }
+            #media-player.minimized-player { width: 100%; }
+            #media-player.minimized-player #player-info-layer { max-width: 6.5rem; padding-left: 0.45rem; }
+            #media-player.minimized-player #player-info-layer > div:first-child,
+            #media-player.minimized-player #player-info-layer #player-sentence,
+            #media-player.minimized-player #player-info-layer #player-author { display: none !important; }
+            #media-player.minimized-player #prev-btn,
+            #media-player.minimized-player #next-btn,
+            #media-player.minimized-player #prev-chunk-btn,
+            #media-player.minimized-player #next-chunk-btn { width: 2.75rem; height: 2.75rem; }
+            #media-player.minimized-player #play-btn { width: 3rem; height: 3rem; }
+        }
+        @media (prefers-reduced-motion: reduce) {
+            #media-player, #media-player-shell { transition: none !important; }
+        }
+
+        /* Discovery reuses the same player as a compact, persistent dock.
+           Keeping one surface avoids duplicate playback state and preserves
+           spatial continuity when moving between Reader and Discovery. */
+        #media-player-shell.player-discovery-dock {
+            position: fixed !important;
+            left: auto !important;
+            right: 1rem !important;
+            bottom: max(1rem, env(safe-area-inset-bottom)) !important;
+            width: min(calc(100% - 2rem), 34rem);
+            z-index: 120 !important;
+            pointer-events: none;
+        }
+        #discovery-mode {
+            padding-bottom: 5.5rem;
+        }
+        #media-player-shell.player-discovery-dock #media-player {
+            width: min(100%, 42rem);
+            margin: 0 0 0 auto;
+            padding: 0.35rem 0.5rem;
+            border-radius: 1.25rem;
+            display: flex !important;
+            align-items: center !important;
+            gap: 0.5rem;
+            pointer-events: auto;
+            cursor: pointer;
+            border-color: color-mix(in srgb, var(--theme-primary, #00E5FF) 62%, transparent);
+            background: linear-gradient(135deg,
+                color-mix(in srgb, var(--theme-primary, #00E5FF) 24%, var(--theme-surface, #101827)),
+                color-mix(in srgb, var(--theme-primary, #00E5FF) 10%, #080d19));
+            box-shadow:
+                0 18px 42px rgba(0, 0, 0, 0.5),
+                0 0 0 1px color-mix(in srgb, var(--theme-primary, #00E5FF) 30%, transparent),
+                0 0 34px color-mix(in srgb, var(--theme-primary, #00E5FF) 34%, transparent);
+        }
+        #media-player-shell.player-discovery-dock #media-player:hover {
+            border-color: color-mix(in srgb, var(--theme-primary, #00E5FF) 78%, transparent);
+            box-shadow:
+                0 20px 46px rgba(0, 0, 0, 0.55),
+                0 0 0 1px color-mix(in srgb, var(--theme-primary, #00E5FF) 42%, transparent),
+                0 0 42px color-mix(in srgb, var(--theme-primary, #00E5FF) 46%, transparent);
+        }
+        #media-player-shell.player-discovery-dock #media-player:active {
+            transform: translateY(1px);
+        }
+        /* PiP is a Reader-only control; Discovery uses the card as its return target. */
+        #media-player-shell.player-discovery-dock #minimize-btn,
+        #media-player-shell.player-discovery-dock #mpw-player-pip-btn {
+            display: none !important;
+        }
+        #media-player-shell.player-discovery-dock #player-info-layer > div:first-child,
+        #media-player-shell.player-discovery-dock #player-sentence,
+        #media-player-shell.player-discovery-dock #player-author,
+        #media-player-shell.player-discovery-dock #player-utils-layer,
+        #media-player-shell.player-discovery-dock #prev-btn,
+        #media-player-shell.player-discovery-dock #prev-chunk-btn,
+        #media-player-shell.player-discovery-dock #next-chunk-btn,
+        #media-player-shell.player-discovery-dock #next-btn,
+        #media-player-shell.player-discovery-dock #player-controls-layer > div:last-child {
+            display: none !important;
+        }
+        #media-player-shell.player-discovery-dock #player-info-layer {
+            flex: 1 1 auto;
+            min-width: 0;
+            width: auto;
+            padding: 0.35rem 0.5rem;
+            gap: 0;
+        }
+        #media-player-shell.player-discovery-dock #player-info-layer > div:last-child {
+            min-width: 0;
+        }
+        #media-player-shell.player-discovery-dock #player-title {
+            display: block;
+            font-size: 0.78rem;
+            line-height: 1.2;
+        }
+        #media-player-shell.player-discovery-dock #player-info-layer:focus-visible {
+            outline: 2px solid var(--theme-primary, #00E5FF);
+            outline-offset: 2px;
+            border-radius: 0.75rem;
+        }
+        #media-player-shell.player-discovery-dock #media-player.minimized-player #player-sentence {
+            display: none !important;
+        }
+        #media-player-shell.player-discovery-dock #player-controls-layer {
+            width: auto;
+            flex: 0 0 auto;
+            padding: 0;
+            display: flex;
+            align-items: center !important;
+        }
+        #media-player-shell.player-discovery-dock #player-controls-layer > div:first-child {
+            gap: 0.25rem;
+        }
+        #media-player-shell.player-discovery-dock #play-btn {
+            width: 2.75rem;
+            height: 2.75rem;
+            margin: 0;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        @media (max-width: 640px) {
+            #media-player-shell.player-discovery-dock {
+                left: auto !important;
+                right: 0.75rem !important;
+                bottom: max(0.75rem, env(safe-area-inset-bottom)) !important;
+                width: calc(100% - 1.5rem);
+            }
         }
 
         /* =========================================================
@@ -708,7 +906,7 @@
     <nav class="h-20 flex items-center justify-between px-6 lg:px-10 z-[60] bg-transparent">
         <div class="flex items-center gap-4">
             <!-- Mobile Menu Toggle -->
-            <button id="mobile-menu-btn" class="lg:hidden p-2 text-xl hover:text-primary transition-colors">
+            <button id="mobile-menu-btn" class="icon-btn lg:hidden p-2 text-xl hover:text-primary transition-colors" aria-label="Mở menu điều hướng" title="Mở menu điều hướng">
                 <i class="fas fa-bars"></i>
             </button>
 
@@ -731,7 +929,7 @@
 
         <div class="flex items-center gap-4 lg:gap-8">
             <button id="stats-toggle-btn"
-                class="w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary transition-all relative group">
+                class="icon-btn w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary transition-all relative group" aria-label="Mở thống kê đọc" title="Thống kê đọc">
                 <i class="fas fa-chart-line"></i>
                 <span class="absolute -top-1 -right-1 w-3 h-3 bg-orange-500 rounded-full border-2 border-bg-dark hidden"
                     id="streak-dot"></span>
@@ -746,7 +944,7 @@
                 <span class="text-slate-400" data-i18n="guest-mode">Guest Mode</span>
             </div>
             <button id="fullscreen-btn"
-                class="lg:hidden w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary transition-all">
+                class="icon-btn lg:hidden w-10 h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary transition-all" aria-label="Bật toàn màn hình" title="Toàn màn hình">
                 <i class="fas fa-expand"></i>
             </button>
             <button id="auth-btn" class="btn-primary flex items-center gap-2">
@@ -769,7 +967,7 @@
             class="hidden lg:w-80 flex flex-col gap-6 overflow-y-auto lg:static lg:bg-transparent bg-bg-dark/95 backdrop-blur-2xl p-6 lg:p-0 hide-scrollbar">
             <div class="flex items-center justify-between lg:hidden mb-4">
                 <span class="font-bold text-lg text-primary" data-i18n="navigation">Navigation</span>
-                <button id="close-sidebar" class="text-2xl p-2"><i class="fas fa-times"></i></button>
+                <button id="close-sidebar" class="icon-btn text-2xl p-2" aria-label="Đóng menu điều hướng" title="Đóng menu điều hướng"><i class="fas fa-times"></i></button>
             </div>
 
             <!-- Library Card -->
@@ -781,13 +979,13 @@
                     </h2>
                     <div class="flex items-center gap-2 shrink-0">
                         <button id="lang-btn"
-                            class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary hover:bg-primary hover:text-black transition-all font-bold text-xs"
-                            title="Toggle Language">
+                            class="icon-btn w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary hover:bg-primary hover:text-black transition-all font-bold text-xs"
+                            title="Đổi ngôn ngữ" aria-label="Đổi ngôn ngữ">
                             VI
                         </button>
                         <button id="sync-btn"
-                            class="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary hover:bg-primary hover:text-black transition-all"
-                            title="Sync Cloud">
+                            class="icon-btn w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary hover:bg-primary hover:text-black transition-all"
+                            title="Đồng bộ đám mây" aria-label="Đồng bộ đám mây">
                             <i class="fas fa-sync-alt text-sm"></i>
                         </button>
                         <button id="upload-book-btn" type="button" class="group cursor-pointer">
@@ -802,7 +1000,7 @@
                         <input type="file" id="file-input" class="hidden" accept=".txt">
                         <button id="select-images-btn" type="button"
                             class="w-8 h-8 rounded-lg bg-white/5 text-primary hover:bg-primary hover:text-black transition-all"
-                            title="Quản lý ảnh của truyện hiện tại">
+                            title="Quản lý ảnh của truyện hiện tại" aria-label="Quản lý ảnh của truyện hiện tại">
                             <i class="fas fa-image text-sm"></i>
                         </button>
                         <input type="file" id="image-input" class="hidden"
@@ -1072,14 +1270,14 @@
             class="hidden flex-1 glass flex flex-col relative overflow-hidden group rounded-t-[3rem] lg:rounded-[3rem] shadow-2xl border-b-0 lg:border-b">
             <!-- Glass Header -->
             <header id="reader-header"
-                class="p-6 lg:p-8 border-b border-glass-border flex justify-between items-center bg-white/[0.02]">
+                class="p-5 lg:p-6 border-b border-glass-border flex justify-between items-center bg-white/[0.02]">
                 <div class="flex-1 min-w-0 mr-4">
                     <div class="flex items-center gap-3">
                         <h2 id="current-title" class="text-xl lg:text-3xl font-black text-white tracking-tight truncate"
                             title="Select a Masterpiece" data-i18n="select-masterpiece">Select a
                             Masterpiece</h2>
                         <button id="edit-title-btn"
-                            class="w-8 h-8 rounded-full flex items-center justify-center bg-white/5 hover:bg-primary/20 hover:text-primary transition-all hidden shrink-0">
+                            class="icon-btn w-8 h-8 rounded-full flex items-center justify-center bg-white/5 hover:bg-primary/20 hover:text-primary transition-all hidden shrink-0" aria-label="Đổi tên truyện" title="Đổi tên truyện">
                             <i class="fas fa-pen text-xs"></i>
                         </button>
                     </div>
@@ -1091,19 +1289,19 @@
                 </div>
                 <div class="flex items-center gap-1 lg:gap-3 shrink-0">
                     <button id="toc-btn"
-                        class="w-11 h-11 flex items-center justify-center rounded-2xl hover:bg-white/5 hover:text-primary transition-all"
-                        title="Chapters">
+                        class="icon-btn w-11 h-11 flex items-center justify-center rounded-2xl hover:bg-white/5 hover:text-primary transition-all"
+                        title="Mở danh sách chương" aria-label="Mở danh sách chương">
                         <i class="fas fa-list-ul text-lg"></i>
                     </button>
                     <button id="manual-save-btn"
-                        class="w-11 h-11 flex items-center justify-center rounded-2xl hover:bg-white/5 hover:text-primary transition-all group"
-                        title="Save Progress to Cloud">
+                        class="icon-btn w-11 h-11 flex items-center justify-center rounded-2xl hover:bg-white/5 hover:text-primary transition-all group"
+                        title="Lưu tiến độ lên đám mây" aria-label="Lưu tiến độ lên đám mây">
                         <i id="manual-save-icon" class="fas fa-cloud-upload-alt text-lg"></i>
                     </button>
                     <div class="relative group/sleep">
                         <button id="sleep-timer-btn"
-                            class="w-11 h-11 flex items-center justify-center rounded-2xl hover:bg-white/5 hover:text-primary transition-all group relative"
-                            title="Sleep Timer">
+                            class="icon-btn w-11 h-11 flex items-center justify-center rounded-2xl hover:bg-white/5 hover:text-primary transition-all group relative"
+                            title="Hẹn giờ tắt" aria-label="Mở hẹn giờ tắt">
                             <i id="sleep-timer-icon" class="fas fa-moon text-lg transition-all"></i>
                             <span id="sleep-timer-badge"
                                 class="absolute -top-1 -right-1 bg-primary text-black text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center opacity-0 transition-opacity">0</span>
@@ -1169,8 +1367,8 @@
                         </div>
                     </div>
                     <button id="wake-lock-btn"
-                        class="w-11 h-11 flex items-center justify-center rounded-2xl hover:bg-white/5 hover:text-primary transition-all group"
-                        title="Keep Screen Awake (Off)">
+                        class="icon-btn w-11 h-11 flex items-center justify-center rounded-2xl hover:bg-white/5 hover:text-primary transition-all group"
+                        title="Giữ màn hình sáng" aria-label="Bật hoặc tắt giữ màn hình sáng">
                         <i id="wake-lock-icon" class="far fa-sun text-lg transition-all duration-300"></i>
                     </button>
                 </div>
@@ -1179,7 +1377,7 @@
             <!-- Reading Content with Editorial Typography -->
             <div class="flex-1 flex overflow-hidden relative">
                 <div id="text-container"
-                    class="flex-1 overflow-y-auto p-6 lg:p-14 lg:pr-24 leading-[1.8] scroll-smooth font-inter"
+                    class="flex-1 overflow-y-auto p-5 lg:p-8 lg:pr-16 leading-[1.65] scroll-smooth font-inter"
                     style="color: var(--reader-text-color); font-size: var(--reader-font-size);">
                     <div class="flex flex-col items-center justify-center h-full text-center max-w-md mx-auto">
                         <div class="w-24 h-24 mb-8 relative">
@@ -1280,14 +1478,14 @@
             </div>
 
             <!-- Bottom Media Player Controls: Floating Glass Artifact (Now Local to Reader) -->
-            <div
+            <div id="media-player-shell"
                 class="absolute bottom-6 left-6 lg:left-14 right-6 lg:right-24 z-[50] pointer-events-none transition-all duration-500">
                 <footer id="media-player"
                     class="max-w-5xl mx-auto glass rounded-[3rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-3 items-center gap-4 lg:gap-0 pointer-events-auto relative">
                     <!-- Minimize Button -->
                     <button id="minimize-btn"
                         class="absolute -top-3 right-8 w-8 h-8 rounded-full bg-surface-high border border-white/10 flex items-center justify-center hover:bg-primary/20 hover:text-primary transition-all z-10 shadow-lg"
-                        title="Toggle Minimize">
+                        title="Thu gọn trình phát" aria-label="Thu gọn trình phát" aria-expanded="true">
                         <i class="fas fa-chevron-down text-[10px]"></i>
                     </button>
                     <!-- Information Layer -->
@@ -1301,6 +1499,9 @@
                             <span id="player-title"
                                 class="font-black text-white text-sm lg:text-base truncate tracking-tight">System
                                 Ready</span>
+                            <span id="player-sentence"
+                                class="hidden lg:block max-w-[18rem] truncate text-[10px] text-slate-400"
+                                title="">Chưa có câu đang đọc</span>
                             <span id="player-author"
                                 class="text-[10px] lg:text-xs font-bold text-slate-500 uppercase tracking-[0.2em]">Lumina
                                 Sonic Design</span>
@@ -1308,17 +1509,24 @@
                     </div>
                     <!-- Central Control Block -->
                     <div id="player-controls-layer" class="flex flex-col items-center gap-3 w-full">
-                        <div class="flex items-center gap-8">
+                        <div class="flex items-center gap-2 lg:gap-5">
                             <button id="prev-btn"
-                                class="text-xl text-slate-400 hover:text-primary transition-all active:scale-90"><i
-                                    class="fas fa-step-backward"></i></button>
+                                class="w-10 h-10 rounded-xl text-base text-slate-400 hover:text-primary hover:bg-white/5 transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                                aria-label="Chương trước" title="Chương trước"><i class="fas fa-fast-backward"></i></button>
+                            <button id="prev-chunk-btn"
+                                class="w-10 h-10 rounded-xl text-base text-slate-400 hover:text-primary hover:bg-white/5 transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                                aria-label="Câu trước" title="Câu trước"><i class="fas fa-step-backward"></i></button>
                             <button id="play-btn"
-                                class="w-14 h-14 lg:w-16 lg:h-16 rounded-full bg-white text-black text-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-[0_0_30px_rgba(255,255,255,0.2)]">
+                                class="w-14 h-14 lg:w-16 lg:h-16 rounded-full bg-white text-black text-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all shadow-[0_0_30px_rgba(255,255,255,0.2)]"
+                                aria-label="Phát hoặc tạm dừng" title="Phát hoặc tạm dừng">
                                 <i class="fas fa-play ml-1"></i>
                             </button>
+                            <button id="next-chunk-btn"
+                                class="w-10 h-10 rounded-xl text-base text-slate-400 hover:text-primary hover:bg-white/5 transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                                aria-label="Câu kế" title="Câu kế"><i class="fas fa-step-forward"></i></button>
                             <button id="next-btn"
-                                class="text-xl text-slate-400 hover:text-primary transition-all active:scale-90"><i
-                                    class="fas fa-step-forward"></i></button>
+                                class="w-10 h-10 rounded-xl text-base text-slate-400 hover:text-primary hover:bg-white/5 transition-all active:scale-90 disabled:opacity-30 disabled:cursor-not-allowed"
+                                aria-label="Chương kế" title="Chương kế"><i class="fas fa-fast-forward"></i></button>
                         </div>
                         <div class="w-full flex items-center gap-2 lg:gap-4 px-2">
                             <div class="flex items-center gap-2">
@@ -1437,9 +1645,9 @@
                             <i class="fas fa-file-import text-3xl text-primary"></i>
                         </div>
                         <div class="text-xl font-bold text-white mb-2 relative z-10" data-i18n="click-or-drag-file">
-                            Click or Drag File</div>
+                            Click or drag a file</div>
                         <div class="text-slate-400 text-sm relative z-10" data-i18n="supported-formats">Supported
-                            formats: .txt, .epub, .pdf (kéo-thả)</div>
+                            formats: .txt, .epub, .pdf</div>
                         <input type="file" id="discovery-file-input" class="hidden" accept=".txt,.epub,.pdf">
                     </div>
                     <button id="discovery-select-images-btn" type="button"
@@ -1610,7 +1818,7 @@ Nội dung chương hai...</pre>
     </div>
 
     <script type="module" src="/static/app.js"></script>
-    <!-- Mini Player Widget (waits for MPW_BRIDGE from app.js) -->
+    <!-- Reader-only Picture-in-Picture controls -->
     <script src="/static/js/mini-player-widget.js"></script>
     <!-- GSAP visual motion layer; does not participate in app logic -->
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
@@ -1953,7 +2161,7 @@ Nội dung chương hai...</pre>
                 "recent-reads": "Recent Reads",
                 "import-book": "Import Book",
                 "click-or-drag-file": "Click or Drag File",
-                "supported-formats": "Supported formats: .txt",
+                "supported-formats": "Supported formats: .txt, .epub, .pdf",
                 "view-format-example": "View chapter format",
                 "chapter-format-hint": "Use a line containing === to separate chapters. Without ===, the whole file is imported as one chapter.",
                 "download-sample-file": "Download sample .txt file",
@@ -1992,8 +2200,8 @@ Nội dung chương hai...</pre>
                 "discover-masterpiece": "Khám phá tác phẩm mới",
                 "recent-reads": "Đọc gần đây",
                 "import-book": "Nhập sách",
-                "click-or-drag-file": "Nhấn hoặc Kéo thả File",
-                "supported-formats": "Định dạng hỗ trợ: .txt",
+                "click-or-drag-file": "Nhấn hoặc kéo thả tệp",
+                "supported-formats": "Định dạng hỗ trợ: .txt, .epub, .pdf",
                 "view-format-example": "Xem định dạng chương",
                 "chapter-format-hint": "Dùng một dòng chứa === để phân cách các chương. Nếu không có ===, toàn bộ file sẽ được nhập thành một chương.",
                 "download-sample-file": "Tải file mẫu .txt",

@@ -26,7 +26,7 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    width: 25.5rem;
+    width: 31rem;
     max-width: calc(100vw - 2rem);
     padding: 0.5rem 0.75rem 0.5rem 0.5rem;
     border-radius: 1.1rem;
@@ -40,6 +40,19 @@
     cursor: grab;
     position: relative;
     overflow: hidden;
+}
+
+.mpw-transport,
+.mpw-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.1rem;
+    flex-shrink: 0;
+}
+
+.mpw-actions {
+    padding-left: 0.35rem;
+    border-left: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .mpw-card:active {
@@ -91,8 +104,8 @@
     border: none;
     background: transparent;
     color: #94a3b8;
-    width: 1.9rem;
-    height: 1.9rem;
+    width: 2.75rem;
+    height: 2.75rem;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -103,9 +116,24 @@
     transition: color 0.2s, transform 0.15s, background 0.2s;
 }
 
+.mpw-btn:focus-visible {
+    outline: 2px solid var(--theme-primary, #00E5FF);
+    outline-offset: 2px;
+}
+
 .mpw-btn:hover {
     color: #fff;
     background: rgba(255, 255, 255, 0.08);
+}
+
+.mpw-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.mpw-btn:disabled:hover {
+    color: #94a3b8;
+    background: transparent;
 }
 
 .mpw-btn:active {
@@ -113,8 +141,8 @@
 }
 
 .mpw-play {
-    width: 2.3rem;
-    height: 2.3rem;
+    width: 2.9rem;
+    height: 2.9rem;
     background: #fff;
     color: #000;
     font-size: 0.8rem;
@@ -215,6 +243,8 @@
         max-width: none;
     }
 
+    .mpw-meta { max-width: 7rem; }
+
     #mini-player-widget.mpw-collapsed {
         left: auto !important;
         right: 0.75rem !important;
@@ -285,14 +315,14 @@ body.mpw-pip-body .mpw-meta {
 }
 
 body.mpw-pip-body .mpw-btn {
-    width: 2.1rem;
-    height: 2.1rem;
+    width: 2.75rem;
+    height: 2.75rem;
     font-size: 0.78rem;
 }
 
 body.mpw-pip-body .mpw-play {
-    width: 2.8rem;
-    height: 2.8rem;
+    width: 3rem;
+    height: 3rem;
     font-size: 0.9rem;
 }
 
