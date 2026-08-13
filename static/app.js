@@ -458,6 +458,8 @@ function toggleDiscoveryMode(isActive, options = {}) {
         if (window.MiniPlayerWidget) window.MiniPlayerWidget.onDiscoveryEnter();
 
         if (discoveryMode) discoveryMode.classList.remove('hidden');
+        updateDiscoveryContinueCard();
+        applyDiscoverySearch();
         if (sidebarContainer) sidebarContainer.classList.add('hidden');
         if (readerContainer) readerContainer.classList.add('hidden');
         // Homepage không được litemode
@@ -525,22 +527,77 @@ discoveryPlayerInfo?.addEventListener('keydown', (event) => {
     }
 });
 
-const discoverySearch = document.getElementById('discovery-search');
-if (discoverySearch) {
-    discoverySearch.addEventListener('input', (e) => {
-        const query = e.target.value.toLowerCase();
-        const grid = document.getElementById('discovery-grid');
-        if (!grid) return;
-        Array.from(grid.children).forEach(card => {
-            if (!card.dataset.title) return; // skip placeholders
-            if (card.dataset.title.includes(query)) {
-                card.style.display = '';
-            } else {
-                card.style.display = 'none';
-            }
-        });
+const DISCOVERY_VIEW_STORAGE_KEY = 'cloud-tts-discovery-view';
+let discoveryLibrary = [];
+
+function applyDiscoverySearch() {
+    const search = document.getElementById('discovery-search');
+    const grid = document.getElementById('discovery-grid');
+    const empty = document.getElementById('discovery-search-empty');
+    const emptyText = document.getElementById('discovery-search-empty-text');
+    const count = document.getElementById('discovery-result-count');
+    if (!search || !grid) return;
+    const query = removeVietnameseTones(search.value.trim().toLowerCase());
+    let matches = 0;
+    Array.from(grid.children).forEach(card => {
+        if (!card.dataset.title) return;
+        const visible = card.dataset.title.includes(query);
+        card.style.display = visible ? '' : 'none';
+        if (visible) matches += 1;
     });
+    if (count) count.textContent = `${matches}/${discoveryLibrary.length || matches} sách`;
+    if (empty) empty.hidden = matches > 0 || !query;
+    if (emptyText && query) emptyText.textContent = `Không tìm thấy “${search.value.trim()}”.`;
 }
+
+function setDiscoveryView(view, persist = true) {
+    const grid = document.getElementById('discovery-grid');
+    const gridButton = document.getElementById('discovery-grid-view');
+    const listButton = document.getElementById('discovery-list-view');
+    if (!grid || !gridButton || !listButton) return;
+    const isList = view === 'list';
+    grid.classList.toggle('discovery-list-view', isList);
+    gridButton.classList.toggle('bg-primary/15', !isList);
+    gridButton.classList.toggle('text-primary', !isList);
+    gridButton.classList.toggle('text-slate-400', isList);
+    listButton.classList.toggle('bg-primary/15', isList);
+    listButton.classList.toggle('text-primary', isList);
+    listButton.classList.toggle('text-slate-400', !isList);
+    gridButton.setAttribute('aria-pressed', String(!isList));
+    listButton.setAttribute('aria-pressed', String(isList));
+    if (persist) localStorage.setItem(DISCOVERY_VIEW_STORAGE_KEY, isList ? 'list' : 'grid');
+}
+
+function updateDiscoveryContinueCard() {
+    const card = document.getElementById('discovery-continue-card');
+    const title = document.getElementById('discovery-continue-title');
+    const meta = document.getElementById('discovery-continue-meta');
+    const progress = document.getElementById('discovery-continue-progress');
+    const active = discoveryLibrary.find(book => book.id === STATE.currentBookId);
+    if (!card || !title || !meta || !progress) return;
+    card.hidden = !active;
+    if (!active) return;
+    title.textContent = active.title;
+    meta.textContent = `${active.progress}% đã đọc · Bấm để quay lại phiên đang nghe`;
+    progress.style.width = `${active.progress}%`;
+}
+
+const discoverySearch = document.getElementById('discovery-search');
+discoverySearch?.addEventListener('input', applyDiscoverySearch);
+document.getElementById('discovery-clear-search')?.addEventListener('click', () => {
+    if (!discoverySearch) return;
+    discoverySearch.value = '';
+    applyDiscoverySearch();
+    discoverySearch.focus();
+});
+document.getElementById('discovery-grid-view')?.addEventListener('click', () => setDiscoveryView('grid'));
+document.getElementById('discovery-list-view')?.addEventListener('click', () => setDiscoveryView('list'));
+document.getElementById('discovery-continue-btn')?.addEventListener('click', () => {
+    if (!STATE.currentBook) return;
+    toggleDiscoveryMode(false);
+    if (audio.paused) void togglePlayback();
+});
+setDiscoveryView(localStorage.getItem(DISCOVERY_VIEW_STORAGE_KEY) || 'grid', false);
 
 function removeVietnameseTones(str) {
     str = str.normalize('NFD').replace(/[\u0300-\u036f]/g, "");
@@ -1847,6 +1904,7 @@ async function refreshLibrary() {
     if (!STATE.user) return;
     const bookList = document.getElementById('book-list');
     const discoveryGrid = document.getElementById('discovery-grid');
+    discoveryLibrary = [];
 
     bookList.innerHTML = '<div class="text-center p-4 text-primary animate-pulse text-xs uppercase font-bold tracking-widest">Updating Library...</div>';
     if (discoveryGrid) discoveryGrid.innerHTML = '';
@@ -1866,6 +1924,8 @@ async function refreshLibrary() {
                 discoveryGrid.innerHTML = '<div class="col-span-full flex flex-col items-center justify-center p-12 text-slate-500 italic bg-surface-low rounded-2xl border border-white/5"><i class="fas fa-book-open text-4xl mb-4 opacity-50"></i><span>No recent reads found.</span></div>';
             }
             if (!STATE.currentBookId) toggleDiscoveryMode(true);
+            updateDiscoveryContinueCard();
+            applyDiscoverySearch();
             return;
         }
 
@@ -1879,6 +1939,7 @@ async function refreshLibrary() {
                 : 0;
             const progress = rawProgress.toFixed(1);
             const filename = data.filename || (bookId.replace('book_', '') + '.txt');
+            discoveryLibrary.push({ id: bookId, title: data.title || filename, progress });
 
             // ── Sidebar Book List Card ───────────────────────────────────────
             const wrapper = document.createElement('div');
@@ -2075,6 +2136,8 @@ async function refreshLibrary() {
                 }
             }
         });
+        updateDiscoveryContinueCard();
+        applyDiscoverySearch();
     } catch (err) {
         console.error("Library Refresh Error:", err);
         bookList.innerHTML = '<div class="text-center p-8 text-red-400 italic text-sm">Error updating library.</div>';

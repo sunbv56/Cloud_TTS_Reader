@@ -133,13 +133,8 @@
             const restore = () => {
                 if (!grid) return;
                 grid.classList.remove('is-spotlight-active');
-                const cards = Array.from(grid.querySelectorAll('.discovery-book-card'));
-                cards.forEach(item => item.classList.remove('is-spotlit'));
-                gsap.to(cards, {
-                    scale: 1, y: 0, autoAlpha: 1,
-                    filter: 'saturate(1) brightness(1)',
-                    duration: 0.24, ease: 'power2.out', overwrite: 'auto'
-                });
+                card.classList.remove('is-spotlit');
+                gsap.to(card, { scale: 1, y: 0, duration: 0.22, ease: 'power2.out', overwrite: 'auto' });
                 gsap.to(art, {
                     y: 0, scale: 1, clipPath: 'inset(0 0 22% 0)',
                     duration: 0.28, ease: 'power3.out', overwrite: 'auto'
@@ -152,18 +147,11 @@
 
             card.addEventListener('pointerenter', () => {
                 if (!spotlightEnabled || !grid) return;
-                const cards = Array.from(grid.querySelectorAll('.discovery-book-card'));
                 grid.classList.add('is-spotlight-active');
-                cards.forEach(item => item.classList.toggle('is-spotlit', item === card));
-                gsap.to(cards.filter(item => item !== card), {
-                    scale: 0.97, autoAlpha: 0.46,
-                    filter: 'saturate(0.48) brightness(0.68)',
-                    duration: 0.26, ease: 'power2.out', overwrite: 'auto'
-                });
+                card.classList.add('is-spotlit');
                 gsap.to(card, {
-                    y: -9, scale: 1.045, autoAlpha: 1,
-                    filter: 'saturate(1.1) brightness(1.06)',
-                    duration: 0.34, ease: 'power3.out', overwrite: 'auto'
+                    y: -4, scale: 1.018,
+                    duration: 0.22, ease: 'power3.out', overwrite: 'auto'
                 });
                 gsap.to(art, {
                     y: -7, scale: 1, clipPath: 'inset(0 0 0% 0)',
