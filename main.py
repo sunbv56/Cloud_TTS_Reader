@@ -9,6 +9,10 @@ import codecs
 import edge_tts
 import tempfile
 import gc
+import logging
+import time
+import uuid
+from functools import wraps
 from ebooklib import epub, ITEM_DOCUMENT
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
@@ -21,6 +25,8 @@ from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional
+
+logger = logging.getLogger("cloud_tts_reader")
 
 # Initialize Firebase Admin
 firebase_admin_initialized = False
@@ -87,6 +93,9 @@ MAX_WS_PER_USER = int(os.getenv("MAX_WS_PER_USER", "2"))
 MAX_NEW_CONTENT_CHARS = int(os.getenv("MAX_NEW_CONTENT_CHARS", "1000000"))
 TTS_CHUNK_TIMEOUT_SECONDS = float(os.getenv("TTS_CHUNK_TIMEOUT_SECONDS", "30"))
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(150 * 1024)))
+# Deliberately clamp RAM-heavy imports to one on the 256 MB machine.
+MAX_IMPORT_CONCURRENCY = 1
+IMPORT_RETRY_AFTER_SECONDS = int(os.getenv("IMPORT_RETRY_AFTER_SECONDS", "15"))
 # Firebase ID tokens are time-bound. A small tolerance keeps local development
 # usable when the machine clock drifts by a few seconds, while the OS clock
 # should still be synchronized (Firebase Admin accepts at most 60 seconds).
@@ -102,6 +111,43 @@ ALLOWED_BOOK_CONTENT_TYPES = {
 }
 _active_ws_by_uid = {}
 _active_ws_lock = asyncio.Lock()
+_import_semaphore = asyncio.Semaphore(MAX_IMPORT_CONCURRENCY)
+
+
+def _request_id(request: Request) -> str:
+    """Return a safe correlation id; never expose authentication material."""
+    supplied = (request.headers.get("x-request-id") or "").strip()
+    if supplied and len(supplied) <= 80 and re.fullmatch(r"[A-Za-z0-9._:-]+", supplied):
+        return supplied
+    return uuid.uuid4().hex[:16]
+
+
+async def _run_blocking(label: str, operation, *args, request_id: str = "", **kwargs):
+    """Run SDK calls outside the event loop and emit bounded timing telemetry."""
+    started = time.perf_counter()
+    try:
+        return await asyncio.to_thread(operation, *args, **kwargs)
+    except Exception:
+        logger.exception("operation_failed label=%s request_id=%s", label, request_id or "-")
+        raise
+    finally:
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        logger.info("operation_timing label=%s request_id=%s elapsed_ms=%.1f", label, request_id or "-", elapsed_ms)
+
+
+def _serialized_import_route(route):
+    """Return 429 instead of queueing another RAM-heavy import in the proxy."""
+    @wraps(route)
+    async def guarded(*args, **kwargs):
+        if _import_semaphore.locked():
+            return JSONResponse(
+                {"error": "Another import is already processing", "retryable": True},
+                status_code=429,
+                headers={"Retry-After": str(IMPORT_RETRY_AFTER_SECONDS)},
+            )
+        async with _import_semaphore:
+            return await route(*args, **kwargs)
+    return guarded
 
 
 def _authorization_error(request: Request, user_id: str):
@@ -418,6 +464,24 @@ def partition_chapters(chapters: List[dict], segment_size: int = 100):
         segments.append(segment)
     return segments
 
+
+def _build_segment_data(seg_chapters: List[dict]):
+    """Build one segment off the event loop and return its counts separately."""
+    chapter_counts = []
+    seg_data = []
+    for chap in seg_chapters:
+        sentences = split_text_into_chunks(chap["content"])
+        chapter_counts.append(len(sentences))
+        seg_data.append({"title": chap["title"], "sentences": sentences})
+    return seg_data, chapter_counts
+
+
+def _build_chapters_summary(chapters: List[dict]):
+    return [
+        {"title": chap["title"], "count": len(split_text_into_chunks(chap["content"]))}
+        for chap in chapters
+    ]
+
 def reconstruct_text_from_segments(userId: str, story_id: str, segments_count: int):
     """
     Reconstruct full text from JSON segments if the master .txt is missing.
@@ -544,6 +608,7 @@ async def parse_book(file: UploadFile = File(...)):
     upload_error = _validate_text_upload(file)
     if upload_error:
         return upload_error
+    request_id = uuid.uuid4().hex[:16]
     # Memory optimization: Stream upload to a temporary file
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
     tmp_path = tmp.name
@@ -559,18 +624,16 @@ async def parse_book(file: UploadFile = File(...)):
             if encoding_error:
                 return encoding_error
         try:
-            chapters = parse_book_file(tmp_path, file.filename)
+            chapters = await _run_blocking(
+                "parse_book_file", parse_book_file, tmp_path, file.filename, request_id=request_id
+            )
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=422)
         
         # Optimization: Generate metadata in a single pass and remove redundant processed_chapters loop
-        chapters_metadata = []
-        for chap in chapters:
-            sentences = split_text_into_chunks(chap['content'])
-            chapters_metadata.append({
-                "title": chap['title'],
-                "count": len(sentences)
-            })
+        chapters_metadata = await _run_blocking(
+            "build_chapters_summary", _build_chapters_summary, chapters, request_id=request_id
+        )
 
         return JSONResponse({
             "title": os.path.splitext(file.filename or "book")[0],
@@ -581,6 +644,7 @@ async def parse_book(file: UploadFile = File(...)):
             os.remove(tmp_path)
 
 @app.post("/api/upload-story")
+@_serialized_import_route
 async def upload_story(
     request: Request,
     userId: str = Form(...),
@@ -596,6 +660,9 @@ async def upload_story(
     upload_error = _validate_text_upload(file)
     if upload_error:
         return upload_error
+
+    request_id = _request_id(request)
+    logger.info("import_started request_id=%s filename=%s", request_id, file.filename or "-")
 
     # Sanitize title
     story_title = os.path.splitext(file.filename or "story.txt")[0]
@@ -618,12 +685,14 @@ async def upload_story(
             if encoding_error:
                 return encoding_error
         try:
-            chapters = parse_book_file(tmp_path, file.filename)
+            chapters = await _run_blocking(
+                "parse_book_file", parse_book_file, tmp_path, file.filename, request_id=request_id
+            )
         except ValueError as exc:
             return JSONResponse({"error": str(exc)}, status_code=422)
         total_chapters = len(chapters)
         canonical_filename = f"{story_id}.txt"
-        write_canonical_text(tmp_path, chapters)
+        await _run_blocking("write_canonical_text", write_canonical_text, tmp_path, chapters, request_id=request_id)
         
         # Metadata for Firestore
         story_metadata = {
@@ -642,7 +711,9 @@ async def upload_story(
         # ── 1. Always upload the master .txt file (used for future appends/edits) ──
         master_blob_path = f"users/{userId}/files/{canonical_filename}"
         master_blob = bucket.blob(master_blob_path)
-        master_blob.upload_from_filename(tmp_path)
+        await _run_blocking(
+            "storage.upload_master", master_blob.upload_from_filename, tmp_path, request_id=request_id
+        )
         story_metadata["masterPath"] = master_blob_path
         
         if story_metadata["isSegmented"]:
@@ -653,18 +724,20 @@ async def upload_story(
             # Sequential upload to save RAM on 256MB servers (Fly.io)
             for i, seg_chapters in enumerate(segments):
                 print(f"[Upload] Processing segment {i}/{len(segments)-1}...")
-                seg_data = []
-                for chap in seg_chapters:
-                    sentences = split_text_into_chunks(chap['content'])
-                    chapter_counts.append(len(sentences))  # Store count before cleanup
-                    seg_data.append({
-                        "title": chap['title'],
-                        "sentences": sentences
-                    })
+                seg_data, counts = await _run_blocking(
+                    "build_segment", _build_segment_data, seg_chapters, request_id=request_id
+                )
+                chapter_counts.extend(counts)
                 
                 seg_blob_path = f"users/{userId}/stories/{story_id}/segments/seg_{i}.json"
                 blob = bucket.blob(seg_blob_path)
-                blob.upload_from_string(json.dumps(seg_data), content_type="application/json")
+                await _run_blocking(
+                    "storage.upload_segment",
+                    blob.upload_from_string,
+                    json.dumps(seg_data),
+                    content_type="application/json",
+                    request_id=request_id,
+                )
                 
                 # Critical Memory Cleanup
                 del seg_data
@@ -673,17 +746,20 @@ async def upload_story(
         else:
             # Traditional upload metadata
             # Store chapter titles/counts in metadata for TOC
-            chapters_summary = []
-            for chap in chapters:
-                sentences = split_text_into_chunks(chap['content'])
-                chapters_summary.append({
-                    "title": chap['title'],
-                    "count": len(sentences)
-                })
+            chapters_summary = await _run_blocking(
+                "build_chapters_summary", _build_chapters_summary, chapters, request_id=request_id
+            )
             story_metadata["chaptersSummary"] = chapters_summary
 
         # Save metadata to Firestore
-        db_admin.collection("users").document(userId).collection("stories").document(story_id).set(story_metadata)
+        await _run_blocking(
+            "firestore.write_story_metadata",
+            db_admin.collection("users").document(userId).collection("stories").document(story_id).set,
+            story_metadata,
+            request_id=request_id,
+        )
+
+        logger.info("import_completed request_id=%s story_id=%s chapters=%s", request_id, story_id, total_chapters)
 
         return JSONResponse({
             "status": "ok",
@@ -700,6 +776,7 @@ async def upload_story(
             os.remove(tmp_path)
 
 @app.post("/api/parse-import")
+@_serialized_import_route
 async def parse_import(
     request: Request,
     userId: str = Form(...),
@@ -712,6 +789,7 @@ async def parse_import(
     upload_error = _validate_book_upload(file)
     if upload_error:
         return upload_error
+    request_id = _request_id(request)
     suffix = os.path.splitext(file.filename or "")[1] or ".tmp"
     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
         tmp_path = tmp.name
@@ -721,7 +799,9 @@ async def parse_import(
             encoding_error = _validate_supported_text_encoding(tmp_path)
             if encoding_error:
                 return encoding_error
-        chapters = parse_book_file(tmp_path, file.filename)
+        chapters = await _run_blocking(
+            "parse_import_file", parse_book_file, tmp_path, file.filename, request_id=request_id
+        )
         if not chapters:
             return JSONResponse({"error": "No readable chapters found"}, status_code=422)
         return JSONResponse({
@@ -736,20 +816,22 @@ async def parse_import(
             os.remove(tmp_path)
 
 
-async def _append_prepared_chapters(user_id: str, book_id: str, filename: str, additions: List[dict]):
+async def _append_prepared_chapters(
+    user_id: str, book_id: str, filename: str, additions: List[dict], request_id: str = ""
+):
     """Append already-reviewed chapters and refresh the same storage metadata as TXT append."""
     bucket = storage.bucket()
     blob = bucket.blob(f"users/{user_id}/files/{filename}")
-    if not blob.exists():
+    if not await _run_blocking("storage.exists_master", blob.exists, request_id=request_id):
         return None, JSONResponse({"error": "File not found"}, status_code=404)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
         tmp_path = tmp.name
     try:
-        blob.download_to_filename(tmp_path)
-        chapters = parse_chapters_from_file(tmp_path)
+        await _run_blocking("storage.download_master", blob.download_to_filename, tmp_path, request_id=request_id)
+        chapters = await _run_blocking("parse_existing_book", parse_chapters_from_file, tmp_path, request_id=request_id)
         chapters.extend(additions)
-        write_canonical_text(tmp_path, chapters)
-        blob.upload_from_filename(tmp_path)
+        await _run_blocking("write_canonical_text", write_canonical_text, tmp_path, chapters, request_id=request_id)
+        await _run_blocking("storage.upload_master", blob.upload_from_filename, tmp_path, request_id=request_id)
         total_chapters = len(chapters)
         story_ref = db_admin.collection("users").document(user_id).collection("stories").document(book_id)
         is_segmented = total_chapters > 200
@@ -758,18 +840,27 @@ async def _append_prepared_chapters(user_id: str, book_id: str, filename: str, a
             chapter_counts = []
             segments = partition_chapters(chapters)
             for index, segment in enumerate(segments):
-                data = []
-                for chapter in segment:
-                    sentences = split_text_into_chunks(chapter["content"])
-                    chapter_counts.append(len(sentences))
-                    data.append({"title": chapter["title"], "sentences": sentences})
-                bucket.blob(f"users/{user_id}/stories/{book_id}/segments/seg_{index}.json").upload_from_string(json.dumps(data), content_type="application/json")
+                data, counts = await _run_blocking(
+                    "build_segment", _build_segment_data, segment, request_id=request_id
+                )
+                chapter_counts.extend(counts)
+                await _run_blocking(
+                    "storage.upload_segment",
+                    bucket.blob(f"users/{user_id}/stories/{book_id}/segments/seg_{index}.json").upload_from_string,
+                    json.dumps(data),
+                    content_type="application/json",
+                    request_id=request_id,
+                )
             metadata.update({"segmentsCount": len(segments), "chapterCounts": chapter_counts})
         else:
-            summary = [{"title": chapter["title"], "count": len(split_text_into_chunks(chapter["content"]))} for chapter in chapters]
+            summary = await _run_blocking(
+                "build_chapters_summary", _build_chapters_summary, chapters, request_id=request_id
+            )
             metadata["chaptersSummary"] = summary
-        story_ref.set(metadata, merge=True)
-        response_chapters = [{"title": chapter["title"], "count": len(split_text_into_chunks(chapter["content"]))} for chapter in chapters]
+        await _run_blocking("firestore.write_story_metadata", story_ref.set, metadata, merge=True, request_id=request_id)
+        response_chapters = await _run_blocking(
+            "build_response_summary", _build_chapters_summary, chapters, request_id=request_id
+        )
         return {"title": filename.replace(".txt", ""), "filename": filename, "chapters": response_chapters, "totalChapters": total_chapters, "isSegmented": is_segmented}, None
     finally:
         if os.path.exists(tmp_path):
@@ -777,6 +868,7 @@ async def _append_prepared_chapters(user_id: str, book_id: str, filename: str, a
 
 
 @app.post("/api/append-chapters")
+@_serialized_import_route
 async def append_chapters(
     request: Request,
     userId: str = Form(...),
@@ -804,7 +896,9 @@ async def append_chapters(
             raise ValueError("No non-empty chapters selected")
     except (ValueError, json.JSONDecodeError) as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
-    result, error = await _append_prepared_chapters(userId, bookId, filename, additions)
+    result, error = await _append_prepared_chapters(
+        userId, bookId, filename, additions, request_id=_request_id(request)
+    )
     return error or JSONResponse(result)
 
 

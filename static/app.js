@@ -2647,20 +2647,28 @@ const handleFileUpload = async (e) => {
 
         if (!response.ok) {
             let detail = `Upload failed (${response.status})`;
-            try {
-                const payload = await response.clone().json();
-                if (typeof payload?.error === 'string' && payload.error.trim()) {
-                    detail = payload.error;
-                } else if (Array.isArray(payload?.detail)) {
-                    detail = payload.detail.map(item => {
-                        const location = Array.isArray(item?.loc) ? item.loc.join('.') : 'request';
-                        return `${location}: ${item?.msg || 'invalid value'}`;
-                    }).join('; ') || detail;
-                } else if (typeof payload?.detail === 'string' && payload.detail.trim()) {
-                    detail = payload.detail;
+            if (response.status === 429) {
+                const retryAfter = response.headers.get('Retry-After');
+                detail = retryAfter
+                    ? `Máy chủ đang xử lý một lượt nhập khác. Vui lòng thử lại sau ${retryAfter} giây.`
+                    : 'Máy chủ đang xử lý một lượt nhập khác. Vui lòng thử lại sau.';
+            }
+            if (response.status !== 429) {
+                try {
+                    const payload = await response.clone().json();
+                    if (typeof payload?.error === 'string' && payload.error.trim()) {
+                        detail = payload.error;
+                    } else if (Array.isArray(payload?.detail)) {
+                        detail = payload.detail.map(item => {
+                            const location = Array.isArray(item?.loc) ? item.loc.join('.') : 'request';
+                            return `${location}: ${item?.msg || 'invalid value'}`;
+                        }).join('; ') || detail;
+                    } else if (typeof payload?.detail === 'string' && payload.detail.trim()) {
+                        detail = payload.detail;
+                    }
+                } catch (_) {
+                    // Keep the status-based fallback when the server response is not JSON.
                 }
-            } catch (_) {
-                // Keep the status-based fallback when the server response is not JSON.
             }
             throw new Error(detail);
         }

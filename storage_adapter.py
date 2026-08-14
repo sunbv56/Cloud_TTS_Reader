@@ -9,6 +9,15 @@ import os
 from typing import Optional
 
 
+def _int_env(name: str, default: int, minimum: int = 1, maximum: int = 300) -> int:
+    """Read a bounded integer setting without allowing invalid client config."""
+    try:
+        value = int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(minimum, min(maximum, value))
+
+
 class _FirebaseBlob:
     def __init__(self, blob):
         self._blob = blob
@@ -135,6 +144,7 @@ class B2StorageBackend:
     def __init__(self):
         try:
             import boto3
+            from botocore.config import Config
             from botocore.exceptions import ClientError
         except ImportError as exc:  # pragma: no cover - production dependency
             raise RuntimeError("boto3 is required when STORAGE_BACKEND=b2") from exc
@@ -152,12 +162,18 @@ class B2StorageBackend:
             )
 
         region = os.getenv("B2_REGION", "").strip() or None
+        max_attempts = _int_env("B2_MAX_ATTEMPTS", 3, 1, 8)
         self.client = boto3.client(
             "s3",
             endpoint_url=endpoint,
             region_name=region,
             aws_access_key_id=key_id,
             aws_secret_access_key=application_key,
+            config=Config(
+                connect_timeout=_int_env("B2_CONNECT_TIMEOUT_SECONDS", 10, 1, 60),
+                read_timeout=_int_env("B2_READ_TIMEOUT_SECONDS", 60, 5, 300),
+                retries={"max_attempts": max_attempts, "mode": "standard"},
+            ),
         )
         self._client_error = ClientError
 
