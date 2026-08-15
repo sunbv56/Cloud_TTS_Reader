@@ -88,6 +88,7 @@ class _B2Blob:
             self._backend.bucket_name,
             self.path,
             ExtraArgs=extra_args or {},
+            Config=self._backend.transfer_config,
         )
 
     def upload_from_string(self, data, content_type: Optional[str] = None):
@@ -154,6 +155,7 @@ class B2StorageBackend:
             import boto3
             from botocore.config import Config
             from botocore.exceptions import ClientError
+            from boto3.s3.transfer import TransferConfig
         except ImportError as exc:  # pragma: no cover - production dependency
             raise RuntimeError("boto3 is required when STORAGE_BACKEND=b2") from exc
 
@@ -182,6 +184,14 @@ class B2StorageBackend:
                 read_timeout=_int_env("B2_READ_TIMEOUT_SECONDS", 60, 5, 300),
                 retries={"max_attempts": max_attempts, "mode": "standard"},
             ),
+        )
+        # boto3's default S3Transfer uses 10 threads x 8 MiB parts. That is
+        # safe for a large host, but it can consume most of a 256 MB Fly VM.
+        self.transfer_config = TransferConfig(
+            multipart_threshold=16 * 1024 * 1024,
+            multipart_chunksize=4 * 1024 * 1024,
+            max_concurrency=1,
+            use_threads=False,
         )
         self._client_error = ClientError
 

@@ -80,7 +80,9 @@ except Exception as e:
     storage = None
 
 app = FastAPI()
-NUM_WORKERS = 3  # Tăng số lượng worker nếu muốn nạp song song nhanh hơn
+# The Fly machine has 256 MB. Two streams remain the default; this trial allows
+# at most three concurrent Edge-TTS streams and still clamps larger requests.
+NUM_WORKERS = 2
 
 # Resource limits are intentionally conservative for the 256 MB Fly.io VM. They
 # can be raised per deployment through environment variables without changing
@@ -90,9 +92,13 @@ MAX_APPEND_BYTES = int(os.getenv("MAX_APPEND_BYTES", str(10 * 1024 * 1024)))
 MAX_TTS_TEXT_CHARS = int(os.getenv("MAX_TTS_TEXT_CHARS", "5000"))
 MAX_DOWNLOAD_CHAPTERS = int(os.getenv("MAX_DOWNLOAD_CHAPTERS", "50"))
 MAX_DOWNLOAD_SENTENCES = int(os.getenv("MAX_DOWNLOAD_SENTENCES", "50000"))
-MAX_WS_WORKERS = int(os.getenv("MAX_WS_WORKERS", "5"))
-MAX_WS_QUEUE = int(os.getenv("MAX_WS_QUEUE", "100"))
-MAX_WS_PER_USER = int(os.getenv("MAX_WS_PER_USER", "2"))
+try:
+    MAX_WS_WORKERS = max(1, min(3, int(os.getenv("MAX_WS_WORKERS", "3"))))
+    MAX_WS_QUEUE = max(8, min(24, int(os.getenv("MAX_WS_QUEUE", "24"))))
+except (TypeError, ValueError):
+    MAX_WS_WORKERS = 3
+    MAX_WS_QUEUE = 24
+MAX_WS_PER_USER = 1
 MAX_NEW_CONTENT_CHARS = int(os.getenv("MAX_NEW_CONTENT_CHARS", "1000000"))
 TTS_CHUNK_TIMEOUT_SECONDS = float(os.getenv("TTS_CHUNK_TIMEOUT_SECONDS", "30"))
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(150 * 1024)))
@@ -542,6 +548,26 @@ def parse_chapter_at_index(file_path: str, chapter_index: int):
     return chapter if chapter is not None and current_index == chapter_index else None
 
 
+def _load_json_file(file_path: str):
+    """Load JSON from disk so the storage response body is never duplicated."""
+    with open(file_path, "r", encoding="utf-8") as source:
+        return json.load(source)
+
+
+def _iter_temp_file(file_path: str, chunk_size: int = 1024 * 1024):
+    """Stream a temporary file and always remove it after the response."""
+    try:
+        with open(file_path, "rb") as source:
+            while chunk := source.read(chunk_size):
+                yield chunk
+    finally:
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                logger.warning("temporary_response_cleanup_failed path=%s", file_path)
+
+
 def _chapter_from_text(text: str, fallback_title: str):
     """Normalize one imported document fragment into the reader chapter shape."""
     content = re.sub(r'\n{3,}', '\n\n', text or '').strip()
@@ -634,8 +660,8 @@ def partition_chapters(chapters: List[dict], segment_size: int = 100):
 
 
 def _should_segment_book(total_chapters: int) -> bool:
-    """Keep chapter navigation on the fast segment path for every book."""
-    return total_chapters > 0
+    """Segment only large books; small books use the bounded TXT cache."""
+    return total_chapters > 200
 
 
 def _build_segment_data(seg_chapters: List[dict]):
@@ -647,6 +673,20 @@ def _build_segment_data(seg_chapters: List[dict]):
         chapter_counts.append(len(sentences))
         seg_data.append({"title": chap["title"], "sentences": sentences})
     return seg_data, chapter_counts
+
+
+def _upload_json_blob(blob, payload, content_type: str = "application/json"):
+    """Serialize JSON to disk before upload to avoid a string+bytes double copy."""
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+    tmp_path = tmp.name
+    tmp.close()
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as target:
+            json.dump(payload, target, ensure_ascii=False, separators=(",", ":"))
+        return blob.upload_from_filename(tmp_path, content_type=content_type)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
 
 
 def _build_chapters_summary(chapters: List[dict]):
@@ -825,8 +865,8 @@ async def upload_story(
 ):
     """
     Advanced upload with chunking logic.
-    All imported books use 100-chapter segments so chapter navigation stays on
-    the same fast path for small and large books.
+    Large imports use 100-chapter segments; smaller books use the bounded
+    disk-backed source cache when chapters are opened.
     """
     auth_error = _authorization_error(request, userId)
     if auth_error:
@@ -908,8 +948,9 @@ async def upload_story(
                 blob = bucket.blob(seg_blob_path)
                 await _run_blocking(
                     "storage.upload_segment",
-                    blob.upload_from_string,
-                    json.dumps(seg_data),
+                    _upload_json_blob,
+                    blob,
+                    seg_data,
                     content_type="application/json",
                     request_id=request_id,
                 )
@@ -1022,8 +1063,9 @@ async def _append_prepared_chapters(
                 chapter_counts.extend(counts)
                 await _run_blocking(
                     "storage.upload_segment",
-                    bucket.blob(f"users/{user_id}/stories/{book_id}/segments/seg_{index}.json").upload_from_string,
-                    json.dumps(data),
+                    _upload_json_blob,
+                    bucket.blob(f"users/{user_id}/stories/{book_id}/segments/seg_{index}.json"),
+                    data,
                     content_type="application/json",
                     request_id=request_id,
                 )
@@ -1126,8 +1168,9 @@ async def _migrate_legacy_story(user_id: str, story_id: str, filename: str, requ
             )
             await _run_storage(
                 "migration.upload_segment",
-                segment_blob.upload_from_string,
-                json.dumps(seg_data, ensure_ascii=False),
+                _upload_json_blob,
+                segment_blob,
+                seg_data,
                 content_type="application/json",
                 request_id=request_id,
             )
@@ -1245,18 +1288,33 @@ async def get_segment_data(
     blob_path = f"users/{userId}/stories/{storyId}/{segment_prefix}/seg_{segmentIndex}.json"
     blob = bucket.blob(blob_path)
     
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+    tmp_path = tmp.name
+    tmp.close()
     try:
-        raw = await _run_storage(
-            "storage.download_segment", blob.download_as_text, request_id=_request_id(request)
-        )
+        try:
+            await _run_storage(
+                "storage.download_segment", blob.download_to_filename, tmp_path,
+                request_id=_request_id(request)
+            )
+        except Exception as exc:
+            if _is_storage_not_found(exc):
+                return JSONResponse({"error": "Segment not found"}, status_code=404)
+            logger.exception("segment_download_failed story_id=%s segment=%s", storyId, segmentIndex)
+            return JSONResponse({"error": "Segment storage unavailable", "retryable": True}, status_code=503)
+        try:
+            data = await _run_blocking(
+                "storage.parse_segment", _load_json_file, tmp_path, request_id=_request_id(request)
+            )
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return JSONResponse({"error": "Segment data is invalid"}, status_code=502)
     except Exception as exc:
-        if _is_storage_not_found(exc):
-            return JSONResponse({"error": "Segment not found"}, status_code=404)
         logger.exception("segment_download_failed story_id=%s segment=%s", storyId, segmentIndex)
         return JSONResponse({"error": "Segment storage unavailable", "retryable": True}, status_code=503)
-    try:
-        data = json.loads(raw)
-    except (TypeError, ValueError, json.JSONDecodeError):
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+    if not isinstance(data, list):
         return JSONResponse({"error": "Segment data is invalid"}, status_code=502)
     return JSONResponse({"chapters": data})
 
@@ -1398,16 +1456,22 @@ async def get_story_file(request: Request, userId: str, storyId: str, filename: 
     if storage is None:
         return JSONResponse({"error": "Storage backend is not configured"}, status_code=503)
     blob = storage.bucket().blob(f"users/{userId}/files/{filename}")
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
+    tmp_path = tmp.name
+    tmp.close()
     try:
-        data = await _run_storage(
-            "storage.download_legacy_file", blob.download_as_bytes, request_id=_request_id(request)
+        await _run_storage(
+            "storage.download_legacy_file", blob.download_to_filename, tmp_path,
+            request_id=_request_id(request)
         )
     except Exception as exc:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
         if _is_storage_not_found(exc):
             return JSONResponse({"error": "File not found"}, status_code=404)
         logger.exception("legacy_file_download_failed story_id=%s", storyId)
         return JSONResponse({"error": "File storage unavailable", "retryable": True}, status_code=503)
-    return Response(content=data, media_type="text/plain")
+    return StreamingResponse(_iter_temp_file(tmp_path), media_type="text/plain")
 
 
 @app.delete("/api/stories/{userId}/{storyId}/storage")
@@ -1687,7 +1751,7 @@ async def append_chapter(
                         seg_data.append({"title": chap['title'], "sentences": sentences})
                     
                     seg_blob_path = f"users/{userId}/stories/{story_id}/segments/seg_{i}.json"
-                    bucket.blob(seg_blob_path).upload_from_string(json.dumps(seg_data), content_type="application/json")
+                    _upload_json_blob(bucket.blob(seg_blob_path), seg_data)
                     
                     # Memory cleanup
                     del seg_data
@@ -1843,7 +1907,7 @@ async def delete_chapters(
                         seg_data.append({"title": chap['title'], "sentences": sentences})
                     
                     seg_blob_path = f"users/{userId}/stories/{bookId}/segments/seg_{i}.json"
-                    bucket.blob(seg_blob_path).upload_from_string(json.dumps(seg_data), content_type="application/json")
+                    _upload_json_blob(bucket.blob(seg_blob_path), seg_data)
                     
                     # Memory cleanup
                     del seg_data
@@ -2027,7 +2091,7 @@ async def update_chapter(
                             seg_data.append({"title": chap['title'], "sentences": sentences})
                         
                         seg_blob_path = f"users/{userId}/stories/{bookId}/segments/seg_{i}.json"
-                        bucket.blob(seg_blob_path).upload_from_string(json.dumps(seg_data), content_type="application/json")
+                        _upload_json_blob(bucket.blob(seg_blob_path), seg_data)
                         
                         # Memory cleanup
                         del seg_data
@@ -2207,10 +2271,21 @@ async def websocket_endpoint(websocket: WebSocket):
                         requested_workers = max(1, min(requested_workers, MAX_WS_WORKERS))
                         print(f"Aggressive Reset: Killing old workers, spawning {requested_workers} new workers.")
                         
-                        # Aggressively kill ALL current workers to abort any stuck network requests
-                        for task in worker_pool.values():
-                            task.cancel()
+                        # Cancel and await old workers before respawning. Without
+                        # awaiting, cancelled Edge-TTS streams can overlap the
+                        # new session and briefly double the VM's memory usage.
+                        old_workers = list(worker_pool.values())
                         worker_pool.clear()
+                        for task in old_workers:
+                            task.cancel()
+                        if old_workers:
+                            try:
+                                await asyncio.wait_for(
+                                    asyncio.gather(*old_workers, return_exceptions=True),
+                                    timeout=1.0,
+                                )
+                            except asyncio.TimeoutError:
+                                print("Worker cleanup timed out; keeping the hard worker cap.")
                         
                         # Respawn the exact number of requested workers fresh
                         state["current_workers"] = requested_workers
@@ -2259,7 +2334,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 try:
                     communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume=volume)
                     metadata = []
-                    audio_data = b""
+                    audio_data = bytearray()
 
                     async for chunk in _iter_tts_chunks(communicate):
                         # CANCEL MID-STREAM instantly if a new session starts
@@ -2268,7 +2343,7 @@ async def websocket_endpoint(websocket: WebSocket):
                             break
                         
                         if chunk["type"] == "audio":
-                            audio_data += chunk["data"]
+                            audio_data.extend(chunk["data"])
                         elif chunk["type"] == "WordBoundary":
                             metadata.append({
                                 "start": chunk["offset"] / 10_000_000,
@@ -2330,8 +2405,11 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # Cleanup: cancel receiver and all workers in pool
     receiver_task.cancel()
-    for w_task in worker_pool.values():
+    remaining_workers = list(worker_pool.values())
+    for w_task in remaining_workers:
         w_task.cancel()
+    if remaining_workers:
+        await asyncio.gather(*remaining_workers, return_exceptions=True)
 
     if state["uid"]:
         async with _active_ws_lock:

@@ -49,6 +49,8 @@ test('P0 resource limits are present and bounded', () => {
     assert.match(mainPy, /MAX_TTS_TEXT_CHARS = int\(os\.getenv/);
     assert.match(mainPy, /asyncio\.Queue\(maxsize=MAX_WS_QUEUE\)/);
     assert.match(mainPy, /min\(requested_workers, MAX_WS_WORKERS\)/);
+    assert.match(mainPy, /min\(3, int\(os\.getenv\("MAX_WS_WORKERS", "3"\)\)\)/);
+    assert.match(mainPy, /min\(24, int\(os\.getenv\("MAX_WS_QUEUE", "24"\)\)\)/);
     assert.match(mainPy, /File exceeds the \{max_bytes\} byte limit/);
 });
 
@@ -65,7 +67,7 @@ test('backend validates text uploads and bounds TTS reads', () => {
 });
 
 test('websocket connections are bounded per authenticated user', () => {
-    assert.match(mainPy, /MAX_WS_PER_USER = int\(os\.getenv/);
+    assert.match(mainPy, /MAX_WS_PER_USER = 1/);
     assert.match(mainPy, /_active_ws_by_uid/);
     assert.match(mainPy, /Too many active connections/);
 });
@@ -77,6 +79,13 @@ test('book loading has bounded network waits and aborts stale selections', () =>
     assert.match(appJs, /promiseWithTimeout\(getDoc\(storyRef\), 15_000/);
     assert.match(appJs, /STATE\.loadController\?\.abort\(\)/);
     assert.match(appJs, /waitForSourceBufferIdle\(2_000\)/);
+    assert.match(appJs, /FOREGROUND_PREFETCH_CHUNKS = 12/);
+    assert.match(appJs, /BACKGROUND_PREFETCH_CHUNKS = 16/);
+    assert.match(appJs, /numWorkers: 2/);
+    assert.match(appJs, /WORKER_STEPS = \[1, 2, 3\]/);
+    assert.match(appJs, /function trimReaderContentCache\(activeChapterIndex\)/);
+    assert.match(appJs, /closeWebSocketIntentionally\(\);/);
+    assert.doesNotMatch(appJs, /\/migrate\?filename=/);
 });
 
 test('storage reads leave the event loop and avoid existence round trips', () => {

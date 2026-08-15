@@ -132,9 +132,9 @@ class ImportRuntimeTest(unittest.IsolatedAsyncioTestCase):
         finally:
             _invalidate_legacy_source_cache(user_id, filename)
 
-    def test_all_nonempty_books_use_segment_navigation(self):
-        self.assertTrue(_should_segment_book(1))
-        self.assertTrue(_should_segment_book(200))
+    def test_only_large_books_use_segment_navigation(self):
+        self.assertFalse(_should_segment_book(1))
+        self.assertFalse(_should_segment_book(200))
         self.assertTrue(_should_segment_book(201))
         self.assertFalse(_should_segment_book(0))
 
@@ -149,12 +149,15 @@ class ImportRuntimeTest(unittest.IsolatedAsyncioTestCase):
             "B2_MAX_ATTEMPTS": "2",
         }
         with patch.dict(os.environ, settings, clear=False), patch("boto3.client") as client:
-            B2StorageBackend()
+            backend = B2StorageBackend()
         config = client.call_args.kwargs["config"]
         self.assertEqual(config.connect_timeout, 7)
         self.assertEqual(config.read_timeout, 42)
         self.assertEqual(config.retries["max_attempts"], 2)
         self.assertEqual(config.retries["mode"], "standard")
+        self.assertEqual(backend.transfer_config.multipart_chunksize, 4 * 1024 * 1024)
+        self.assertEqual(backend.transfer_config.max_concurrency, 1)
+        self.assertFalse(backend.transfer_config.use_threads)
 
 if __name__ == "__main__":
     unittest.main()

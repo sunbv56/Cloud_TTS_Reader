@@ -10,8 +10,8 @@ let app, auth, db, provider;
 // Keep enough compressed audio for background playback without dispatching
 // hundreds of TTS jobs at once. The old 150/500-chunk policy caused large
 // network, MSE and server bursts on phones.
-const FOREGROUND_PREFETCH_CHUNKS = 40;
-const BACKGROUND_PREFETCH_CHUNKS = 80;
+const FOREGROUND_PREFETCH_CHUNKS = 12;
+const BACKGROUND_PREFETCH_CHUNKS = 16;
 // Keep the MSE forward buffer bounded. Browser SourceBuffer quotas are
 // implementation-dependent, so a time budget is safer than a chunk count.
 const MAX_BUFFER_AHEAD_SECONDS = 180;
@@ -48,7 +48,7 @@ let STATE = {
         speed: 1.0,
         pitch: "+0Hz",
         volume: "+0%",
-        numWorkers: 5,
+        numWorkers: 2,
         fontSize: (function() {
             const saved = localStorage.getItem('reader-font-size');
             if (saved) return parseInt(saved, 10);
@@ -916,6 +916,36 @@ async function resetAudioEngine() {
     STATE.isTransitioning = false; // Re-enable playback tracking
 }
 
+// Keep only the content needed for the current view and the immediate next
+// chapter/segment. Older text remains recoverable from storage and will be
+// loaded again if the reader navigates backwards.
+function trimReaderContentCache(activeChapterIndex) {
+    if (!STATE.currentBook?.chapters) return;
+
+    if (STATE.isSegmented) {
+        const activeSegment = Math.floor(activeChapterIndex / 100);
+        const keepSegments = new Set([activeSegment, activeSegment + 1]);
+        for (const segmentIndex of Array.from(STATE.loadedSegments)) {
+            if (keepSegments.has(segmentIndex)) continue;
+            const start = segmentIndex * 100;
+            const end = Math.min(start + 100, STATE.currentBook.chapters.length);
+            for (let index = start; index < end; index++) {
+                const chapter = STATE.currentBook.chapters[index];
+                if (chapter?.sentences) chapter.sentences = null;
+            }
+            STATE.loadedSegments.delete(segmentIndex);
+        }
+        return;
+    }
+
+    const firstKept = Math.max(0, activeChapterIndex);
+    const lastKept = Math.min(STATE.currentBook.chapters.length - 1, activeChapterIndex + 1);
+    STATE.currentBook.chapters.forEach((chapter, index) => {
+        if (index >= firstKept && index <= lastKept) return;
+        if (chapter?.sentences) chapter.sentences = null;
+    });
+}
+
 function waitForSourceBufferIdle(timeoutMs) {
     const sourceBuffer = STATE.sourceBuffer;
     if (!sourceBuffer?.updating) return Promise.resolve();
@@ -939,7 +969,7 @@ STATS_MANAGER.init();
 OFFLINE_MANAGER.updateUsageUI();
 
 // Constants
-const WORKER_STEPS = [1, 2, 3, 5, 10, 20, 50];
+const WORKER_STEPS = [1, 2, 3];
 
 // DOM Elements
 const audio = document.getElementById('main-audio');
@@ -2670,13 +2700,9 @@ async function loadBookFromStorage(bookId, bookData) {
             updateLibraryHighlight();
 
             await loadBook(data, bookId, filename);
-            // Queue migration only after legacy content is visible, so the first
-            // open does not compete with itself for the same master download.
-            void authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/migrate?filename=${encodeURIComponent(filename)}`, {
-                method: 'POST',
-                timeoutMs: 8_000,
-                retries: 0
-            }).catch(err => console.debug('[Migration] Legacy migration deferred:', err.message));
+            // Legacy books use the bounded disk-backed chapter cache. Do not
+            // start a RAM-heavy full-book migration while the reader is active;
+            // migration remains available as an explicit backend operation.
         }
         markLoad('first_render');
         document.getElementById('status-indicator').innerText = "Ready";
@@ -2871,6 +2897,10 @@ async function loadBook(bookData, bookId, filename) {
     const loadGeneration = ++STATE.loadGeneration;
     // 0. Robust Engine Reset
     await resetAudioEngine();
+    // Close the old socket immediately so its backend workers are cancelled
+    // while the new book is still loading, rather than waiting for the first
+    // PREFETCH message of the new book.
+    closeWebSocketIntentionally();
 
     toggleSidebar(false);
     toggleDiscoveryMode(false, { restoreFocus: false });
@@ -2952,6 +2982,12 @@ async function loadBook(bookData, bookId, filename) {
             const { theme, fontSize, ...bookSettings } = progress.settings;
             STATE.settings = { ...STATE.settings, ...bookSettings };
         }
+        // Older progress records may contain 5/10/20 workers. Normalize them
+        // before the first request so the UI cannot recreate the old RAM burst.
+        const savedWorkers = Number(STATE.settings.numWorkers);
+        STATE.settings.numWorkers = Number.isFinite(savedWorkers)
+            ? Math.max(1, Math.min(3, savedWorkers))
+            : 2;
     } else {
         STATE.currentChapterIndex = 0;
         STATE.currentSentenceIndex = 0;
@@ -3175,6 +3211,8 @@ async function renderChapter(index) {
         const segIdx = Math.floor(index / 100);
         await fetchSegment(segIdx);
     }
+
+    trimReaderContentCache(index);
 
     const chapter = STATE.currentBook.chapters[index];
     document.getElementById('current-chapter').innerText = chapter.title;
