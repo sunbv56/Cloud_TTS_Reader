@@ -16,7 +16,9 @@ class _FakeBody:
         self._offset = 0
         self.closed = False
 
-    def read(self, size):
+    def read(self, size=-1):
+        if size < 0:
+            size = len(self._payload) - self._offset
         chunk = self._payload[self._offset:self._offset + size]
         self._offset += len(chunk)
         return chunk
@@ -43,6 +45,15 @@ class B2DownloadTest(unittest.TestCase):
         finally:
             if os.path.exists(path):
                 os.remove(path)
+
+    def test_memory_downloads_close_response_body(self):
+        for method_name, expected in (("download_as_text", "chapter text"), ("download_as_bytes", b"chapter text")):
+            body = _FakeBody(b"chapter text")
+            client = types.SimpleNamespace(get_object=lambda **kwargs: {"Body": body})
+            backend = types.SimpleNamespace(client=client, bucket_name="bucket")
+            result = getattr(_B2Blob(backend, "book.txt"), method_name)()
+            self.assertEqual(result, expected)
+            self.assertTrue(body.closed)
 
     def test_utf8_detection_handles_multibyte_character_at_sample_boundary(self):
         fd, path = tempfile.mkstemp(suffix=".txt")

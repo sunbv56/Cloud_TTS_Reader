@@ -107,14 +107,22 @@ class _B2Blob:
             Bucket=self._backend.bucket_name,
             Key=self.path,
         )
-        return response["Body"].read().decode("utf-8")
+        body = response["Body"]
+        try:
+            return body.read().decode("utf-8")
+        finally:
+            body.close()
 
     def download_as_bytes(self):
         response = self._backend.client.get_object(
             Bucket=self._backend.bucket_name,
             Key=self.path,
         )
-        return response["Body"].read()
+        body = response["Body"]
+        try:
+            return body.read()
+        finally:
+            body.close()
 
     def download_to_filename(self, filename):
         # Use an explicitly managed response stream instead of boto3's

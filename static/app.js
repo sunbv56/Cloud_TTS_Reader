@@ -98,10 +98,13 @@ let STATE = {
     tocAutoMinimized: false,
     // Segmentation & Pagination
     isSegmented: false,
+    segmentFormatVersion: 0,
     segmentsCount: 0,
     currentSegmentIndex: -1,
     loadedSegments: new Set(), // indices of segments currently in memory
     // Performance Optimization State
+    loadGeneration: 0,
+    loadController: null,
     heartbeatInterval: null,
     lastHighlightedIndex: -1,
     lastOntimeUpdateTick: 0,
@@ -121,6 +124,70 @@ let STATE = {
 };
 
 const DEFAULT_SETTINGS = JSON.parse(JSON.stringify(STATE.settings));
+
+const NETWORK_DEFAULT_TIMEOUT_MS = 20_000;
+const NETWORK_DEFAULT_RETRIES = 2;
+
+class NetworkTimeoutError extends Error {
+    constructor(url, timeoutMs) {
+        super(`Request timed out after ${timeoutMs}ms: ${url}`);
+        this.name = 'NetworkTimeoutError';
+        this.retryable = true;
+    }
+}
+
+function promiseWithTimeout(promise, timeoutMs, message) {
+    let timer;
+    return Promise.race([
+        promise,
+        new Promise((_, reject) => {
+            timer = setTimeout(() => reject(new NetworkTimeoutError(message, timeoutMs)), timeoutMs);
+        })
+    ]).finally(() => clearTimeout(timer));
+}
+
+function shouldRetryNetworkError(error) {
+    return error instanceof NetworkTimeoutError || error?.name === 'TypeError' || error?.retryable === true;
+}
+
+function createLoadTrace(bookId) {
+    const started = performance.now();
+    return label => console.debug(`[LoadTiming] book=${bookId} step=${label} elapsed_ms=${(performance.now() - started).toFixed(1)}`);
+}
+
+async function fetchWithTimeout(url, options = {}, config = {}) {
+    const timeoutMs = config.timeoutMs ?? NETWORK_DEFAULT_TIMEOUT_MS;
+    const retries = config.retries ?? NETWORK_DEFAULT_RETRIES;
+    const externalSignal = options.signal;
+    let lastError;
+
+    for (let attempt = 0; attempt <= retries; attempt++) {
+        if (externalSignal?.aborted) throw new DOMException('Request aborted', 'AbortError');
+        const controller = new AbortController();
+        const abortForwarder = () => controller.abort(externalSignal.reason);
+        externalSignal?.addEventListener('abort', abortForwarder, { once: true });
+        const timer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const response = await fetch(url, { ...options, signal: controller.signal });
+            if (response.ok || ![502, 503, 504].includes(response.status) || attempt === retries) return response;
+            lastError = new Error(`HTTP ${response.status}`);
+            lastError.retryable = true;
+        } catch (error) {
+            if (externalSignal?.aborted) throw error;
+            if (error.name === 'AbortError') {
+                lastError = new NetworkTimeoutError(url, timeoutMs);
+            } else {
+                lastError = error;
+            }
+            if (!shouldRetryNetworkError(lastError) || attempt === retries) throw lastError;
+        } finally {
+            clearTimeout(timer);
+            externalSignal?.removeEventListener('abort', abortForwarder);
+        }
+        await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1) + Math.random() * 250));
+    }
+    throw lastError;
+}
 
 // --- Offline & Cache Manager (IndexedDB) ---
 const OFFLINE_MANAGER = {
@@ -301,7 +368,7 @@ const STATS_MANAGER = {
 // --- Firebase Initialization ---
 async function startFirebase() {
     try {
-        const response = await fetch('/api/firebase-config');
+        const response = await fetchWithTimeout('/api/firebase-config', {}, { timeoutMs: 10_000, retries: 2 });
         const firebaseConfig = await response.json();
 
         if (!firebaseConfig.apiKey) {
@@ -351,7 +418,7 @@ async function startFirebase() {
         console.log("Firebase initialized successfully via API");
     } catch (err) {
         console.error("Failed to initialize Firebase:", err);
-        setTimeout(startFirebase, 5000); // Retry
+        setTimeout(startFirebase, 5000); // Retry, bounded by fetchWithTimeout
     }
 }
 
@@ -359,22 +426,32 @@ async function startFirebase() {
 async function authFetch(url, options = {}) {
     const user = STATE.user || auth?.currentUser;
     if (!user) throw new Error('Authentication required');
-    const headers = new Headers(options.headers || {});
-    let token = await user.getIdToken();
-    headers.set('Authorization', `Bearer ${token}`);
+    const { timeoutMs = NETWORK_DEFAULT_TIMEOUT_MS, retries, ...requestOptions } = options;
+    const headers = new Headers(requestOptions.headers || {});
     try {
-        let response = await fetch(url, { ...options, headers });
+        let token = await promiseWithTimeout(user.getIdToken(), 10_000, 'Firebase token');
+        headers.set('Authorization', `Bearer ${token}`);
+        let response = await fetchWithTimeout(url, { ...requestOptions, headers }, {
+            timeoutMs,
+            retries: retries ?? (requestOptions.method && requestOptions.method.toUpperCase() !== 'GET' ? 0 : NETWORK_DEFAULT_RETRIES)
+        });
         if (response.status === 401) {
             // A local server restart can coincide with an old cached Firebase
             // token. Force one refresh before asking the user to log in again.
-            token = await user.getIdToken(true);
+            token = await promiseWithTimeout(user.getIdToken(true), 10_000, 'Firebase token refresh');
             headers.set('Authorization', `Bearer ${token}`);
-            response = await fetch(url, { ...options, headers });
+            response = await fetchWithTimeout(url, { ...requestOptions, headers }, { timeoutMs, retries: 0 });
         }
         if (response.status === 401) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
         if (response.status === 403) throw new Error('Bạn không có quyền thực hiện thao tác này.');
         return response;
     } catch (error) {
+        if (error instanceof NetworkTimeoutError) {
+            const timeoutError = new Error('Máy chủ phản hồi quá lâu. Hãy thử lại.');
+            timeoutError.code = 'NETWORK_TIMEOUT';
+            timeoutError.cause = error;
+            throw timeoutError;
+        }
         if (error instanceof TypeError) throw new Error('Không thể kết nối máy chủ. Hãy kiểm tra mạng và thử lại.');
         throw error;
     }
@@ -810,13 +887,7 @@ async function resetAudioEngine() {
             }
 
             // Wait for SourceBuffer to be ready for removal
-            await new Promise(resolve => {
-                const check = () => {
-                    if (!STATE.sourceBuffer.updating) resolve();
-                    else setTimeout(check, 30);
-                };
-                check();
-            });
+            await waitForSourceBufferIdle(2_000);
 
             // Remove all buffered data
             if (STATE.sourceBuffer.buffered.length > 0) {
@@ -824,13 +895,7 @@ async function resetAudioEngine() {
                 console.log(`Clearing SourceBuffer: 0 to ${end + 10}s`);
                 STATE.sourceBuffer.remove(0, end + 10);
 
-                await new Promise(resolve => {
-                    const check = () => {
-                        if (!STATE.sourceBuffer.updating) resolve();
-                        else setTimeout(check, 30);
-                    };
-                    check();
-                });
+                await waitForSourceBufferIdle(2_000);
             }
 
             STATE.sourceBuffer.timestampOffset = 0;
@@ -849,6 +914,24 @@ async function resetAudioEngine() {
     STATE.pauseCount = 0;
     STATE.isStalled = false;
     STATE.isTransitioning = false; // Re-enable playback tracking
+}
+
+function waitForSourceBufferIdle(timeoutMs) {
+    const sourceBuffer = STATE.sourceBuffer;
+    if (!sourceBuffer?.updating) return Promise.resolve();
+    return new Promise((resolve, reject) => {
+        const started = performance.now();
+        const check = () => {
+            if (!sourceBuffer.updating) {
+                resolve();
+            } else if (performance.now() - started >= timeoutMs) {
+                reject(new NetworkTimeoutError('MediaSource reset', timeoutMs));
+            } else {
+                setTimeout(check, 30);
+            }
+        };
+        check();
+    });
 }
 
 // Initialize Managers
@@ -1851,7 +1934,7 @@ async function loadProgress(bookId) {
     if (!STATE.user) return null;
     try {
         const progressRef = doc(db, "users", STATE.user.uid, "progress", bookId);
-        const docSnap = await getDoc(progressRef);
+        const docSnap = await promiseWithTimeout(getDoc(progressRef), 15_000, 'Firestore reading progress');
         if (docSnap.exists()) {
             return docSnap.data();
         }
@@ -2531,6 +2614,11 @@ document.getElementById('cancel-merge-btn')?.addEventListener('click', closeMerg
 document.getElementById('confirm-merge-btn')?.addEventListener('click', confirmMergeChapters);
 
 async function loadBookFromStorage(bookId, bookData) {
+    STATE.loadController?.abort();
+    const loadController = new AbortController();
+    STATE.loadController = loadController;
+    const markLoad = createLoadTrace(bookId);
+    markLoad('start');
     // Close sidebar immediately on selection
     toggleSidebar(false);
 
@@ -2543,7 +2631,8 @@ async function loadBookFromStorage(bookId, bookData) {
     try {
         // Check if book is segmented in the new stories collection
         const storyRef = doc(db, "users", STATE.user.uid, "stories", bookId);
-        const storySnap = await getDoc(storyRef);
+        const storySnap = await promiseWithTimeout(getDoc(storyRef), 15_000, 'Firestore story metadata');
+        markLoad('metadata');
 
         let bookInfo = null;
         if (storySnap.exists()) {
@@ -2557,7 +2646,11 @@ async function loadBookFromStorage(bookId, bookData) {
         } else {
             // Traditional Load Flow
             const filename = bookData.filename || (bookId.replace("book_", "") + ".txt");
-            const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/file?filename=${encodeURIComponent(filename)}`);
+            const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/file?filename=${encodeURIComponent(filename)}`, {
+                signal: loadController.signal,
+                timeoutMs: 30_000
+            });
+            markLoad('legacy_file');
             if (!response.ok) throw new Error(`Book file HTTP ${response.status}`);
             const blob = await response.blob();
             const file = new File([blob], filename, { type: "text/plain" });
@@ -2565,21 +2658,39 @@ async function loadBookFromStorage(bookId, bookData) {
             const formData = new FormData();
             formData.append('file', file);
 
-            const parseRes = await fetch('/api/parse-book', { method: 'POST', body: formData });
+            const parseRes = await fetchWithTimeout('/api/parse-book', { method: 'POST', body: formData, signal: loadController.signal }, {
+                timeoutMs: 60_000,
+                retries: 0
+            });
+            if (!parseRes.ok) throw new Error(`Parse book HTTP ${parseRes.status}`);
             const data = await parseRes.json();
+            markLoad('legacy_parse');
 
             STATE.currentBookId = bookId;
             updateLibraryHighlight();
 
             await loadBook(data, bookId, filename);
+            // Queue migration only after legacy content is visible, so the first
+            // open does not compete with itself for the same master download.
+            void authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/migrate?filename=${encodeURIComponent(filename)}`, {
+                method: 'POST',
+                timeoutMs: 8_000,
+                retries: 0
+            }).catch(err => console.debug('[Migration] Legacy migration deferred:', err.message));
         }
+        markLoad('first_render');
         document.getElementById('status-indicator').innerText = "Ready";
+        markLoad('ready');
         saveProgress(true);
     } catch (err) {
+        if (err?.name === 'AbortError' || loadController.signal.aborted) return;
         console.error("Load from Storage Error:", err);
         alert("Failed to load book from storage. Make sure the file still exists.");
     } finally {
-        hideLoading();
+        if (STATE.loadController === loadController) {
+            STATE.loadController = null;
+            hideLoading();
+        }
     }
 }
 
@@ -2757,13 +2868,15 @@ function setupDragAndDrop() {
 setupDragAndDrop();
 
 async function loadBook(bookData, bookId, filename) {
+    const loadGeneration = ++STATE.loadGeneration;
     // 0. Robust Engine Reset
     await resetAudioEngine();
 
     toggleSidebar(false);
     toggleDiscoveryMode(false, { restoreFocus: false });
 
-    await OFFLINE_MANAGER.clearCache();
+    // Offline audio is disposable. Do not block first-paint on IndexedDB cleanup.
+    void OFFLINE_MANAGER.clearCache().catch(err => console.debug('[Offline] Cache cleanup skipped:', err.message));
 
     const currentUI = {
         fontSize: STATE.settings.fontSize,
@@ -2774,6 +2887,7 @@ async function loadBook(bookData, bookId, filename) {
 
     // Segmentation Logic
     STATE.isSegmented = bookData.isSegmented || false;
+    STATE.segmentFormatVersion = bookData.segmentFormatVersion || 0;
     STATE.segmentsCount = bookData.segmentsCount || 0;
     STATE.currentSegmentIndex = -1;
     STATE.loadedSegments.clear();
@@ -2805,11 +2919,22 @@ async function loadBook(bookData, bookId, filename) {
 
     STATE.currentBookId = bookId || ("book_" + bookData.title.replace(/[^a-zA-Z0-9]/g, "_"));
     STATE.currentFilename = filename || (STATE.currentBook.title + ".txt");
-    STATE.imageManifest = await loadImageManifest(STATE.currentBookId);
+    const expectedBookId = STATE.currentBookId;
+    STATE.imageManifest = { version: 1, coverId: null, images: [] };
+    const imageManifestPromise = loadImageManifest(STATE.currentBookId).then(manifest => {
+        if (loadGeneration !== STATE.loadGeneration || STATE.currentBookId !== expectedBookId) return manifest;
+        STATE.imageManifest = manifest;
+        if (manifest.images.length && STATE.user) {
+            void setDoc(doc(db, 'users', STATE.user.uid, 'progress', STATE.currentBookId), { has_images: true }, { merge: true })
+                .catch(err => console.debug('[Images] Progress flag skipped:', err.message));
+            // Text is already visible; add images without blocking first render.
+            if (STATE.currentBook?.chapters?.[STATE.currentChapterIndex]?.sentences) {
+                void renderChapter(STATE.currentChapterIndex).catch(err => console.debug('[Images] Deferred render skipped:', err.message));
+            }
+        }
+        return manifest;
+    });
     STATE.imageURLCache.clear();
-    if (STATE.imageManifest.images.length && STATE.user) {
-        await setDoc(doc(db, 'users', STATE.user.uid, 'progress', STATE.currentBookId), { has_images: true }, { merge: true });
-    }
 
     // Check for existing progress
     const progress = await loadProgress(STATE.currentBookId);
@@ -2854,10 +2979,12 @@ async function loadBook(bookData, bookId, filename) {
         highlightSentence(STATE.currentSentenceIndex);
     }
 
-    // --- FIX BUG 3: Await progress save to ensure Firestore is consistent before UI refresh ---
-    await saveProgress(true);
+    // Progress persistence is not part of first paint. A slow Firestore write
+    // must not keep the reader in its loading state.
+    void saveProgress(true).catch(err => console.debug('[Progress] Deferred save skipped:', err.message));
     playFromSentence(STATE.currentSentenceIndex);
     updateLibraryHighlight();
+    void imageManifestPromise.catch(err => console.debug('[Images] Deferred manifest skipped:', err.message));
 }
 
 async function fetchSegment(segmentIndex) {
@@ -2865,7 +2992,11 @@ async function fetchSegment(segmentIndex) {
 
     console.log(`[Segmentation] Fetching segment ${segmentIndex}...`);
     try {
-        const res = await authFetch(`/api/stories/${STATE.user.uid}/${STATE.currentBookId}/segments/${segmentIndex}?t=${Date.now()}`);
+        const version = STATE.segmentFormatVersion ? `&version=${STATE.segmentFormatVersion}` : '';
+        const res = await authFetch(`/api/stories/${STATE.user.uid}/${STATE.currentBookId}/segments/${segmentIndex}?t=${Date.now()}${version}`, {
+            timeoutMs: 25_000
+        });
+        if (!res.ok) throw new Error(`Segment HTTP ${res.status}`);
         const data = await res.json();
 
         // Update chapters in currentBook
@@ -2890,6 +3021,7 @@ async function fetchSegment(segmentIndex) {
         console.log(`[Segmentation] Segment ${segmentIndex} loaded.`);
     } catch (err) {
         console.error("Failed to fetch segment:", err);
+        throw err;
     }
 }
 

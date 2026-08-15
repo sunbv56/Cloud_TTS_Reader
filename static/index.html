@@ -786,6 +786,120 @@
         .discovery-list-view .discovery-book-content { position: relative; padding: 1rem 1.15rem; flex: 1; background: none; }
         .discovery-list-view .discovery-book-progress { margin-top: 0.75rem; }
         .discovery-list-view .icon-btn { top: 0.75rem; right: 0.75rem; }
+        /* Phone Discovery: preserve the cover-led browsing experience without
+           spending a full viewport on every title.  The compact grid is the
+           default at this size; the list remains an intentionally distinct,
+           scan-friendly alternative rather than a stretched desktop card. */
+        @media (max-width: 639px) {
+            #discovery-mode {
+                padding-bottom: calc(5.25rem + env(safe-area-inset-bottom));
+            }
+            #discovery-mode > .px-6 {
+                padding: max(2.5rem, calc(env(safe-area-inset-top) + 1.5rem)) 1rem 1.25rem;
+                align-items: stretch;
+            }
+            #discovery-mode h1 {
+                margin-bottom: 1rem;
+                font-size: 1.75rem;
+                line-height: 1.15;
+            }
+            #discovery-search {
+                min-height: 3rem;
+                padding-top: 0.75rem;
+                padding-bottom: 0.75rem;
+                padding-right: 1rem;
+            }
+            #discovery-mode > .flex-1 {
+                padding: 0 1rem 1.5rem;
+                gap: 2rem;
+            }
+            #discovery-grid:not(.discovery-list-view) {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 0.75rem;
+            }
+            #discovery-grid:not(.discovery-list-view) .discovery-book-card {
+                aspect-ratio: 0.72;
+                border-radius: 1.25rem;
+            }
+            #discovery-grid:not(.discovery-list-view) .discovery-book-art {
+                height: 70%;
+                clip-path: inset(0 0 18% 0);
+            }
+            #discovery-grid:not(.discovery-list-view) .discovery-book-content {
+                padding: 0.75rem;
+            }
+            #discovery-grid:not(.discovery-list-view) .discovery-book-title {
+                display: -webkit-box;
+                overflow: hidden;
+                -webkit-box-orient: vertical;
+                -webkit-line-clamp: 2;
+                white-space: normal;
+                font-size: 0.875rem;
+                line-height: 1.25;
+            }
+            #discovery-grid:not(.discovery-list-view) .discovery-book-meta {
+                margin-top: 0.3rem;
+                font-size: 0.6875rem;
+                line-height: 1.2;
+            }
+            #discovery-grid:not(.discovery-list-view) .discovery-book-progress {
+                margin-top: 0.6rem;
+                padding-top: 0.5rem;
+            }
+            #discovery-grid:not(.discovery-list-view) .discovery-book-progress > div:first-child {
+                margin-bottom: 0.35rem;
+                font-size: 0.625rem;
+            }
+            #discovery-grid:not(.discovery-list-view) .icon-btn {
+                top: 0.5rem;
+                right: 0.5rem;
+                width: 2.75rem;
+                height: 2.75rem;
+                border-radius: 0.875rem;
+            }
+            .discovery-list-view .discovery-book-card {
+                min-height: 7.25rem;
+                margin-bottom: 0.625rem;
+                border-radius: 1.25rem;
+            }
+            .discovery-list-view .discovery-book-art {
+                width: 5.25rem;
+                flex-basis: 5.25rem;
+                height: 7.25rem;
+                background: color-mix(in srgb, var(--theme-primary, #00E5FF) 18%, #101827);
+            }
+            .discovery-list-view .discovery-book-content {
+                padding: 0.875rem 3.75rem 0.875rem 0.875rem;
+                justify-content: center;
+            }
+            .discovery-list-view .discovery-book-title {
+                white-space: normal;
+                display: -webkit-box;
+                overflow: hidden;
+                -webkit-box-orient: vertical;
+                -webkit-line-clamp: 2;
+                line-height: 1.3;
+            }
+            .discovery-list-view .discovery-book-progress {
+                margin-top: 0.625rem;
+                padding-top: 0.5rem;
+            }
+            .discovery-list-view .discovery-book-progress > div:first-child {
+                margin-bottom: 0.35rem;
+            }
+            .discovery-list-view .icon-btn {
+                top: 0.5rem;
+                right: 0.5rem;
+            }
+            #discovery-continue-card .discovery-book-art {
+                width: 5.25rem;
+                height: 6.5rem;
+            }
+            #discovery-continue-card {
+                gap: 0.875rem;
+                border-radius: 1.25rem;
+            }
+        }
         #media-player-shell.player-discovery-dock::before {
             content: 'ĐANG PHÁT';
             position: absolute;
@@ -1762,7 +1876,7 @@
                             </div>
                         </div>
                     </div>
-                    <div id="discovery-grid" class="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-6">
+                    <div id="discovery-grid" class="grid grid-cols-2 md:grid-cols-2 2xl:grid-cols-3 gap-6">
                         <!-- Populated by JS -->
                     </div>
                     <div id="discovery-search-empty" hidden class="mt-6 rounded-3xl border border-dashed border-white/15 bg-surface-low/40 p-10 text-center">

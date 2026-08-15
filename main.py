@@ -20,7 +20,7 @@ import firebase_admin
 from firebase_admin import credentials, storage as firebase_storage, firestore, auth
 from storage_adapter import get_storage_backend
 from urllib.parse import quote
-from fastapi import FastAPI, Request, Response, Form, UploadFile, File, WebSocket, WebSocketDisconnect, Query
+from fastapi import BackgroundTasks, FastAPI, Request, Response, Form, UploadFile, File, WebSocket, WebSocketDisconnect, Query
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -96,6 +96,12 @@ MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(150 * 1024)))
 # Deliberately clamp RAM-heavy imports to one on the 256 MB machine.
 MAX_IMPORT_CONCURRENCY = 1
 IMPORT_RETRY_AFTER_SECONDS = int(os.getenv("IMPORT_RETRY_AFTER_SECONDS", "15"))
+try:
+    STORAGE_IO_CONCURRENCY = max(1, min(8, int(os.getenv("STORAGE_IO_CONCURRENCY", "4"))))
+    FIRESTORE_IO_CONCURRENCY = max(1, min(8, int(os.getenv("FIRESTORE_IO_CONCURRENCY", "4"))))
+except ValueError:
+    STORAGE_IO_CONCURRENCY = 4
+    FIRESTORE_IO_CONCURRENCY = 4
 # Firebase ID tokens are time-bound. A small tolerance keeps local development
 # usable when the machine clock drifts by a few seconds, while the OS clock
 # should still be synchronized (Firebase Admin accepts at most 60 seconds).
@@ -112,6 +118,9 @@ ALLOWED_BOOK_CONTENT_TYPES = {
 _active_ws_by_uid = {}
 _active_ws_lock = asyncio.Lock()
 _import_semaphore = asyncio.Semaphore(MAX_IMPORT_CONCURRENCY)
+_storage_io_semaphore = asyncio.Semaphore(STORAGE_IO_CONCURRENCY)
+_firestore_io_semaphore = asyncio.Semaphore(FIRESTORE_IO_CONCURRENCY)
+_active_migrations = set()
 
 
 def _request_id(request: Request) -> str:
@@ -133,6 +142,18 @@ async def _run_blocking(label: str, operation, *args, request_id: str = "", **kw
     finally:
         elapsed_ms = (time.perf_counter() - started) * 1000
         logger.info("operation_timing label=%s request_id=%s elapsed_ms=%.1f", label, request_id or "-", elapsed_ms)
+
+
+async def _run_storage(label: str, operation, *args, request_id: str = "", **kwargs):
+    """Bound Storage SDK calls so slow objects cannot exhaust the 256 MB VM."""
+    async with _storage_io_semaphore:
+        return await _run_blocking(label, operation, *args, request_id=request_id, **kwargs)
+
+
+async def _run_firestore(label: str, operation, *args, request_id: str = "", **kwargs):
+    """Bound Firestore SDK calls, which are synchronous in the Admin SDK."""
+    async with _firestore_io_semaphore:
+        return await _run_blocking(label, operation, *args, request_id=request_id, **kwargs)
 
 
 def _serialized_import_route(route):
@@ -173,6 +194,34 @@ def _authorization_error(request: Request, user_id: str):
         print(f"[Auth] Firebase ID token verification failed: {type(exc).__name__}: {exc}")
         return JSONResponse({"error": "Invalid or expired authentication token"}, status_code=401)
     return None
+
+
+async def _authorization_error_async(request: Request, user_id: str):
+    """Keep Firebase token verification off the event loop on hot read routes."""
+    return await _run_blocking(
+        "auth.verify_id_token", _authorization_error, request, user_id,
+        request_id=_request_id(request),
+    )
+
+
+def _is_storage_not_found(exc: Exception) -> bool:
+    """Normalize Firebase and B2 not-found exceptions for direct downloads."""
+    if storage is not None:
+        checker = getattr(storage, "is_not_found", None)
+        if checker and checker(exc):
+            return True
+    return type(exc).__name__ in {"NotFound", "NoSuchKey", "ResourceNotFoundError"}
+
+
+def _is_stale_migration(timestamp_value, max_age_seconds: int = 900) -> bool:
+    """Allow a migration to resume after a process restart or machine crash."""
+    if timestamp_value is None:
+        return True
+    try:
+        timestamp = timestamp_value.timestamp() if hasattr(timestamp_value, "timestamp") else float(timestamp_value)
+        return time.time() - timestamp > max_age_seconds
+    except (TypeError, ValueError, OverflowError):
+        return True
 
 
 def _verify_bearer_token(authorization: str):
@@ -904,48 +953,207 @@ async def append_chapters(
 
 @app.get("/api/stories/{userId}/{storyId}/metadata")
 async def get_story_metadata(request: Request, userId: str, storyId: str):
-    auth_error = _authorization_error(request, userId)
+    auth_error = await _authorization_error_async(request, userId)
     if auth_error:
         return auth_error
     
     doc_ref = db_admin.collection("users").document(userId).collection("stories").document(storyId)
-    doc = doc_ref.get()
+    doc = await _run_firestore(
+        "firestore.read_story_metadata", doc_ref.get, request_id=_request_id(request)
+    )
     if not doc.exists:
         return JSONResponse({"error": "Story not found"}, status_code=404)
     
     return JSONResponse(convert_firestore_data(doc.to_dict()))
 
+async def _migrate_legacy_story(user_id: str, story_id: str, filename: str, request_id: str):
+    """Convert one legacy master TXT into resumable, versioned chapter segments."""
+    key = (user_id, story_id)
+    story_ref = db_admin.collection("users").document(user_id).collection("stories").document(story_id)
+    tmp_path = None
+    try:
+        bucket = storage.bucket()
+        source_blob = bucket.blob(f"users/{user_id}/files/{filename}")
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
+            tmp_path = tmp.name
+        await _run_storage(
+            "migration.download_master", source_blob.download_to_filename, tmp_path, request_id=request_id
+        )
+        chapters = await _run_blocking(
+            "migration.parse_master", parse_chapters_from_file, tmp_path, request_id=request_id
+        )
+        if not chapters:
+            raise ValueError("No readable chapters found")
+
+        segments = await _run_blocking(
+            "migration.partition_chapters", partition_chapters, chapters, request_id=request_id
+        )
+        chapter_counts = []
+        for index, segment in enumerate(segments):
+            seg_data, counts = await _run_blocking(
+                "migration.build_segment", _build_segment_data, segment, request_id=request_id
+            )
+            chapter_counts.extend(counts)
+            segment_blob = bucket.blob(
+                f"users/{user_id}/stories/{story_id}/segments/v1/seg_{index}.json"
+            )
+            await _run_storage(
+                "migration.upload_segment",
+                segment_blob.upload_from_string,
+                json.dumps(seg_data, ensure_ascii=False),
+                content_type="application/json",
+                request_id=request_id,
+            )
+            del seg_data
+            gc.collect()
+
+        metadata = {
+            "id": story_id,
+            "title": os.path.splitext(filename)[0],
+            "filename": filename,
+            "masterPath": f"users/{user_id}/files/{filename}",
+            "isSegmented": True,
+            "segmentFormatVersion": 1,
+            "segmentationState": "ready",
+            "segmentsCount": len(segments),
+            "totalChapters": len(chapters),
+            "chapterCounts": chapter_counts,
+        }
+        await _run_firestore(
+            "migration.mark_ready", story_ref.set, metadata, merge=True, request_id=request_id
+        )
+        logger.info(
+            "legacy_migration_completed request_id=%s story_id=%s chapters=%s segments=%s",
+            request_id, story_id, len(chapters), len(segments),
+        )
+    except Exception as exc:
+        logger.exception("legacy_migration_failed request_id=%s story_id=%s", request_id, story_id)
+        try:
+            await _run_firestore(
+                "migration.mark_failed",
+                story_ref.set,
+                {"segmentationState": "failed", "segmentationError": type(exc).__name__},
+                merge=True,
+                request_id=request_id,
+            )
+        except Exception:
+            logger.exception("legacy_migration_status_failed story_id=%s", story_id)
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+        _active_migrations.discard(key)
+
+
+@app.post("/api/stories/{userId}/{storyId}/migrate")
+async def migrate_legacy_story(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    userId: str,
+    storyId: str,
+    filename: str = Query(...),
+):
+    """Queue a safe legacy-to-segment migration without blocking first paint."""
+    auth_error = await _authorization_error_async(request, userId)
+    if auth_error:
+        return auth_error
+    if storage is None or db_admin is None:
+        return JSONResponse({"error": "Storage backend is not configured"}, status_code=503)
+
+    request_id = _request_id(request)
+    story_ref = db_admin.collection("users").document(userId).collection("stories").document(storyId)
+    try:
+        story_doc = await _run_firestore("migration.read_status", story_ref.get, request_id=request_id)
+        existing = story_doc.to_dict() if story_doc.exists else {}
+    except Exception:
+        logger.exception("legacy_migration_status_read_failed story_id=%s", storyId)
+        return JSONResponse({"error": "Migration status unavailable", "retryable": True}, status_code=503)
+
+    if existing.get("segmentationState") == "ready" and existing.get("isSegmented"):
+        return JSONResponse({"status": "ready", "isSegmented": True})
+    key = (userId, storyId)
+    if key in _active_migrations:
+        return JSONResponse({"status": "processing", "retryable": True}, status_code=202)
+    if existing.get("segmentationState") == "processing" and not _is_stale_migration(
+        existing.get("segmentationStartedAt")
+    ):
+        return JSONResponse({"status": "processing", "retryable": True}, status_code=202)
+
+    try:
+        await _run_firestore(
+            "migration.mark_processing",
+            story_ref.set,
+            {
+                "id": storyId,
+                "filename": filename,
+                "segmentationState": "processing",
+                "segmentFormatVersion": 1,
+                "segmentationStartedAt": firestore.SERVER_TIMESTAMP,
+            },
+            merge=True,
+            request_id=request_id,
+        )
+    except Exception:
+        logger.exception("legacy_migration_status_write_failed story_id=%s", storyId)
+        return JSONResponse({"error": "Migration could not start", "retryable": True}, status_code=503)
+
+    _active_migrations.add(key)
+    background_tasks.add_task(_migrate_legacy_story, userId, storyId, filename, request_id)
+    return JSONResponse({"status": "processing", "retryable": True}, status_code=202)
+
+
 @app.get("/api/stories/{userId}/{storyId}/segments/{segmentIndex}")
-async def get_segment_data(request: Request, userId: str, storyId: str, segmentIndex: int):
-    auth_error = _authorization_error(request, userId)
+async def get_segment_data(
+    request: Request,
+    userId: str,
+    storyId: str,
+    segmentIndex: int,
+    version: int = Query(0, ge=0, le=1),
+):
+    auth_error = await _authorization_error_async(request, userId)
     if auth_error:
         return auth_error
     
     bucket = storage.bucket()
-    blob_path = f"users/{userId}/stories/{storyId}/segments/seg_{segmentIndex}.json"
+    segment_prefix = "segments/v1" if version == 1 else "segments"
+    blob_path = f"users/{userId}/stories/{storyId}/{segment_prefix}/seg_{segmentIndex}.json"
     blob = bucket.blob(blob_path)
     
-    if not blob.exists():
-        return JSONResponse({"error": "Segment not found"}, status_code=404)
-    
-    data = json.loads(blob.download_as_text())
+    try:
+        raw = await _run_storage(
+            "storage.download_segment", blob.download_as_text, request_id=_request_id(request)
+        )
+    except Exception as exc:
+        if _is_storage_not_found(exc):
+            return JSONResponse({"error": "Segment not found"}, status_code=404)
+        logger.exception("segment_download_failed story_id=%s segment=%s", storyId, segmentIndex)
+        return JSONResponse({"error": "Segment storage unavailable", "retryable": True}, status_code=503)
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return JSONResponse({"error": "Segment data is invalid"}, status_code=502)
     return JSONResponse({"chapters": data})
 
 
 @app.get("/api/stories/{userId}/{storyId}/images/manifest")
 async def get_image_manifest(request: Request, userId: str, storyId: str):
-    auth_error = _authorization_error(request, userId)
+    auth_error = await _authorization_error_async(request, userId)
     if auth_error:
         return auth_error
     if storage is None:
         return JSONResponse({"error": "Storage backend is not configured"}, status_code=503)
     blob = storage.bucket().blob(_image_manifest_path(userId, storyId))
-    if not blob.exists():
-        return JSONResponse({"version": 1, "coverId": None, "images": []})
     try:
-        return JSONResponse(json.loads(blob.download_as_text()))
-    except (ValueError, json.JSONDecodeError):
-        return JSONResponse({"error": "Image manifest is invalid"}, status_code=502)
+        raw = await _run_storage(
+            "storage.download_image_manifest", blob.download_as_text, request_id=_request_id(request)
+        )
+        return JSONResponse(json.loads(raw))
+    except Exception as exc:
+        if _is_storage_not_found(exc):
+            return JSONResponse({"version": 1, "coverId": None, "images": []})
+        if isinstance(exc, (ValueError, json.JSONDecodeError)):
+            return JSONResponse({"error": "Image manifest is invalid"}, status_code=502)
+        logger.exception("image_manifest_download_failed story_id=%s", storyId)
+        return JSONResponse({"error": "Image manifest unavailable", "retryable": True}, status_code=503)
 
 
 @app.put("/api/stories/{userId}/{storyId}/images/manifest")
@@ -1014,15 +1222,22 @@ async def replace_story_image(
 
 @app.get("/api/stories/{userId}/{storyId}/images/{imageId}")
 async def get_story_image(request: Request, userId: str, storyId: str, imageId: str):
-    auth_error = _authorization_error(request, userId)
+    auth_error = await _authorization_error_async(request, userId)
     if auth_error:
         return auth_error
     if storage is None or not _valid_image_id(imageId):
         return JSONResponse({"error": "Image not found"}, status_code=404)
     blob = storage.bucket().blob(_image_asset_path(userId, storyId, imageId))
-    if not blob.exists():
-        return JSONResponse({"error": "Image not found"}, status_code=404)
-    return Response(content=blob.download_as_bytes(), media_type="image/webp")
+    try:
+        data = await _run_storage(
+            "storage.download_image", blob.download_as_bytes, request_id=_request_id(request)
+        )
+    except Exception as exc:
+        if _is_storage_not_found(exc):
+            return JSONResponse({"error": "Image not found"}, status_code=404)
+        logger.exception("image_download_failed story_id=%s image_id=%s", storyId, imageId)
+        return JSONResponse({"error": "Image storage unavailable", "retryable": True}, status_code=503)
+    return Response(content=data, media_type="image/webp")
 
 
 @app.delete("/api/stories/{userId}/{storyId}/images/{imageId}")
@@ -1050,15 +1265,22 @@ async def delete_story_images(request: Request, userId: str, storyId: str):
 
 @app.get("/api/stories/{userId}/{storyId}/file")
 async def get_story_file(request: Request, userId: str, storyId: str, filename: str = Query(...)):
-    auth_error = _authorization_error(request, userId)
+    auth_error = await _authorization_error_async(request, userId)
     if auth_error:
         return auth_error
     if storage is None:
         return JSONResponse({"error": "Storage backend is not configured"}, status_code=503)
     blob = storage.bucket().blob(f"users/{userId}/files/{filename}")
-    if not blob.exists():
-        return JSONResponse({"error": "File not found"}, status_code=404)
-    return Response(content=blob.download_as_bytes(), media_type="text/plain")
+    try:
+        data = await _run_storage(
+            "storage.download_legacy_file", blob.download_as_bytes, request_id=_request_id(request)
+        )
+    except Exception as exc:
+        if _is_storage_not_found(exc):
+            return JSONResponse({"error": "File not found"}, status_code=404)
+        logger.exception("legacy_file_download_failed story_id=%s", storyId)
+        return JSONResponse({"error": "File storage unavailable", "retryable": True}, status_code=503)
+    return Response(content=data, media_type="text/plain")
 
 
 @app.delete("/api/stories/{userId}/{storyId}/storage")
@@ -1186,34 +1408,48 @@ async def get_chapter_sentences(
     chapterIndex: int = Form(...)
 ):
     """Memory-efficiently fetch sentences for a specific chapter only."""
-    auth_error = _authorization_error(request, userId)
+    auth_error = await _authorization_error_async(request, userId)
     if auth_error:
         return auth_error
 
+    request_id = _request_id(request)
     try:
         bucket = storage.bucket()
         blob_path = f"users/{userId}/files/{filename}"
         blob = bucket.blob(blob_path)
-        
-        if not blob.exists():
-            return JSONResponse({"error": "File not found"}, status_code=404)
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
             tmp_path = tmp.name
-            blob.download_to_filename(tmp_path)
-        
         try:
-            chapters = parse_chapters_from_file(tmp_path)
+            try:
+                await _run_storage(
+                    "storage.download_legacy_chapter_source",
+                    blob.download_to_filename,
+                    tmp_path,
+                    request_id=request_id,
+                )
+            except Exception as exc:
+                if _is_storage_not_found(exc):
+                    return JSONResponse({"error": "File not found"}, status_code=404)
+                raise
+
+            chapters = await _run_blocking(
+                "parse_legacy_chapter_source", parse_chapters_from_file, tmp_path, request_id=request_id
+            )
             if 0 <= chapterIndex < len(chapters):
-                sentences = split_text_into_chunks(chapters[chapterIndex]['content'])
+                sentences = await _run_blocking(
+                    "split_legacy_chapter", split_text_into_chunks,
+                    chapters[chapterIndex]['content'], request_id=request_id
+                )
                 return JSONResponse({"sentences": sentences})
             else:
                 return JSONResponse({"error": "Chapter index out of range"}, status_code=400)
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-    except Exception as e:
-        return JSONResponse({"error": str(e)}, status_code=500)
+    except Exception:
+        logger.exception("legacy_chapter_download_failed filename=%s chapter=%s", filename, chapterIndex)
+        return JSONResponse({"error": "Chapter source unavailable", "retryable": True}, status_code=503)
 
 @app.get("/api/firebase-config")
 async def get_firebase_config():

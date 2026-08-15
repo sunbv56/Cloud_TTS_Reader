@@ -28,16 +28,22 @@
         const animatedChildren = new WeakSet();
         const spotlightCards = new WeakSet();
         let spotlightEnabled = false;
+        let compactDiscovery = false;
 
         gsap.defaults({ overwrite: 'auto' });
 
         const motionMedia = gsap.matchMedia();
         motionMedia.add({
             desktopPointer: '(hover: hover) and (pointer: fine)',
+            compactDiscovery: '(max-width: 639px)',
             reduceMotion: '(prefers-reduced-motion: reduce)'
         }, context => {
             spotlightEnabled = context.conditions.desktopPointer && !context.conditions.reduceMotion;
-            return () => { spotlightEnabled = false; };
+            compactDiscovery = context.conditions.compactDiscovery;
+            return () => {
+                spotlightEnabled = false;
+                compactDiscovery = false;
+            };
         });
 
         function isVisible(element) {
@@ -113,8 +119,8 @@
             });
             if (!items.length) return;
             gsap.fromTo(items,
-                { autoAlpha: 0, y: 10 },
-                { autoAlpha: 1, y: 0, duration: 0.26, ease, stagger: 0.045 }
+                { autoAlpha: 0, y: compactDiscovery ? 6 : 10 },
+                { autoAlpha: 1, y: 0, duration: compactDiscovery ? 0.22 : 0.26, ease, stagger: compactDiscovery ? 0.035 : 0.045 }
             );
             if (container.id === 'discovery-grid') items.forEach(wireDiscoverySpotlight);
         }

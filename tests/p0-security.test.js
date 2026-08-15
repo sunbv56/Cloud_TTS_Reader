@@ -12,7 +12,7 @@ test('protected backend routes verify Firebase ownership', () => {
     assert.match(mainPy, /auth\.verify_id_token\(token\)/);
 
     const protectedRoutes = [
-        'upload_story', 'get_story_metadata', 'get_segment_data',
+        'upload_story', 'get_story_metadata', 'migrate_legacy_story', 'get_segment_data',
         'get_image_manifest', 'put_image_manifest', 'upload_story_image',
         'replace_story_image', 'get_story_image', 'delete_story_image',
         'delete_story_images', 'get_story_file', 'delete_story_storage',
@@ -26,7 +26,7 @@ test('protected backend routes verify Firebase ownership', () => {
         if (route === 'upload_story_image' || route === 'replace_story_image') {
             assert.match(body, /_save_image_object\(request, userId, storyId, imageId, file\)/, `${route} must use the protected image helper`);
         } else {
-            assert.match(body, /_authorization_error\(request, userId\)/, `${route} must verify owner`);
+            assert.match(body, /_authorization_error(?:_async)?\(request, userId\)/, `${route} must verify owner`);
         }
     }
 });
@@ -68,4 +68,25 @@ test('websocket connections are bounded per authenticated user', () => {
     assert.match(mainPy, /MAX_WS_PER_USER = int\(os\.getenv/);
     assert.match(mainPy, /_active_ws_by_uid/);
     assert.match(mainPy, /Too many active connections/);
+});
+
+test('book loading has bounded network waits and aborts stale selections', () => {
+    assert.match(appJs, /class NetworkTimeoutError extends Error/);
+    assert.match(appJs, /async function fetchWithTimeout\(/);
+    assert.match(appJs, /new AbortController\(\)/);
+    assert.match(appJs, /promiseWithTimeout\(getDoc\(storyRef\), 15_000/);
+    assert.match(appJs, /STATE\.loadController\?\.abort\(\)/);
+    assert.match(appJs, /waitForSourceBufferIdle\(2_000\)/);
+});
+
+test('storage reads leave the event loop and avoid existence round trips', () => {
+    assert.match(mainPy, /async def _run_storage\(/);
+    assert.match(mainPy, /async def _run_firestore\(/);
+    const segmentStart = mainPy.indexOf('async def get_segment_data');
+    const segmentBody = mainPy.slice(segmentStart, mainPy.indexOf('\n@app.', segmentStart + 1));
+    assert.match(segmentBody, /_run_storage\(/);
+    assert.doesNotMatch(segmentBody, /blob\.exists\(\)/);
+    assert.match(mainPy, /async def _migrate_legacy_story\(/);
+    assert.match(mainPy, /segmentationState.*ready/);
+    assert.match(mainPy, /segments\/v1/);
 });
