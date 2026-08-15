@@ -12,6 +12,9 @@ import gc
 import logging
 import time
 import uuid
+import hashlib
+import threading
+from collections import OrderedDict
 from functools import wraps
 from ebooklib import epub, ITEM_DOCUMENT
 from bs4 import BeautifulSoup
@@ -121,6 +124,11 @@ _import_semaphore = asyncio.Semaphore(MAX_IMPORT_CONCURRENCY)
 _storage_io_semaphore = asyncio.Semaphore(STORAGE_IO_CONCURRENCY)
 _firestore_io_semaphore = asyncio.Semaphore(FIRESTORE_IO_CONCURRENCY)
 _active_migrations = set()
+_legacy_source_cache = OrderedDict()
+_legacy_source_cache_locks = {}
+_legacy_source_cache_guard = threading.RLock()
+_LEGACY_SOURCE_CACHE_MAX_FILES = 2
+_LEGACY_SOURCE_CACHE_MAX_BYTES = 128 * 1024 * 1024
 
 
 def _request_id(request: Request) -> str:
@@ -154,6 +162,78 @@ async def _run_firestore(label: str, operation, *args, request_id: str = "", **k
     """Bound Firestore SDK calls, which are synchronous in the Admin SDK."""
     async with _firestore_io_semaphore:
         return await _run_blocking(label, operation, *args, request_id=request_id, **kwargs)
+
+
+def _legacy_source_cache_key(user_id: str, filename: str) -> str:
+    return f"{user_id}\0{filename}"
+
+
+def _legacy_source_cache_lock(key: str):
+    with _legacy_source_cache_guard:
+        return _legacy_source_cache_locks.setdefault(key, threading.Lock())
+
+
+def _legacy_source_cache_path(key: str) -> str:
+    cache_dir = os.path.join(tempfile.gettempdir(), "cloud-tts-reader-source-cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    digest = hashlib.sha256(key.encode("utf-8")).hexdigest()
+    return os.path.join(cache_dir, f"{digest}.txt")
+
+
+def _get_or_download_legacy_source(download, user_id: str, filename: str):
+    """Download a legacy TXT once per process and reuse it for chapter reads."""
+    key = _legacy_source_cache_key(user_id, filename)
+    target = _legacy_source_cache_path(key)
+    with _legacy_source_cache_lock(key):
+        with _legacy_source_cache_guard:
+            entry = _legacy_source_cache.get(key)
+            if entry and os.path.exists(entry[0]):
+                _legacy_source_cache.move_to_end(key)
+                return entry[0], True
+
+        temporary = f"{target}.{uuid.uuid4().hex}.tmp"
+        try:
+            download(temporary)
+            size = os.path.getsize(temporary)
+            if size > _LEGACY_SOURCE_CACHE_MAX_BYTES:
+                return temporary, False
+            os.replace(temporary, target)
+        except Exception:
+            if os.path.exists(temporary):
+                os.remove(temporary)
+            raise
+
+        evicted = []
+        with _legacy_source_cache_guard:
+            previous = _legacy_source_cache.pop(key, None)
+            if previous and previous[0] != target:
+                evicted.append(previous[0])
+            _legacy_source_cache[key] = (target, size)
+            while (
+                len(_legacy_source_cache) > _LEGACY_SOURCE_CACHE_MAX_FILES
+                or sum(item[1] for item in _legacy_source_cache.values()) > _LEGACY_SOURCE_CACHE_MAX_BYTES
+            ):
+                old_key, (old_path, _) = _legacy_source_cache.popitem(last=False)
+                if old_key != key:
+                    evicted.append(old_path)
+        for path in evicted:
+            if os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    logger.warning("legacy_source_cache_eviction_failed path=%s", path)
+        return target, True
+
+
+def _invalidate_legacy_source_cache(user_id: str, filename: str):
+    key = _legacy_source_cache_key(user_id, filename)
+    with _legacy_source_cache_guard:
+        entry = _legacy_source_cache.pop(key, None)
+    if entry and os.path.exists(entry[0]):
+        try:
+            os.remove(entry[0])
+        except OSError:
+            logger.warning("legacy_source_cache_invalidation_failed filename=%s", filename)
 
 
 def _serialized_import_route(route):
@@ -423,6 +503,45 @@ def parse_chapters_from_file(file_path: str):
     return chapters
 
 
+def parse_chapter_at_index(file_path: str, chapter_index: int):
+    """Read only the requested chapter from a locally cached TXT source."""
+    if chapter_index < 0:
+        return None
+
+    encoding = _detect_text_encoding(file_path)
+    try:
+        source = open(file_path, 'r', encoding=encoding)
+    except (LookupError, UnicodeError):
+        source = open(file_path, 'r', encoding='utf-8', errors='replace')
+
+    current_raw_lines = []
+    current_index = 0
+
+    def process_raw_chapter(raw_lines):
+        if not raw_lines:
+            return None
+        raw_text = "".join(raw_lines).strip()
+        if not raw_text:
+            return None
+        title = next((line.strip() for line in raw_text.split('\n') if line.strip()), "Chương không tên")
+        return {"title": title, "content": raw_text}
+
+    with source as handle:
+        for line in handle:
+            if re.match(r'={3,}', line.strip()):
+                chapter = process_raw_chapter(current_raw_lines)
+                if chapter is not None:
+                    if current_index == chapter_index:
+                        return chapter
+                    current_index += 1
+                current_raw_lines = []
+            else:
+                current_raw_lines.append(line)
+
+    chapter = process_raw_chapter(current_raw_lines)
+    return chapter if chapter is not None and current_index == chapter_index else None
+
+
 def _chapter_from_text(text: str, fallback_title: str):
     """Normalize one imported document fragment into the reader chapter shape."""
     content = re.sub(r'\n{3,}', '\n\n', text or '').strip()
@@ -512,6 +631,11 @@ def partition_chapters(chapters: List[dict], segment_size: int = 100):
         segment = chapters[i : i + segment_size]
         segments.append(segment)
     return segments
+
+
+def _should_segment_book(total_chapters: int) -> bool:
+    """Keep chapter navigation on the fast segment path for every book."""
+    return total_chapters > 0
 
 
 def _build_segment_data(seg_chapters: List[dict]):
@@ -701,7 +825,8 @@ async def upload_story(
 ):
     """
     Advanced upload with chunking logic.
-    If chapters > 200, splits into 100-chapter segments.
+    All imported books use 100-chapter segments so chapter navigation stays on
+    the same fast path for small and large books.
     """
     auth_error = _authorization_error(request, userId)
     if auth_error:
@@ -748,7 +873,7 @@ async def upload_story(
             "id": story_id,
             "title": story_title,
             "totalChapters": total_chapters,
-            "isSegmented": total_chapters > 200,
+            "isSegmented": _should_segment_book(total_chapters),
             "createdAt": firestore.SERVER_TIMESTAMP,
             "filename": canonical_filename,
             "sourceFilename": file.filename,
@@ -763,6 +888,7 @@ async def upload_story(
         await _run_blocking(
             "storage.upload_master", master_blob.upload_from_filename, tmp_path, request_id=request_id
         )
+        _invalidate_legacy_source_cache(userId, canonical_filename)
         story_metadata["masterPath"] = master_blob_path
         
         if story_metadata["isSegmented"]:
@@ -881,9 +1007,10 @@ async def _append_prepared_chapters(
         chapters.extend(additions)
         await _run_blocking("write_canonical_text", write_canonical_text, tmp_path, chapters, request_id=request_id)
         await _run_blocking("storage.upload_master", blob.upload_from_filename, tmp_path, request_id=request_id)
+        _invalidate_legacy_source_cache(user_id, filename)
         total_chapters = len(chapters)
         story_ref = db_admin.collection("users").document(user_id).collection("stories").document(book_id)
-        is_segmented = total_chapters > 200
+        is_segmented = _should_segment_book(total_chapters)
         metadata = {"totalChapters": total_chapters, "isSegmented": is_segmented, "updatedAt": firestore.SERVER_TIMESTAMP}
         if is_segmented:
             chapter_counts = []
@@ -1293,6 +1420,7 @@ async def delete_story_storage(request: Request, userId: str, storyId: str, file
             file_blob = storage.bucket().blob(f"users/{userId}/files/{filename}")
             if file_blob.exists():
                 file_blob.delete()
+            _invalidate_legacy_source_cache(userId, filename)
         storage.delete_prefix(f"users/{userId}/stories/{storyId}/")
         storage.delete_prefix(f"users/{userId}/images/{storyId}/")
     return JSONResponse({"status": "ok"})
@@ -1417,37 +1545,35 @@ async def get_chapter_sentences(
         bucket = storage.bucket()
         blob_path = f"users/{userId}/files/{filename}"
         blob = bucket.blob(blob_path)
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".txt") as tmp:
-            tmp_path = tmp.name
+        cached_path = None
+        is_cached = False
         try:
-            try:
-                await _run_storage(
-                    "storage.download_legacy_chapter_source",
-                    blob.download_to_filename,
-                    tmp_path,
-                    request_id=request_id,
-                )
-            except Exception as exc:
-                if _is_storage_not_found(exc):
-                    return JSONResponse({"error": "File not found"}, status_code=404)
-                raise
-
-            chapters = await _run_blocking(
-                "parse_legacy_chapter_source", parse_chapters_from_file, tmp_path, request_id=request_id
+            cached_path, is_cached = await _run_storage(
+                "storage.cache_legacy_chapter_source",
+                _get_or_download_legacy_source,
+                blob.download_to_filename,
+                userId,
+                filename,
+                request_id=request_id,
             )
-            if 0 <= chapterIndex < len(chapters):
+            chapters = await _run_blocking(
+                "parse_legacy_chapter_source", parse_chapter_at_index, cached_path, chapterIndex,
+                request_id=request_id,
+            )
+            if chapters:
                 sentences = await _run_blocking(
                     "split_legacy_chapter", split_text_into_chunks,
-                    chapters[chapterIndex]['content'], request_id=request_id
+                    chapters['content'], request_id=request_id
                 )
                 return JSONResponse({"sentences": sentences})
             else:
                 return JSONResponse({"error": "Chapter index out of range"}, status_code=400)
         finally:
-            if os.path.exists(tmp_path):
-                os.remove(tmp_path)
-    except Exception:
+            if cached_path and not is_cached and os.path.exists(cached_path):
+                os.remove(cached_path)
+    except Exception as exc:
+        if _is_storage_not_found(exc):
+            return JSONResponse({"error": "File not found"}, status_code=404)
         logger.exception("legacy_chapter_download_failed filename=%s chapter=%s", filename, chapterIndex)
         return JSONResponse({"error": "Chapter source unavailable", "retryable": True}, status_code=503)
 
@@ -1533,7 +1659,7 @@ async def append_chapter(
             # 4. Parse result
             chapters = parse_chapters_from_file(tmp_path)
             total_chapters = len(chapters)
-            is_segmented = total_chapters > 200
+            is_segmented = _should_segment_book(total_chapters)
 
             # 5. Handle Segmentation Transition
             if is_segmented:
@@ -1573,9 +1699,11 @@ async def append_chapter(
                 
                 # Also upload the updated .txt for future appends
                 blob.upload_from_filename(tmp_path)
+                _invalidate_legacy_source_cache(userId, filename)
             else:
                 # 6. Traditional Re-upload
                 blob.upload_from_filename(tmp_path)
+                _invalidate_legacy_source_cache(userId, filename)
                 
                 # Update Firestore metadata even for non-segmented
                 story_id = bookId
@@ -1695,10 +1823,11 @@ async def delete_chapters(
                     
             # 5. Re-upload master .txt
             blob.upload_from_filename(tmp_path)
+            _invalidate_legacy_source_cache(userId, filename)
             
             # ── SYNC SEGMENTS IF NEEDED ──
             total_chapters = len(chapters)
-            is_segmented = total_chapters > 200
+            is_segmented = _should_segment_book(total_chapters)
             
             if is_segmented:
                 segments = partition_chapters(chapters)
@@ -1878,10 +2007,11 @@ async def update_chapter(
                 
                 # Re-upload master .txt
                 blob.upload_from_filename(tmp_path)
+                _invalidate_legacy_source_cache(userId, filename)
                 
                 # ── SYNC SEGMENTS IF NEEDED ──
                 total_chapters = len(chapters)
-                is_segmented = total_chapters > 200
+                is_segmented = _should_segment_book(total_chapters)
                 
                 if is_segmented:
                     segments = partition_chapters(chapters)

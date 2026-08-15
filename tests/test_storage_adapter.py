@@ -7,7 +7,16 @@ import threading
 from unittest.mock import patch
 
 from storage_adapter import B2StorageBackend, _B2Blob
-from main import _build_segment_data, _detect_text_encoding, _run_blocking, _serialized_import_route
+from main import (
+    _build_segment_data,
+    _detect_text_encoding,
+    _get_or_download_legacy_source,
+    _invalidate_legacy_source_cache,
+    _run_blocking,
+    _serialized_import_route,
+    _should_segment_book,
+    parse_chapter_at_index,
+)
 
 
 class _FakeBody:
@@ -99,6 +108,35 @@ class ImportRuntimeTest(unittest.IsolatedAsyncioTestCase):
         ])
         self.assertEqual([item["title"] for item in data], ["One", "Two"])
         self.assertEqual(counts, [2, 1])
+
+    def test_legacy_chapter_reads_cache_source_and_only_parse_target(self):
+        calls = []
+
+        def download(path):
+            calls.append(path)
+            with open(path, "w", encoding="utf-8") as target:
+                target.write("One\nFirst.\n===\nTwo\nSecond.\n===\nThree\nThird.\n")
+
+        user_id = "cache-test-user"
+        filename = "cache-test-book.txt"
+        try:
+            first_path, first_cached = _get_or_download_legacy_source(download, user_id, filename)
+            second_path, second_cached = _get_or_download_legacy_source(download, user_id, filename)
+            self.assertTrue(first_cached)
+            self.assertTrue(second_cached)
+            self.assertEqual(first_path, second_path)
+            self.assertEqual(len(calls), 1)
+            chapter = parse_chapter_at_index(second_path, 1)
+            self.assertEqual(chapter["title"], "Two")
+            self.assertEqual(chapter["content"], "Two\nSecond.")
+        finally:
+            _invalidate_legacy_source_cache(user_id, filename)
+
+    def test_all_nonempty_books_use_segment_navigation(self):
+        self.assertTrue(_should_segment_book(1))
+        self.assertTrue(_should_segment_book(200))
+        self.assertTrue(_should_segment_book(201))
+        self.assertFalse(_should_segment_book(0))
 
     def test_b2_client_has_bounded_timeout_and_retries(self):
         settings = {

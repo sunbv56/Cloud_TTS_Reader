@@ -86,6 +86,9 @@ test('storage reads leave the event loop and avoid existence round trips', () =>
     const segmentBody = mainPy.slice(segmentStart, mainPy.indexOf('\n@app.', segmentStart + 1));
     assert.match(segmentBody, /_run_storage\(/);
     assert.doesNotMatch(segmentBody, /blob\.exists\(\)/);
+    assert.match(mainPy, /def parse_chapter_at_index\(/);
+    assert.match(mainPy, /_get_or_download_legacy_source/);
+    assert.match(mainPy, /_should_segment_book\(total_chapters\)/);
     assert.match(mainPy, /async def _migrate_legacy_story\(/);
     assert.match(mainPy, /segmentationState.*ready/);
     assert.match(mainPy, /segments\/v1/);
