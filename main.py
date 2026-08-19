@@ -102,6 +102,10 @@ MAX_WS_PER_USER = 1
 MAX_NEW_CONTENT_CHARS = int(os.getenv("MAX_NEW_CONTENT_CHARS", "1000000"))
 TTS_CHUNK_TIMEOUT_SECONDS = float(os.getenv("TTS_CHUNK_TIMEOUT_SECONDS", "30"))
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(150 * 1024)))
+# New segmented books use smaller payloads. Legacy metadata without these
+# fields continues to use the historical 100-chapter layout in the frontend.
+SEGMENT_CHAPTER_SIZE = 50
+SEGMENT_FORMAT_VERSION = 2
 # Deliberately clamp RAM-heavy imports to one on the 256 MB machine.
 MAX_IMPORT_CONCURRENCY = 1
 IMPORT_RETRY_AFTER_SECONDS = int(os.getenv("IMPORT_RETRY_AFTER_SECONDS", "15"))
@@ -650,13 +654,23 @@ def split_text_into_chunks(text: str, max_chars: int = 500):
     valid_chunks = [c for c in chunks if alnum_regex.search(c)]
     return valid_chunks
 
-def partition_chapters(chapters: List[dict], segment_size: int = 100):
-    """Partition chapters into segments of 100."""
+def partition_chapters(chapters: List[dict], segment_size: int = SEGMENT_CHAPTER_SIZE):
+    """Partition chapters into bounded segments."""
     segments = []
     for i in range(0, len(chapters), segment_size):
         segment = chapters[i : i + segment_size]
         segments.append(segment)
     return segments
+
+
+def segment_blob_path(user_id: str, story_id: str, segment_index: int, version: int = SEGMENT_FORMAT_VERSION) -> str:
+    """Return the versioned object path for a story segment.
+
+    Existing migration data may still live below ``segments/v1``; version 2 is
+    the new 50-chapter layout and is never silently mixed with the old format.
+    """
+    prefix = "segments" if version <= 0 else f"segments/v{version}"
+    return f"users/{user_id}/stories/{story_id}/{prefix}/seg_{segment_index}.json"
 
 
 def _should_segment_book(total_chapters: int) -> bool:
@@ -695,7 +709,9 @@ def _build_chapters_summary(chapters: List[dict]):
         for chap in chapters
     ]
 
-def reconstruct_text_from_segments(userId: str, story_id: str, segments_count: int):
+def reconstruct_text_from_segments(
+    userId: str, story_id: str, segments_count: int, segment_format_version: int = 0
+):
     """
     Reconstruct full text from JSON segments if the master .txt is missing.
     Ensures '===' separators are restored between chapters.
@@ -705,7 +721,7 @@ def reconstruct_text_from_segments(userId: str, story_id: str, segments_count: i
     # Download segments sequentially to save RAM on 256MB servers
     results = {}
     for i in range(segments_count):
-        blob_path = f"users/{userId}/stories/{story_id}/segments/seg_{i}.json"
+        blob_path = segment_blob_path(userId, story_id, i, segment_format_version)
         blob = bucket.blob(blob_path)
         if blob.exists():
             try:
@@ -865,7 +881,7 @@ async def upload_story(
 ):
     """
     Advanced upload with chunking logic.
-    Large imports use 100-chapter segments; smaller books use the bounded
+    Large imports use 50-chapter segments; smaller books use the bounded
     disk-backed source cache when chapters are opened.
     """
     auth_error = _authorization_error(request, userId)
@@ -934,6 +950,8 @@ async def upload_story(
         if story_metadata["isSegmented"]:
             segments = partition_chapters(chapters)
             story_metadata["segmentsCount"] = len(segments)
+            story_metadata["segmentSize"] = SEGMENT_CHAPTER_SIZE
+            story_metadata["segmentFormatVersion"] = SEGMENT_FORMAT_VERSION
             chapter_counts = []  # Collect per-chapter counts for accurate global index
             
             # Sequential upload to save RAM on 256MB servers (Fly.io)
@@ -944,7 +962,7 @@ async def upload_story(
                 )
                 chapter_counts.extend(counts)
                 
-                seg_blob_path = f"users/{userId}/stories/{story_id}/segments/seg_{i}.json"
+                seg_blob_path = segment_blob_path(userId, story_id, i, SEGMENT_FORMAT_VERSION)
                 blob = bucket.blob(seg_blob_path)
                 await _run_blocking(
                     "storage.upload_segment",
@@ -1064,12 +1082,17 @@ async def _append_prepared_chapters(
                 await _run_blocking(
                     "storage.upload_segment",
                     _upload_json_blob,
-                    bucket.blob(f"users/{user_id}/stories/{book_id}/segments/seg_{index}.json"),
+                    bucket.blob(segment_blob_path(user_id, book_id, index, SEGMENT_FORMAT_VERSION)),
                     data,
                     content_type="application/json",
                     request_id=request_id,
                 )
-            metadata.update({"segmentsCount": len(segments), "chapterCounts": chapter_counts})
+            metadata.update({
+                "segmentsCount": len(segments),
+                "chapterCounts": chapter_counts,
+                "segmentSize": SEGMENT_CHAPTER_SIZE,
+                "segmentFormatVersion": SEGMENT_FORMAT_VERSION,
+            })
         else:
             summary = await _run_blocking(
                 "build_chapters_summary", _build_chapters_summary, chapters, request_id=request_id
@@ -1164,7 +1187,7 @@ async def _migrate_legacy_story(user_id: str, story_id: str, filename: str, requ
             )
             chapter_counts.extend(counts)
             segment_blob = bucket.blob(
-                f"users/{user_id}/stories/{story_id}/segments/v1/seg_{index}.json"
+                segment_blob_path(user_id, story_id, index, SEGMENT_FORMAT_VERSION)
             )
             await _run_storage(
                 "migration.upload_segment",
@@ -1183,7 +1206,8 @@ async def _migrate_legacy_story(user_id: str, story_id: str, filename: str, requ
             "filename": filename,
             "masterPath": f"users/{user_id}/files/{filename}",
             "isSegmented": True,
-            "segmentFormatVersion": 1,
+            "segmentFormatVersion": SEGMENT_FORMAT_VERSION,
+            "segmentSize": SEGMENT_CHAPTER_SIZE,
             "segmentationState": "ready",
             "segmentsCount": len(segments),
             "totalChapters": len(chapters),
@@ -1238,7 +1262,12 @@ async def migrate_legacy_story(
         logger.exception("legacy_migration_status_read_failed story_id=%s", storyId)
         return JSONResponse({"error": "Migration status unavailable", "retryable": True}, status_code=503)
 
-    if existing.get("segmentationState") == "ready" and existing.get("isSegmented"):
+    if (
+        existing.get("segmentationState") == "ready"
+        and existing.get("isSegmented")
+        and int(existing.get("segmentFormatVersion") or 0) >= SEGMENT_FORMAT_VERSION
+        and int(existing.get("segmentSize") or 0) == SEGMENT_CHAPTER_SIZE
+    ):
         return JSONResponse({"status": "ready", "isSegmented": True})
     key = (userId, storyId)
     if key in _active_migrations:
@@ -1256,7 +1285,6 @@ async def migrate_legacy_story(
                 "id": storyId,
                 "filename": filename,
                 "segmentationState": "processing",
-                "segmentFormatVersion": 1,
                 "segmentationStartedAt": firestore.SERVER_TIMESTAMP,
             },
             merge=True,
@@ -1277,15 +1305,14 @@ async def get_segment_data(
     userId: str,
     storyId: str,
     segmentIndex: int,
-    version: int = Query(0, ge=0, le=1),
+    version: int = Query(0, ge=0, le=SEGMENT_FORMAT_VERSION),
 ):
     auth_error = await _authorization_error_async(request, userId)
     if auth_error:
         return auth_error
     
     bucket = storage.bucket()
-    segment_prefix = "segments/v1" if version == 1 else "segments"
-    blob_path = f"users/{userId}/stories/{storyId}/{segment_prefix}/seg_{segmentIndex}.json"
+    blob_path = segment_blob_path(userId, storyId, segmentIndex, version)
     blob = bucket.blob(blob_path)
     
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
@@ -1545,8 +1572,9 @@ async def export_story_text(userId: str, storyId: str, request: Request):
     # Validate every required segment before sending response headers. This avoids
     # producing a partial, silently truncated TXT when one segment is missing.
     segment_blobs = []
+    segment_version = int(metadata.get("segmentFormatVersion") or 0)
     for segment_index in range(segments_count):
-        blob = bucket.blob(f"users/{userId}/stories/{storyId}/segments/seg_{segment_index}.json")
+        blob = bucket.blob(segment_blob_path(userId, storyId, segment_index, segment_version))
         if not blob.exists():
             return JSONResponse({
                 "error": "Book segments are incomplete",
@@ -1693,7 +1721,9 @@ async def append_chapter(
                     meta = story_doc.to_dict()
                     if meta.get("isSegmented") and meta.get("segmentsCount"):
                         print(f"[Append] Source .txt missing but segments found for {bookId}. Reconstructing...")
-                        recovered_text = reconstruct_text_from_segments(userId, bookId, meta["segmentsCount"])
+                        recovered_text = reconstruct_text_from_segments(
+                            userId, bookId, meta["segmentsCount"], int(meta.get("segmentFormatVersion") or 0)
+                        )
                         if recovered_text:
                             with open(tmp_path, "w", encoding="utf-8") as f:
                                 f.write(recovered_text + "\n\n")
@@ -1737,6 +1767,8 @@ async def append_chapter(
                     "title": filename.replace(".txt", ""),
                     "totalChapters": total_chapters,
                     "isSegmented": True,
+                    "segmentFormatVersion": SEGMENT_FORMAT_VERSION,
+                    "segmentSize": SEGMENT_CHAPTER_SIZE,
                     "segmentsCount": len(segments),
                     "updatedAt": firestore.SERVER_TIMESTAMP
                 }
@@ -1750,7 +1782,7 @@ async def append_chapter(
                         chapter_counts.append(len(sentences))  # Store count before cleanup
                         seg_data.append({"title": chap['title'], "sentences": sentences})
                     
-                    seg_blob_path = f"users/{userId}/stories/{story_id}/segments/seg_{i}.json"
+                    seg_blob_path = segment_blob_path(userId, story_id, i, SEGMENT_FORMAT_VERSION)
                     _upload_json_blob(bucket.blob(seg_blob_path), seg_data)
                     
                     # Memory cleanup
@@ -1857,7 +1889,9 @@ async def delete_chapters(
                     meta = story_doc.to_dict()
                     if meta.get("isSegmented") and meta.get("segmentsCount"):
                         print(f"[Delete] Source .txt missing but segments found for {bookId}. Reconstructing...")
-                        recovered_text = reconstruct_text_from_segments(userId, bookId, meta["segmentsCount"])
+                        recovered_text = reconstruct_text_from_segments(
+                            userId, bookId, meta["segmentsCount"], int(meta.get("segmentFormatVersion") or 0)
+                        )
                         if recovered_text:
                             with open(tmp_path, "w", encoding="utf-8") as f:
                                 f.write(recovered_text)
@@ -1906,7 +1940,7 @@ async def delete_chapters(
                         chapter_counts.append(len(sentences))  # Store count before cleanup
                         seg_data.append({"title": chap['title'], "sentences": sentences})
                     
-                    seg_blob_path = f"users/{userId}/stories/{bookId}/segments/seg_{i}.json"
+                    seg_blob_path = segment_blob_path(userId, bookId, i, SEGMENT_FORMAT_VERSION)
                     _upload_json_blob(bucket.blob(seg_blob_path), seg_data)
                     
                     # Memory cleanup
@@ -1919,6 +1953,8 @@ async def delete_chapters(
                     "segmentsCount": len(segments),
                     "chapterCounts": chapter_counts,
                     "isSegmented": True,
+                    "segmentFormatVersion": SEGMENT_FORMAT_VERSION,
+                    "segmentSize": SEGMENT_CHAPTER_SIZE,
                     "updatedAt": firestore.SERVER_TIMESTAMP
                 }, merge=True)
             else:
@@ -1987,7 +2023,9 @@ async def get_chapter_content(
                     meta = story_doc.to_dict()
                     if meta.get("isSegmented") and meta.get("segmentsCount"):
                         print(f"[Content] Source .txt missing but segments found for {bookId}. Reconstructing...")
-                        recovered_text = reconstruct_text_from_segments(userId, bookId, meta["segmentsCount"])
+                        recovered_text = reconstruct_text_from_segments(
+                            userId, bookId, meta["segmentsCount"], int(meta.get("segmentFormatVersion") or 0)
+                        )
                         if recovered_text:
                             with open(tmp_path, "w", encoding="utf-8") as f:
                                 f.write(recovered_text)
@@ -2045,7 +2083,9 @@ async def update_chapter(
                     meta = story_doc.to_dict()
                     if meta.get("isSegmented") and meta.get("segmentsCount"):
                         print(f"[Edit] Source .txt missing but segments found for {bookId}. Reconstructing...")
-                        recovered_text = reconstruct_text_from_segments(userId, bookId, meta["segmentsCount"])
+                        recovered_text = reconstruct_text_from_segments(
+                            userId, bookId, meta["segmentsCount"], int(meta.get("segmentFormatVersion") or 0)
+                        )
                         if recovered_text:
                             with open(tmp_path, "w", encoding="utf-8") as f:
                                 f.write(recovered_text)
@@ -2090,7 +2130,7 @@ async def update_chapter(
                             chapter_counts.append(len(sentences))  # Store count before cleanup
                             seg_data.append({"title": chap['title'], "sentences": sentences})
                         
-                        seg_blob_path = f"users/{userId}/stories/{bookId}/segments/seg_{i}.json"
+                        seg_blob_path = segment_blob_path(userId, bookId, i, SEGMENT_FORMAT_VERSION)
                         _upload_json_blob(bucket.blob(seg_blob_path), seg_data)
                         
                         # Memory cleanup
@@ -2103,6 +2143,8 @@ async def update_chapter(
                         "segmentsCount": len(segments),
                         "chapterCounts": chapter_counts,
                         "isSegmented": True,
+                        "segmentFormatVersion": SEGMENT_FORMAT_VERSION,
+                        "segmentSize": SEGMENT_CHAPTER_SIZE,
                         "updatedAt": firestore.SERVER_TIMESTAMP
                     }, merge=True)
                 else:

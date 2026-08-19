@@ -15,6 +15,10 @@ from main import (
     _run_blocking,
     _serialized_import_route,
     _should_segment_book,
+    SEGMENT_CHAPTER_SIZE,
+    SEGMENT_FORMAT_VERSION,
+    partition_chapters,
+    segment_blob_path,
     parse_chapter_at_index,
 )
 
@@ -34,6 +38,19 @@ class _FakeBody:
 
     def close(self):
         self.closed = True
+
+
+class _FlakyBody(_FakeBody):
+    def __init__(self, payload):
+        super().__init__(payload)
+        self.failed = False
+
+    def read(self, size=-1):
+        if self._offset and not self.failed:
+            self.failed = True
+            from urllib3.exceptions import ProtocolError
+            raise ProtocolError("connection broken", OSError("incomplete read"))
+        return super().read(size)
 
 
 class B2DownloadTest(unittest.TestCase):
@@ -63,6 +80,31 @@ class B2DownloadTest(unittest.TestCase):
             result = getattr(_B2Blob(backend, "book.txt"), method_name)()
             self.assertEqual(result, expected)
             self.assertTrue(body.closed)
+
+    def test_interrupted_stream_retries_and_publishes_complete_file(self):
+        bodies = [_FlakyBody(b"partial-complete"), _FakeBody(b"complete payload")]
+        calls = []
+
+        def get_object(**kwargs):
+            calls.append(kwargs)
+            return {"Body": bodies.pop(0), "ContentLength": len(b"complete payload")}
+
+        backend = types.SimpleNamespace(
+            client=types.SimpleNamespace(get_object=get_object),
+            bucket_name="bucket",
+            download_max_attempts=2,
+            download_retry_backoff=0,
+        )
+        fd, path = tempfile.mkstemp(suffix=".txt")
+        os.close(fd)
+        try:
+            _B2Blob(backend, "book.txt").download_to_filename(path)
+            with open(path, "rb") as source:
+                self.assertEqual(source.read(), b"complete payload")
+            self.assertEqual(len(calls), 2)
+        finally:
+            if os.path.exists(path):
+                os.remove(path)
 
     def test_utf8_detection_handles_multibyte_character_at_sample_boundary(self):
         fd, path = tempfile.mkstemp(suffix=".txt")
@@ -137,6 +179,15 @@ class ImportRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(_should_segment_book(200))
         self.assertTrue(_should_segment_book(201))
         self.assertFalse(_should_segment_book(0))
+
+    def test_new_segments_use_versioned_fifty_chapter_layout(self):
+        self.assertEqual(SEGMENT_CHAPTER_SIZE, 50)
+        self.assertEqual(SEGMENT_FORMAT_VERSION, 2)
+        self.assertEqual(
+            len(partition_chapters([{"content": "x"}] * 101)), 3
+        )
+        self.assertIn("/segments/v2/seg_1.json", segment_blob_path("u", "s", 1))
+        self.assertIn("/segments/seg_1.json", segment_blob_path("u", "s", 1, 0))
 
     def test_b2_client_has_bounded_timeout_and_retries(self):
         settings = {

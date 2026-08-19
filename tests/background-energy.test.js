@@ -86,7 +86,7 @@ test('in-app player can collapse to a circle', () => {
 });
 
 test('service worker updates the shell and caches mini-player assets', () => {
-    assert.match(serviceWorker, /cloud-tts-v7-reader-pip/);
+    assert.match(serviceWorker, /cloud-tts-v8-reader-persistence/);
     assert.match(serviceWorker, /\/static\/js\/mini-player-widget\.js/);
     assert.match(serviceWorker, /\/static\/css\/mini-player\.css/);
     assert.match(serviceWorker, /self\.skipWaiting\(\)/);

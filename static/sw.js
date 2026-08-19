@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cloud-tts-v7-reader-pip';
+const CACHE_NAME = 'cloud-tts-v8-reader-persistence';
 const ASSETS = [
     '/',
     '/static/index.html',

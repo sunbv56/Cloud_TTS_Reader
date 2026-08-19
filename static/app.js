@@ -99,12 +99,19 @@ let STATE = {
     // Segmentation & Pagination
     isSegmented: false,
     segmentFormatVersion: 0,
+    segmentSize: 100,
     segmentsCount: 0,
     currentSegmentIndex: -1,
     loadedSegments: new Set(), // indices of segments currently in memory
     // Performance Optimization State
     loadGeneration: 0,
+    selectionGeneration: 0,
     loadController: null,
+    progressSaveChain: Promise.resolve(),
+    progressSaveVersion: 0,
+    progressRetryTimer: null,
+    pendingProgressRetry: null,
+    lastProgressSaveError: null,
     heartbeatInterval: null,
     lastHighlightedIndex: -1,
     lastOntimeUpdateTick: 0,
@@ -280,6 +287,7 @@ const OFFLINE_MANAGER = {
 const STATS_MANAGER = {
     _lastActiveTime: 0,
     _syncTimer: null,
+    _saveChain: Promise.resolve(),
 
     init() {
         this._lastActiveTime = Date.now();
@@ -342,12 +350,24 @@ const STATS_MANAGER = {
 
     async syncToFirestore(force = false) {
         if (!STATE.user || (STATE.strictSyncMode && !force)) return;
-        try {
-            const statsRef = doc(db, 'users', STATE.user.uid, 'stats', 'reading');
-            await setDoc(statsRef, STATE.stats, { merge: true });
-        } catch (err) {
-            console.warn('[Stats] Sync failed:', err);
-        }
+        const userId = STATE.user.uid;
+        const statsSnapshot = { ...STATE.stats };
+        const write = async () => {
+            try {
+                const statsRef = doc(db, 'users', userId, 'stats', 'reading');
+                await setDoc(statsRef, statsSnapshot, { merge: true });
+                return true;
+            } catch (err) {
+                console.warn('[Stats] Sync failed:', err);
+                return false;
+            }
+        };
+
+        // Keep an older asynchronous write from finishing after a newer one
+        // with a stale full snapshot.
+        const queuedWrite = this._saveChain.then(write, write);
+        this._saveChain = queuedWrite.catch(() => {});
+        return queuedWrite;
     },
 
     async load() {
@@ -491,6 +511,7 @@ window.addEventListener('offline', updateNetworkStatus);
 window.addEventListener('online', () => {
     updateNetworkStatus();
     APP_STATUS.toast('Đã kết nối lại mạng.', 'success');
+    retryPendingProgressSaveNow();
 });
 updateNetworkStatus();
 
@@ -923,12 +944,13 @@ function trimReaderContentCache(activeChapterIndex) {
     if (!STATE.currentBook?.chapters) return;
 
     if (STATE.isSegmented) {
-        const activeSegment = Math.floor(activeChapterIndex / 100);
+        const segmentSize = STATE.segmentSize || 100;
+        const activeSegment = Math.floor(activeChapterIndex / segmentSize);
         const keepSegments = new Set([activeSegment, activeSegment + 1]);
         for (const segmentIndex of Array.from(STATE.loadedSegments)) {
             if (keepSegments.has(segmentIndex)) continue;
-            const start = segmentIndex * 100;
-            const end = Math.min(start + 100, STATE.currentBook.chapters.length);
+            const start = segmentIndex * segmentSize;
+            const end = Math.min(start + segmentSize, STATE.currentBook.chapters.length);
             for (let index = start; index < end; index++) {
                 const chapter = STATE.currentBook.chapters[index];
                 if (chapter?.sentences) chapter.sentences = null;
@@ -1929,47 +1951,154 @@ async function openImageManager(bookId = STATE.currentBookId, bookTitle = STATE.
     }
 }
 
+function getProgressSaveFailureMessage(error) {
+    const code = String(error?.code || '').replace(/^firestore\//, '');
+    const messages = {
+        'permission-denied': 'Firestore từ chối quyền ghi tiến độ.',
+        unauthenticated: 'Phiên đăng nhập đã hết hạn; hãy đăng nhập lại.',
+        unavailable: 'Firestore tạm thời không khả dụng.',
+        'deadline-exceeded': 'Firestore phản hồi quá lâu.',
+        'resource-exhausted': 'Firestore đang quá tải hoặc đã chạm giới hạn.',
+        'network-request-failed': 'Không thể kết nối tới Firestore.',
+        NETWORK_TIMEOUT: 'Kết nối Firestore bị quá thời gian chờ.'
+    };
+    return messages[code] || error?.message || 'Không thể lưu tiến độ lên Firestore.';
+}
+
+function isRetryableProgressSaveError(error) {
+    const code = String(error?.code || '').replace(/^firestore\//, '');
+    // Permission/auth failures will not recover by retrying. Network and
+    // transient Firestore failures should retain the snapshot and retry.
+    return !['permission-denied', 'unauthenticated', 'invalid-argument', 'not-found'].includes(code);
+}
+
+function scheduleProgressSaveRetry(snapshot, version, error, attempt = 0) {
+    if (version !== STATE.progressSaveVersion || !isRetryableProgressSaveError(error)) return;
+
+    const retryAttempt = attempt + 1;
+    const delayMs = Math.min(30_000 * (2 ** Math.min(retryAttempt - 1, 4)), 5 * 60_000);
+    STATE.pendingProgressRetry = { snapshot, version, attempt: retryAttempt };
+    if (STATE.progressRetryTimer) clearTimeout(STATE.progressRetryTimer);
+    STATE.progressRetryTimer = setTimeout(retryPendingProgressSaveNow, delayMs);
+    console.warn('[Progress] Save retained for retry', {
+        bookId: snapshot.bookId,
+        chunk: snapshot.currentGlobalIndex,
+        retryAttempt,
+        delayMs,
+        code: error?.code,
+        message: error?.message
+    });
+}
+
+function enqueueProgressSnapshot(snapshot, version, retryAttempt = 0) {
+    const write = async () => {
+        try {
+            const progressRef = doc(db, 'users', snapshot.userId, 'progress', snapshot.bookId);
+            await setDoc(progressRef, {
+                title: snapshot.title,
+                filename: snapshot.filename,
+                last_read_chunk: snapshot.currentGlobalIndex,
+                total_chunks: snapshot.totalChunks,
+                settings: snapshot.persistedSettings,
+                updated_at: serverTimestamp()
+            }, { merge: true });
+
+            if (STATE.currentBookId === snapshot.bookId && version === STATE.progressSaveVersion) {
+                STATE.lastSavedChunkIndex = snapshot.currentGlobalIndex;
+                STATE.pendingProgressRetry = null;
+                STATE.lastProgressSaveError = null;
+                if (STATE.progressRetryTimer) clearTimeout(STATE.progressRetryTimer);
+                STATE.progressRetryTimer = null;
+            }
+            console.log(`Progress synced to Firestore (v2) at chunk ${snapshot.currentGlobalIndex}`);
+            return true;
+        } catch (err) {
+            const failure = {
+                code: err?.code || 'unknown',
+                message: err?.message || String(err),
+                bookId: snapshot.bookId,
+                chunk: snapshot.currentGlobalIndex,
+                retryAttempt
+            };
+            STATE.lastProgressSaveError = failure;
+            console.error('[Progress] Firestore save failed', failure, err);
+            if (version === STATE.progressSaveVersion) {
+                APP_STATUS.error(new Error(`${getProgressSaveFailureMessage(err)} Tiến độ được giữ lại${isRetryableProgressSaveError(err) ? ' và sẽ tự thử lại.' : '.'}`));
+                scheduleProgressSaveRetry(snapshot, version, err, retryAttempt);
+            }
+            return false;
+        }
+    };
+
+    const queuedWrite = STATE.progressSaveChain.then(write, write);
+    STATE.progressSaveChain = queuedWrite.catch(() => {});
+    return queuedWrite;
+}
+
+function retryPendingProgressSaveNow() {
+    const pending = STATE.pendingProgressRetry;
+    STATE.progressRetryTimer = null;
+    if (!pending || pending.version !== STATE.progressSaveVersion) return;
+    if (!navigator.onLine) {
+        scheduleProgressSaveRetry(pending.snapshot, pending.version, { code: 'network-request-failed' }, pending.attempt);
+        return;
+    }
+    void enqueueProgressSnapshot(pending.snapshot, pending.version, pending.attempt);
+}
+
 async function saveProgress(force = false) {
-    if (!STATE.user || !STATE.currentBookId) return;
+    if (!STATE.user || !STATE.currentBookId) return false;
 
+    // Capture the complete snapshot before any asynchronous work starts. A
+    // previous implementation read STATE again after awaiting Firestore,
+    // which allowed a stale load/playback operation to write the new book's
+    // position.
     const currentGlobalIndex = getGlobalIndex(STATE.currentChapterIndex, STATE.currentSentenceIndex);
-
-    // Batching: only save if forced OR distance >= 10 OR first time registration
     const isFirstSave = STATE.lastSavedChunkIndex === -1;
     if (!force && !isFirstSave && Math.abs(currentGlobalIndex - STATE.lastSavedChunkIndex) < 10) {
         console.log(`Skipping Firestore sync (Batching): Current ${currentGlobalIndex}, Last Saved ${STATE.lastSavedChunkIndex}`);
-        return;
+        return true;
     }
 
-    try {
-        const progressRef = doc(db, "users", STATE.user.uid, "progress", STATE.currentBookId);
-        const { theme, fontSize, ...persistedSettings } = STATE.settings;
-        await setDoc(progressRef, {
-            title: STATE.currentBook.title,
-            filename: STATE.currentFilename,
-            last_read_chunk: currentGlobalIndex,
-            total_chunks: getTotalChunks(),
-            settings: persistedSettings, // Save current settings (excluding global theme and device font size)
-            updated_at: serverTimestamp()
-        }, { merge: true });
-
-        STATE.lastSavedChunkIndex = currentGlobalIndex;
-        console.log(`Progress synced to Firestore (v2) at chunk ${currentGlobalIndex}`);
-    } catch (err) {
-        console.error("Firestore Error:", err);
-    }
+    const { theme, fontSize, ...persistedSettings } = STATE.settings;
+    const snapshot = {
+        userId: STATE.user.uid,
+        bookId: STATE.currentBookId,
+        title: STATE.currentBook?.title || '',
+        filename: STATE.currentFilename,
+        currentGlobalIndex,
+        totalChunks: getTotalChunks(),
+        persistedSettings
+    };
+    const version = ++STATE.progressSaveVersion;
+    // A newer snapshot supersedes a queued retry for this document.
+    STATE.pendingProgressRetry = null;
+    if (STATE.progressRetryTimer) clearTimeout(STATE.progressRetryTimer);
+    STATE.progressRetryTimer = null;
+    return enqueueProgressSnapshot(snapshot, version);
 }
 
 async function loadProgress(bookId) {
-    if (!STATE.user) return null;
+    if (!STATE.user) throw new Error('Authentication required to load reading progress');
     try {
         const progressRef = doc(db, "users", STATE.user.uid, "progress", bookId);
         const docSnap = await promiseWithTimeout(getDoc(progressRef), 15_000, 'Firestore reading progress');
         if (docSnap.exists()) {
-            return docSnap.data();
+            const progress = docSnap.data();
+            console.info('[Progress] Loaded', {
+                bookId,
+                hasTitle: typeof progress.title === 'string' && progress.title.trim().length > 0,
+                lastReadChunk: progress.last_read_chunk,
+                hasSettings: !!progress.settings
+            });
+            return progress;
         }
+        console.info('[Progress] No saved document for', bookId);
     } catch (err) {
         console.error("Load Progress Error:", err);
+        // A failed read is not equivalent to an empty document. Let the load
+        // abort instead of resetting to chapter 0 and overwriting valid data.
+        throw err;
     }
     return null;
 }
@@ -1999,16 +2128,31 @@ function getGlobalIndex(chapIdx, sentIdx) {
 function getLocalIndices(globalIdx) {
     if (!STATE.currentBook) return { chapterIndex: 0, sentenceIndex: 0 };
     const counts = STATE.currentBook._chapterCounts;
-    let remaining = globalIdx;
+    let remaining = Number(globalIdx);
+    if (!Number.isFinite(remaining) || remaining < 0) {
+        return { chapterIndex: 0, sentenceIndex: 0 };
+    }
+    let lastNonEmptyChapter = -1;
+    let lastNonEmptyLength = 0;
     for (let i = 0; i < STATE.currentBook.chapters.length; i++) {
         const chap = STATE.currentBook.chapters[i];
         const len = (counts && counts[i] !== undefined)
             ? counts[i]
             : (chap ? (chap.count || (chap.sentences && chap.sentences.length) || 0) : 0);
+        if (len > 0) {
+            lastNonEmptyChapter = i;
+            lastNonEmptyLength = len;
+        }
         if (remaining < len) {
             return { chapterIndex: i, sentenceIndex: remaining };
         }
         remaining -= len;
+    }
+    // Old records may contain the total count instead of the last zero-based
+    // index. Clamp such records to the last sentence rather than restarting
+    // the book from chapter 0.
+    if (lastNonEmptyChapter >= 0) {
+        return { chapterIndex: lastNonEmptyChapter, sentenceIndex: lastNonEmptyLength - 1 };
     }
     return { chapterIndex: 0, sentenceIndex: 0 };
 }
@@ -2647,6 +2791,8 @@ async function loadBookFromStorage(bookId, bookData) {
     STATE.loadController?.abort();
     const loadController = new AbortController();
     STATE.loadController = loadController;
+    const selectionGeneration = ++STATE.selectionGeneration;
+    const isCurrentSelection = () => selectionGeneration === STATE.selectionGeneration;
     const markLoad = createLoadTrace(bookId);
     markLoad('start');
     // Close sidebar immediately on selection
@@ -2662,6 +2808,7 @@ async function loadBookFromStorage(bookId, bookData) {
         // Check if book is segmented in the new stories collection
         const storyRef = doc(db, "users", STATE.user.uid, "stories", bookId);
         const storySnap = await promiseWithTimeout(getDoc(storyRef), 15_000, 'Firestore story metadata');
+        if (!isCurrentSelection()) return;
         markLoad('metadata');
 
         let bookInfo = null;
@@ -2672,14 +2819,26 @@ async function loadBookFromStorage(bookId, bookData) {
 
         if (bookInfo && bookInfo.isSegmented) {
             // Segmented Load Flow
-            await loadBook(bookInfo, bookId, bookInfo.filename);
+            const loaded = await loadBook(bookInfo, bookId, bookInfo.filename, bookData);
+            if (!loaded) return;
         } else {
-            // Traditional Load Flow
-            const filename = bookData.filename || (bookId.replace("book_", "") + ".txt");
+            // A story document is authoritative for the object key. Progress
+            // documents predate B2 and can retain an old filename after a
+            // rename/migration; using it here can fetch another object's key.
+            const progressFilename = bookData.filename;
+            const filename = bookInfo?.filename || progressFilename || (bookId.replace("book_", "") + ".txt");
+            console.info('[Storage identity] Loading master file', {
+                bookId,
+                storyFilename: bookInfo?.filename || null,
+                progressFilename: progressFilename || null,
+                selectedFilename: filename,
+                objectKey: `users/${STATE.user.uid}/files/${filename}`
+            });
             const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/file?filename=${encodeURIComponent(filename)}`, {
                 signal: loadController.signal,
                 timeoutMs: 30_000
             });
+            if (!isCurrentSelection()) return;
             markLoad('legacy_file');
             if (!response.ok) throw new Error(`Book file HTTP ${response.status}`);
             const blob = await response.blob();
@@ -2694,12 +2853,14 @@ async function loadBookFromStorage(bookId, bookData) {
             });
             if (!parseRes.ok) throw new Error(`Parse book HTTP ${parseRes.status}`);
             const data = await parseRes.json();
+            if (!isCurrentSelection()) return;
             markLoad('legacy_parse');
 
             STATE.currentBookId = bookId;
             updateLibraryHighlight();
 
-            await loadBook(data, bookId, filename);
+            const loaded = await loadBook(data, bookId, filename, bookData);
+            if (!loaded) return;
             // Legacy books use the bounded disk-backed chapter cache. Do not
             // start a RAM-heavy full-book migration while the reader is active;
             // migration remains available as an explicit backend operation.
@@ -2707,7 +2868,30 @@ async function loadBookFromStorage(bookId, bookData) {
         markLoad('first_render');
         document.getElementById('status-indicator').innerText = "Ready";
         markLoad('ready');
-        saveProgress(true);
+
+        // Older segmented stories were written as 100-chapter unversioned
+        // objects. Queue their conversion after first paint; the current
+        // session keeps using the compatible legacy metadata until the next
+        // open, so migration never blocks reading.
+        const oldSegmentLayout = bookInfo?.isSegmented && (
+            Number(bookInfo.segmentFormatVersion || 0) < 2 ||
+            Number(bookInfo.segmentSize || 0) !== 50
+        );
+        if (oldSegmentLayout && bookInfo.filename) {
+            const migrationParams = new URLSearchParams({ filename: bookInfo.filename });
+            void authFetch(
+                `/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/migrate?${migrationParams}`,
+                { method: 'POST', timeoutMs: 10_000, retries: 0 }
+            ).then(response => {
+                if (response.status === 202) {
+                    console.info('[Segmentation] Legacy story migration queued', bookId);
+                } else if (response.ok) {
+                    console.info('[Segmentation] Story already uses the 50-chapter layout', bookId);
+                } else {
+                    console.debug('[Segmentation] Migration unavailable:', response.status);
+                }
+            }).catch(err => console.debug('[Segmentation] Migration deferred:', err.message));
+        }
     } catch (err) {
         if (err?.name === 'AbortError' || loadController.signal.aborted) return;
         console.error("Load from Storage Error:", err);
@@ -2836,7 +3020,8 @@ const handleFileUpload = async (e) => {
         }
 
         // --- FIX BUG 6: Await loadBook and call refreshLibrary directly ---
-        await loadBook(bookInfo, data.storyId, data.filename || file.name);
+        const loaded = await loadBook(bookInfo, data.storyId, data.filename || file.name);
+        if (!loaded) return;
         await refreshLibrary();
         STATE.pendingImageFiles = [];
         if (imageInput) imageInput.value = '';
@@ -2893,10 +3078,11 @@ function setupDragAndDrop() {
 
 setupDragAndDrop();
 
-async function loadBook(bookData, bookId, filename) {
+async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
     const loadGeneration = ++STATE.loadGeneration;
     // 0. Robust Engine Reset
     await resetAudioEngine();
+    if (loadGeneration !== STATE.loadGeneration) return false;
     // Close the old socket immediately so its backend workers are cancelled
     // while the new book is still loading, rather than waiting for the first
     // PREFETCH message of the new book.
@@ -2918,6 +3104,9 @@ async function loadBook(bookData, bookId, filename) {
     // Segmentation Logic
     STATE.isSegmented = bookData.isSegmented || false;
     STATE.segmentFormatVersion = bookData.segmentFormatVersion || 0;
+    STATE.segmentSize = Number(bookData.segmentSize) > 0
+        ? Number(bookData.segmentSize)
+        : (STATE.segmentFormatVersion >= 2 ? 50 : 100);
     STATE.segmentsCount = bookData.segmentsCount || 0;
     STATE.currentSegmentIndex = -1;
     STATE.loadedSegments.clear();
@@ -2966,13 +3155,34 @@ async function loadBook(bookData, bookId, filename) {
     });
     STATE.imageURLCache.clear();
 
-    // Check for existing progress
-    const progress = await loadProgress(STATE.currentBookId);
-    if (progress && progress.last_read_chunk !== undefined) {
-        if (progress.title) STATE.currentBook.title = progress.title;
-        if (progress.filename) STATE.currentFilename = progress.filename;
+    // Check for existing progress. The library card already came from the
+    // same user's progress collection, so keep it as a safe fallback if this
+    // second point-read is interrupted by a transient Firestore failure.
+    let progress;
+    try {
+        progress = await loadProgress(STATE.currentBookId);
+    } catch (err) {
+        const hasFallback = fallbackProgress && (
+            fallbackProgress.last_read_chunk !== undefined ||
+            typeof fallbackProgress.title === 'string' ||
+            typeof fallbackProgress.filename === 'string'
+        );
+        if (!hasFallback) throw err;
+        progress = fallbackProgress;
+        console.warn('[Progress] Point-read failed; using library snapshot:', err);
+    }
+    if (!progress && fallbackProgress) {
+        progress = fallbackProgress;
+        console.info('[Progress] Point-read empty; using library snapshot for', STATE.currentBookId);
+    }
+    if (loadGeneration !== STATE.loadGeneration) return false;
+    // Restore metadata independently from the playback cursor. Older records
+    // can contain a title without last_read_chunk.
+    if (progress?.title) STATE.currentBook.title = progress.title;
+    if (progress?.filename) STATE.currentFilename = progress.filename;
 
-        const totalChunks = bookData.totalChapters ? 999999 : getTotalChunks(); // Hack for segmented jump
+    if (progress && progress.last_read_chunk !== undefined) {
+
         const indices = getLocalIndices(progress.last_read_chunk);
         STATE.currentChapterIndex = indices.chapterIndex;
         STATE.currentSentenceIndex = indices.sentenceIndex;
@@ -2996,8 +3206,9 @@ async function loadBook(bookData, bookId, filename) {
 
     // If segmented, we MUST load the segment containing currentChapterIndex
     if (STATE.isSegmented) {
-        const segIdx = Math.floor(STATE.currentChapterIndex / 100);
-        await fetchSegment(segIdx);
+        const segIdx = Math.floor(STATE.currentChapterIndex / (STATE.segmentSize || 100));
+        await fetchSegment(segIdx, loadGeneration, STATE.currentBookId);
+        if (loadGeneration !== STATE.loadGeneration) return false;
     }
 
     applySettingsToUI();
@@ -3008,6 +3219,7 @@ async function loadBook(bookData, bookId, filename) {
     document.getElementById('edit-title-btn').classList.remove('hidden');
 
     await renderChapter(STATE.currentChapterIndex);
+    if (loadGeneration !== STATE.loadGeneration) return false;
     renderTOC();
     updateUI();
 
@@ -3018,13 +3230,20 @@ async function loadBook(bookData, bookId, filename) {
     // Progress persistence is not part of first paint. A slow Firestore write
     // must not keep the reader in its loading state.
     void saveProgress(true).catch(err => console.debug('[Progress] Deferred save skipped:', err.message));
-    playFromSentence(STATE.currentSentenceIndex);
+    void playFromSentence(STATE.currentSentenceIndex, loadGeneration);
     updateLibraryHighlight();
     void imageManifestPromise.catch(err => console.debug('[Images] Deferred manifest skipped:', err.message));
+    return true;
 }
 
-async function fetchSegment(segmentIndex) {
+async function fetchSegment(segmentIndex, expectedLoadGeneration = STATE.loadGeneration, expectedBookId = STATE.currentBookId) {
     if (STATE.loadedSegments.has(segmentIndex)) return;
+    const isCurrentSegmentLoad = () => (
+        expectedLoadGeneration === STATE.loadGeneration &&
+        expectedBookId === STATE.currentBookId &&
+        STATE.currentBook
+    );
+    if (!isCurrentSegmentLoad()) return false;
 
     console.log(`[Segmentation] Fetching segment ${segmentIndex}...`);
     try {
@@ -3034,9 +3253,10 @@ async function fetchSegment(segmentIndex) {
         });
         if (!res.ok) throw new Error(`Segment HTTP ${res.status}`);
         const data = await res.json();
+        if (!isCurrentSegmentLoad()) return false;
 
         // Update chapters in currentBook
-        const startOffset = segmentIndex * 100;
+        const startOffset = segmentIndex * (STATE.segmentSize || 100);
         data.chapters.forEach((chap, i) => {
             const chapIdx = startOffset + i;
             if (STATE.currentBook.chapters[chapIdx] !== undefined) {
@@ -3055,6 +3275,7 @@ async function fetchSegment(segmentIndex) {
         STATE.loadedSegments.add(segmentIndex);
         STATE.currentSegmentIndex = segmentIndex;
         console.log(`[Segmentation] Segment ${segmentIndex} loaded.`);
+        return true;
     } catch (err) {
         console.error("Failed to fetch segment:", err);
         throw err;
@@ -3138,21 +3359,28 @@ function updateLibraryHighlight() {
     });
 }
 
-async function fetchChapterSentences(index) {
+async function fetchChapterSentences(index, expectedLoadGeneration = STATE.loadGeneration, expectedBookId = STATE.currentBookId) {
     if (!STATE.user || !STATE.currentFilename) return;
+    const expectedFilename = STATE.currentFilename;
+    const isCurrentChapterLoad = () => (
+        expectedLoadGeneration === STATE.loadGeneration &&
+        expectedBookId === STATE.currentBookId &&
+        STATE.currentBook
+    );
+    if (!isCurrentChapterLoad()) return false;
 
     // If segmented, we should already have sentences from fetchSegment
     if (STATE.isSegmented) {
-        const segIdx = Math.floor(index / 100);
+        const segIdx = Math.floor(index / (STATE.segmentSize || 100));
         if (!STATE.loadedSegments.has(segIdx)) {
-            await fetchSegment(segIdx);
+            await fetchSegment(segIdx, expectedLoadGeneration, expectedBookId);
         }
-        return;
+        return isCurrentChapterLoad();
     }
 
     const formData = new FormData();
     formData.append('userId', STATE.user.uid);
-    formData.append('filename', STATE.currentFilename);
+    formData.append('filename', expectedFilename);
     formData.append('chapterIndex', index);
 
     document.getElementById('status-indicator').innerText = "Loading Chapter...";
@@ -3163,6 +3391,7 @@ async function fetchChapterSentences(index) {
             body: formData
         });
         const data = await response.json();
+        if (!isCurrentChapterLoad()) return false;
         if (data.sentences) {
             STATE.currentBook.chapters[index].sentences = data.sentences;
             STATE.currentBook.chapters[index].count = data.sentences.length; // Ensure count is correct
@@ -3170,6 +3399,7 @@ async function fetchChapterSentences(index) {
         } else {
             throw new Error(data.error || "Failed to load chapter content.");
         }
+        return true;
     } catch (e) {
         console.error(e);
         document.getElementById('status-indicator').innerText = "Error loading chapter";
@@ -3203,13 +3433,21 @@ async function renderChapterImages(index) {
     return figures;
 }
 
-async function renderChapter(index) {
+async function renderChapter(index, expectedLoadGeneration = STATE.loadGeneration) {
+    const expectedBookId = STATE.currentBookId;
+    const isCurrentChapterRender = () => (
+        expectedLoadGeneration === STATE.loadGeneration &&
+        expectedBookId === STATE.currentBookId &&
+        STATE.currentBook
+    );
+    if (!isCurrentChapterRender()) return false;
     STATE.currentChapterIndex = index;
 
     // If segmented, ensure chapter data exists
     if (STATE.isSegmented) {
-        const segIdx = Math.floor(index / 100);
-        await fetchSegment(segIdx);
+        const segIdx = Math.floor(index / (STATE.segmentSize || 100));
+        await fetchSegment(segIdx, expectedLoadGeneration, expectedBookId);
+        if (!isCurrentChapterRender()) return false;
     }
 
     trimReaderContentCache(index);
@@ -3224,23 +3462,25 @@ async function renderChapter(index) {
         if (!chapter.sentences) {
             document.getElementById('status-indicator').innerText = "Loading Chapter...";
             try {
-                await fetchChapterSentences(index);
+                await fetchChapterSentences(index, expectedLoadGeneration, expectedBookId);
             } catch (e) {
                 document.getElementById('status-indicator').innerText = `Error: ${e.message}`;
             }
+            if (!isCurrentChapterRender()) return false;
         }
-        return; // Skip all DOM rendering — no spans, no minimap
+        return true; // Skip all DOM rendering — no spans, no minimap
     }
 
     // Lazy load sentences if missing
     if (!chapter.sentences) {
         textContainer.innerHTML = '<div class="text-center p-8 text-primary/50 italic animate-pulse">Đang tải nội dung chương...</div>';
         try {
-            await fetchChapterSentences(index);
+            await fetchChapterSentences(index, expectedLoadGeneration, expectedBookId);
         } catch (e) {
             textContainer.innerHTML = `<div class="text-center p-8 text-red-500 italic">Không thể tải nội dung: ${e.message}</div>`;
-            return;
+            return false;
         }
+        if (!isCurrentChapterRender()) return false;
     }
 
     const chapterFigures = await renderChapterImages(index);
@@ -3262,6 +3502,7 @@ async function renderChapter(index) {
         textContainer.scrollTop = 0;
         renderMinimap(index);
     });
+    return true;
 }
 
 function renderMinimap(index) {
@@ -3910,24 +4151,35 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
     }
 }
 
-async function playFromSentence(index) {
+async function playFromSentence(index, expectedLoadGeneration = STATE.loadGeneration) {
     if (!STATE.currentBook) return;
+    const expectedBookId = STATE.currentBookId;
+    const isCurrentPlayback = () => (
+        expectedLoadGeneration === STATE.loadGeneration &&
+        expectedBookId === STATE.currentBookId &&
+        STATE.currentBook
+    );
 
     // 0. Robust Engine Reset - Dọn dẹp triệt để phiên cũ (dừng audio, xóa buffer, reset sessionId)
     await resetAudioEngine();
+    if (!isCurrentPlayback()) return;
 
     // Dọn dẹp cache cũ khi nhảy tới vị trí mới (jump) - "Dọn dẹp sạch cho cái mới đi vào"
     await OFFLINE_MANAGER.clearCache();
+    if (!isCurrentPlayback()) return;
 
     if (!(await waitForWebSocket())) {
+        if (!isCurrentPlayback()) return;
         document.getElementById('status-indicator').innerText = "Connection failed";
         return;
     }
+    if (!isCurrentPlayback()) return;
 
     const chapter = STATE.currentBook.chapters[STATE.currentChapterIndex];
     if (!chapter.sentences) {
         await fetchChapterSentences(STATE.currentChapterIndex);
     }
+    if (!isCurrentPlayback()) return;
 
     STATE.currentSentenceIndex = index;
     const sentences = STATE.currentBook.chapters[STATE.currentChapterIndex].sentences;
@@ -3948,6 +4200,7 @@ async function playFromSentence(index) {
     if (cachedBlob) {
         console.log(`[Offline] Using cached audio for ${STATE.currentChapterIndex}_${index}`);
         const arrayBuffer = await cachedBlob.arrayBuffer();
+        if (!isCurrentPlayback()) return;
         STATE.appendQueue.push({
             index: index,
             chapterIndex: STATE.currentChapterIndex,
@@ -3957,6 +4210,7 @@ async function playFromSentence(index) {
         });
         processAppendQueue();
     } else {
+        if (!isCurrentPlayback()) return;
         // Request the new starting sentence
         STATE.ws.send(JSON.stringify({
             type: "PREFETCH",
@@ -3976,16 +4230,29 @@ async function playFromSentence(index) {
     console.log(`Waiting for first chunk of session ${currentSessionId}...`);
     let attempts = 0;
     while (STATE.chunkTimings.length === 0 && attempts < 100) {
-        if (STATE.sessionId !== currentSessionId) return; // User jumped again
+        if (STATE.sessionId !== currentSessionId || !isCurrentPlayback()) return; // User jumped or loaded another book
         await new Promise(r => setTimeout(r, 100));
         attempts++;
     }
 
-    if (STATE.chunkTimings.length > 0 && STATE.sessionId === currentSessionId) {
-        audio.play().catch(e => console.warn("Auto-play blocked:", e));
+    if (STATE.chunkTimings.length > 0 && STATE.sessionId === currentSessionId && isCurrentPlayback()) {
+        try {
+            await audio.play();
+        } catch (err) {
+            // Do not claim playback is active when the browser rejected
+            // autoplay. The old code marked STATE.isPlaying=true anyway,
+            // which made inactivity handling save the initial sentence.
+            STATE.isPlaying = false;
+            document.getElementById('status-indicator').innerText = 'Bấm Play để bắt đầu nghe';
+            console.warn("Auto-play blocked; waiting for user gesture:", err);
+            return;
+        }
+        if (!isCurrentPlayback()) return;
         STATE.isPlaying = true;
         updateUI();
         highlightSentence(index);
+        // Persist the starting sentence only after playback really starts.
+        void saveProgress(true).catch(err => console.debug('[Progress] Playback-start save skipped:', err.message));
 
         if ('mediaSession' in navigator) {
             navigator.mediaSession.playbackState = 'playing';
@@ -4129,16 +4396,33 @@ audio.onpause = () => {
 
 async function editTitle() {
     if (!STATE.currentBook || !STATE.user) return;
-    const newTitle = prompt("Enter new title for this book:", STATE.currentBook.title);
-    if (newTitle && newTitle.trim() !== "" && newTitle !== STATE.currentBook.title) {
-        STATE.currentBook.title = newTitle.trim();
-        document.getElementById('current-title').innerText = STATE.currentBook.title;
-        document.getElementById('current-title').title = STATE.currentBook.title;
-        updateUI(); // Keep player and author tokens in sync
+    const previousTitle = STATE.currentBook.title;
+    const requestedTitle = prompt("Enter title for this book:", previousTitle);
+    const newTitle = requestedTitle?.trim();
+    if (!newTitle || newTitle === previousTitle) return;
 
-        // Force save with new title
-        await saveProgress(true); // Persist title change immediately
-        await refreshLibrary(); // Wait for library update to reflect new title
+    STATE.currentBook.title = newTitle;
+    document.getElementById('current-title').innerText = newTitle;
+    document.getElementById('current-title').title = newTitle;
+    updateUI(); // Keep player and author tokens in sync
+
+    try {
+        // Force save with new title and verify the write before refreshing the
+        // library. A failed write must not silently restore the old title.
+        const saved = await saveProgress(true);
+        if (!saved) throw new Error('Firestore did not save the new title');
+        const storedProgress = await loadProgress(STATE.currentBookId);
+        if (storedProgress?.title !== newTitle) {
+            throw new Error('Firestore returned a different title after saving');
+        }
+        await refreshLibrary();
+    } catch (err) {
+        STATE.currentBook.title = previousTitle;
+        document.getElementById('current-title').innerText = previousTitle;
+        document.getElementById('current-title').title = previousTitle;
+        updateUI();
+        console.error('[Title] Save failed:', err);
+        alert(`Không thể lưu tên truyện: ${err.message}`);
     }
 }
 
@@ -4227,7 +4511,7 @@ audio.ontimeupdate = async () => {
 
     // --- Segmentation: 80% Proactive Fetching ---
     if (STATE.isSegmented) {
-        const chaptersInSegment = 100;
+        const chaptersInSegment = STATE.segmentSize || 100;
         const currentRelativeIdx = STATE.currentChapterIndex % chaptersInSegment;
         const nextSegmentIdx = Math.floor(STATE.currentChapterIndex / chaptersInSegment) + 1;
 
@@ -4298,16 +4582,26 @@ audio.ontimeupdate = async () => {
 };
 
 // --- Settings ---
-document.getElementById('voice-select').onchange = (e) => STATE.settings.voice = e.target.value;
+const scheduleBookSettingsSave = debounce(() => {
+    if (!STATE.currentBook || !STATE.currentBookId) return;
+    void saveProgress(true).catch(err => console.debug('[Settings] Deferred save skipped:', err.message));
+}, 400);
+
+document.getElementById('voice-select').onchange = (e) => {
+    STATE.settings.voice = e.target.value;
+    scheduleBookSettingsSave();
+};
 document.getElementById('speed-range').oninput = (e) => {
     STATE.settings.speed = parseFloat(e.target.value);
     document.getElementById('speed-val').innerText = `${e.target.value}x`;
+    scheduleBookSettingsSave();
 };
 document.getElementById('pitch-range').oninput = (e) => {
     const val = parseInt(e.target.value);
     const pitchStr = `${val >= 0 ? '+' : ''}${val}Hz`;
     STATE.settings.pitch = pitchStr;
     document.getElementById('pitch-val').innerText = pitchStr;
+    scheduleBookSettingsSave();
 };
 
 document.getElementById('prefetch-range').oninput = (e) => {
@@ -4317,12 +4611,13 @@ document.getElementById('prefetch-range').oninput = (e) => {
     document.getElementById('prefetch-val').innerText = `${count} Workers`;
     // Trigger immediate prefetch to fill the new buffer size if needed
     prefetchNext(STATE.currentChapterIndex, STATE.currentSentenceIndex);
+    scheduleBookSettingsSave();
 };
 
 // --- Typography settings ---
 const debouncedApplyTypography = debounce(() => {
     applyTypographySettings();
-    saveProgress(false); // Proactive save after adjustment
+    scheduleBookSettingsSave();
 }, 350);
 
 document.getElementById('font-size-range').oninput = (e) => {
@@ -4350,7 +4645,7 @@ document.getElementById('font-color-picker').oninput = (e) => {
 document.getElementById('color-reset-btn').onclick = () => {
     STATE.settings.textColor = "default";
     applyTypographySettings();
-    saveProgress(false); // Proactive save
+    scheduleBookSettingsSave();
 };
 
 document.querySelectorAll('.preset-color').forEach(btn => {
@@ -4358,7 +4653,7 @@ document.querySelectorAll('.preset-color').forEach(btn => {
         const color = btn.dataset.color;
         STATE.settings.textColor = color;
         applyTypographySettings();
-        saveProgress(false); // Proactive save
+        scheduleBookSettingsSave();
     };
 });
 
@@ -4942,16 +5237,32 @@ function updateSleepTimerUI(isActive, seconds = 0) {
 async function triggerManualSave() {
     const btn = document.getElementById('manual-save-btn');
     const icon = document.getElementById('manual-save-icon');
+    const expectedBookId = STATE.currentBookId;
+    const expectedChunk = expectedBookId ? getGlobalIndex(STATE.currentChapterIndex, STATE.currentSentenceIndex) : null;
 
     btn.classList.add('pointer-events-none');
     icon.className = "fas fa-sync-alt fa-spin text-primary";
 
     try {
         // Force sync both progress and statistics
-        await Promise.all([
+        const [progressSaved, statsSaved] = await Promise.all([
             saveProgress(true),
             STATS_MANAGER.syncToFirestore(true)
         ]);
+        if (progressSaved !== true) {
+            throw new Error('Firestore did not confirm the reading progress write');
+        }
+        if (STATE.user && statsSaved !== true) {
+            console.warn('[Manual save] Progress saved, but statistics sync failed.');
+        }
+        const persistedProgress = await loadProgress(expectedBookId);
+        if (!persistedProgress || Number(persistedProgress.last_read_chunk) !== expectedChunk) {
+            throw new Error(`Firestore read-back mismatch (expected chunk ${expectedChunk})`);
+        }
+        console.info('[Manual save] Verified progress', {
+            bookId: expectedBookId,
+            lastReadChunk: persistedProgress.last_read_chunk
+        });
 
         icon.className = "fas fa-check text-green-400";
         setTimeout(() => {
@@ -4960,6 +5271,7 @@ async function triggerManualSave() {
         }, 2000);
     } catch (e) {
         console.error("Manual save failed:", e);
+        APP_STATUS.error(e, 'Không thể lưu tiến độ lên Firestore.');
         icon.className = "fas fa-times text-red-500";
         setTimeout(() => {
             icon.className = "fas fa-cloud-upload-alt text-lg";
@@ -5007,11 +5319,12 @@ async function handlePauseTimeout() {
     console.warn("Pause Timeout: 1 minute reached. Saving and Disconnecting...");
     STATE.pauseCount = 0; // Reset to avoid double trigger
     STATE.pauseTimeoutHandled = true;
+    let progressSaved = true;
 
     // 1. Save Progress
     if (STATE.user && STATE.currentBookId) {
         document.getElementById('status-indicator').innerText = "Session Expired...";
-        await saveProgress(true);
+        progressSaved = await saveProgress(true);
     }
 
     // 2. [TASK 3] Disconnect WebSocket ONLY (Preserve Buffer & Cache)
@@ -5021,8 +5334,16 @@ async function handlePauseTimeout() {
     const playBtn = document.getElementById('play-btn');
     if (playBtn) playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
 
-    document.getElementById('status-indicator').innerText = "Session Expired (1m Inactivity)";
-    document.getElementById('status-indicator').style.color = "#FFB347";
+    const indicator = document.getElementById('status-indicator');
+    if (progressSaved) {
+        indicator.innerText = "Session Expired (1m Inactivity)";
+        indicator.style.color = "#FFB347";
+    } else {
+        // enqueueProgressSnapshot has already retained the exact cursor and
+        // scheduled its retry. Do not overwrite its visible failure state.
+        indicator.innerText = "Chưa lưu tiến độ — đang tự thử lại";
+        indicator.style.color = "#FF5252";
+    }
 }
 
 async function handlePlaybackStall() {
@@ -5122,6 +5443,13 @@ document.addEventListener('visibilitychange', () => {
         let lastChap = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].chapterIndex : STATE.currentChapterIndex;
         let lastIdx = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].index : STATE.currentSentenceIndex;
         prefetchNext(lastChap, lastIdx, BACKGROUND_PREFETCH_CHUNKS, true);
+    }
+
+    // Browser throttling can delay ontimeupdate while a tab is hidden. Save a
+    // forced checkpoint as soon as the page leaves the foreground.
+    if (document.visibilityState === 'hidden' && STATE.currentBookId) {
+        void saveProgress(true).catch(err => console.debug('[Progress] Hidden-tab save skipped:', err.message));
+        if (STATE.user) void STATS_MANAGER.syncToFirestore();
     }
 });
 
@@ -5269,7 +5597,7 @@ async function saveChapterEdit() {
 
             // Invalidate the segment cache to force a fresh fetch from the server
             if (STATE.isSegmented) {
-                const segIdx = Math.floor(editingChapterIndex / 100);
+                const segIdx = Math.floor(editingChapterIndex / (STATE.segmentSize || 100));
                 STATE.loadedSegments.delete(segIdx);
             }
 
