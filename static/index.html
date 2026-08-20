@@ -119,17 +119,19 @@
             z-index: -1;
         }
 
-        /* ===== THEME SYSTEM ===== */
+        /* ===== THEME SYSTEM (UI/UX PRO MAX) ===== */
         :root {
             --theme-primary: #00E5FF;
-            --theme-primary-dim: #008fa0;
-            --theme-bg: #0b1326;
-            --theme-surface: #131b2e;
-            --theme-surface-high: #222a3d;
-            --theme-glass: rgba(23, 31, 51, 0.6);
-            --theme-glass-border: rgba(0, 229, 255, 0.1);
+            --theme-primary-dim: #0099b8;
+            --theme-bg: #080d1a;
+            --theme-surface: #0e172a;
+            --theme-surface-high: #18243e;
+            --theme-glass: rgba(14, 23, 42, 0.68);
+            --theme-glass-border: rgba(0, 229, 255, 0.16);
             --theme-text: #dae2fd;
             --theme-text-reading: #bac9cc;
+            --theme-text-muted: #64748b;
+            --theme-glow: rgba(0, 229, 255, 0.28);
             --theme-is-light: 0;
             
             /* Custom Typography Defaults */
@@ -137,105 +139,135 @@
             --reader-text-color: var(--theme-text-reading);
         }
 
-        /* Theme: Warm Night */
+        /* 1. Theme: Cyber Obsidian (Default) */
+        [data-theme="default"] {
+            --theme-primary: #00E5FF;
+            --theme-primary-dim: #0099b8;
+            --theme-bg: #080d1a;
+            --theme-surface: #0e172a;
+            --theme-surface-high: #18243e;
+            --theme-glass: rgba(14, 23, 42, 0.68);
+            --theme-glass-border: rgba(0, 229, 255, 0.16);
+            --theme-text: #dae2fd;
+            --theme-text-reading: #bac9cc;
+            --theme-text-muted: #64748b;
+            --theme-glow: rgba(0, 229, 255, 0.28);
+            --theme-is-light: 0;
+        }
+
+        /* 2. Theme: Warm Amber Night */
         [data-theme="warm-night"] {
-            --theme-primary: #FFB347;
-            --theme-primary-dim: #cc8a28;
-            --theme-bg: #1a1410;
-            --theme-surface: #251e17;
-            --theme-surface-high: #342b22;
-            --theme-glass: rgba(37, 30, 23, 0.7);
-            --theme-glass-border: rgba(255, 179, 71, 0.12);
-            --theme-text: #e8ddd0;
-            --theme-text-reading: #c9b99f;
+            --theme-primary: #F59E0B;
+            --theme-primary-dim: #c27800;
+            --theme-bg: #14100c;
+            --theme-surface: #1f1812;
+            --theme-surface-high: #2d231a;
+            --theme-glass: rgba(31, 24, 18, 0.72);
+            --theme-glass-border: rgba(245, 158, 11, 0.18);
+            --theme-text: #fcecdb;
+            --theme-text-reading: #ddc6b0;
+            --theme-text-muted: #8c7866;
+            --theme-glow: rgba(245, 158, 11, 0.25);
             --theme-is-light: 0;
         }
 
-        /* Theme: Sepia Classic */
-        [data-theme="sepia"] {
-            --theme-primary: #8B6914;
-            --theme-primary-dim: #6b5010;
-            --theme-bg: #f5f0e8;
-            --theme-surface: #ebe5d8;
-            --theme-surface-high: #ddd5c5;
-            --theme-glass: rgba(235, 229, 216, 0.85);
-            --theme-glass-border: rgba(139, 105, 20, 0.15);
-            --theme-text: #3d3229;
-            --theme-text-reading: #5a4d3e;
-            --theme-is-light: 1;
-        }
-
-        /* Theme: Forest Deep */
+        /* 3. Theme: Emerald Zen */
         [data-theme="forest"] {
-            --theme-primary: #4ADE80;
-            --theme-primary-dim: #22c55e;
-            --theme-bg: #0d1a12;
-            --theme-surface: #142219;
-            --theme-surface-high: #1e3326;
-            --theme-glass: rgba(20, 34, 25, 0.7);
-            --theme-glass-border: rgba(74, 222, 128, 0.12);
-            --theme-text: #c8e0d0;
-            --theme-text-reading: #9cc4a8;
+            --theme-primary: #10B981;
+            --theme-primary-dim: #059669;
+            --theme-bg: #071510;
+            --theme-surface: #0d2018;
+            --theme-surface-high: #152e23;
+            --theme-glass: rgba(13, 32, 24, 0.7);
+            --theme-glass-border: rgba(16, 185, 129, 0.18);
+            --theme-text: #e1f6eb;
+            --theme-text-reading: #a8d5be;
+            --theme-text-muted: #5e8a72;
+            --theme-glow: rgba(16, 185, 129, 0.25);
             --theme-is-light: 0;
         }
 
-        /* Theme: Rose Dusk */
+        /* 4. Theme: Sunset Velvet */
         [data-theme="rose"] {
-            --theme-primary: #F472B6;
+            --theme-primary: #EC4899;
             --theme-primary-dim: #db2777;
-            --theme-bg: #1a0f14;
-            --theme-surface: #251720;
-            --theme-surface-high: #36222e;
-            --theme-glass: rgba(37, 23, 32, 0.7);
-            --theme-glass-border: rgba(244, 114, 182, 0.12);
-            --theme-text: #e8d0de;
-            --theme-text-reading: #c9a3b8;
+            --theme-bg: #150a14;
+            --theme-surface: #221020;
+            --theme-surface-high: #321830;
+            --theme-glass: rgba(34, 16, 32, 0.7);
+            --theme-glass-border: rgba(236, 72, 153, 0.18);
+            --theme-text: #fce7f3;
+            --theme-text-reading: #dfb4d0;
+            --theme-text-muted: #8f6580;
+            --theme-glow: rgba(236, 72, 153, 0.25);
             --theme-is-light: 0;
         }
 
-        /* Theme: Paper White */
-        [data-theme="paper"] {
-            --theme-primary: #2563EB;
-            --theme-primary-dim: #1d4ed8;
-            --theme-bg: #fafaf9;
-            --theme-surface: #f0efeb;
-            --theme-surface-high: #e2e0da;
-            --theme-glass: rgba(240, 239, 235, 0.85);
-            --theme-glass-border: rgba(37, 99, 235, 0.12);
-            --theme-text: #1c1917;
-            --theme-text-reading: #3d3835;
-            --theme-is-light: 1;
+        /* 5. Theme: Nordic Ocean */
+        [data-theme="ocean"] {
+            --theme-primary: #38BDF8;
+            --theme-primary-dim: #0284c7;
+            --theme-bg: #07131e;
+            --theme-surface: #0c1d2e;
+            --theme-surface-high: #142c43;
+            --theme-glass: rgba(12, 29, 46, 0.7);
+            --theme-glass-border: rgba(56, 189, 248, 0.18);
+            --theme-text: #e0f2fe;
+            --theme-text-reading: #9ec5e4;
+            --theme-text-muted: #5c7f9d;
+            --theme-glow: rgba(56, 189, 248, 0.25);
+            --theme-is-light: 0;
         }
 
-        /* Theme: Mocha */
+        /* 6. Theme: Royal Mocha */
         [data-theme="mocha"] {
             --theme-primary: #D4A574;
             --theme-primary-dim: #b8895a;
-            --theme-bg: #1e1714;
-            --theme-surface: #2a211c;
-            --theme-surface-high: #3a302a;
-            --theme-glass: rgba(42, 33, 28, 0.7);
-            --theme-glass-border: rgba(212, 165, 116, 0.12);
-            --theme-text: #e0d0c0;
-            --theme-text-reading: #c4ad96;
+            --theme-bg: #16110e;
+            --theme-surface: #221a15;
+            --theme-surface-high: #30251f;
+            --theme-glass: rgba(34, 26, 21, 0.72);
+            --theme-glass-border: rgba(212, 165, 116, 0.18);
+            --theme-text: #f5ece3;
+            --theme-text-reading: #d4beab;
+            --theme-text-muted: #8b7462;
+            --theme-glow: rgba(212, 165, 116, 0.25);
             --theme-is-light: 0;
         }
 
-        /* Theme: Ocean Depth */
-        [data-theme="ocean"] {
-            --theme-primary: #38BDF8;
-            --theme-primary-dim: #0ea5e9;
-            --theme-bg: #0a1628;
-            --theme-surface: #0f1f35;
-            --theme-surface-high: #1a2e4a;
-            --theme-glass: rgba(15, 31, 53, 0.7);
-            --theme-glass-border: rgba(56, 189, 248, 0.12);
-            --theme-text: #c8dae8;
-            --theme-text-reading: #98b8d4;
-            --theme-is-light: 0;
+        /* 7. Theme: Vintage Sepia (Light Mode) */
+        [data-theme="sepia"] {
+            --theme-primary: #92400E;
+            --theme-primary-dim: #78350F;
+            --theme-bg: #F7F2E7;
+            --theme-surface: #EDE5D3;
+            --theme-surface-high: #DFD4BE;
+            --theme-glass: rgba(247, 242, 231, 0.88);
+            --theme-glass-border: rgba(146, 64, 14, 0.18);
+            --theme-text: #332517;
+            --theme-text-reading: #4E3C2B;
+            --theme-text-muted: #7A6652;
+            --theme-glow: rgba(146, 64, 14, 0.22);
+            --theme-is-light: 1;
         }
 
-        /* ===== UNIVERSAL THEME OVERRIDES (all non-default themes) ===== */
+        /* 8. Theme: Paper Minimalist (Light Mode) */
+        [data-theme="paper"] {
+            --theme-primary: #2563EB;
+            --theme-primary-dim: #1D4ED8;
+            --theme-bg: #F8FAFC;
+            --theme-surface: #F1F5F9;
+            --theme-surface-high: #E2E8F0;
+            --theme-glass: rgba(248, 250, 252, 0.92);
+            --theme-glass-border: rgba(37, 99, 235, 0.16);
+            --theme-text: #0F172A;
+            --theme-text-reading: #334155;
+            --theme-text-muted: #64748B;
+            --theme-glow: rgba(37, 99, 235, 0.22);
+            --theme-is-light: 1;
+        }
+
+        /* ===== UNIVERSAL THEME OVERRIDES (all themes) ===== */
         
         /* Headings & prominent text: use theme text instead of hardcoded white */
         [data-theme] .text-white {
@@ -244,16 +276,16 @@
 
         /* Secondary/muted text: derive from theme text at reduced opacity */
         [data-theme] .text-slate-400 {
-            color: color-mix(in srgb, var(--theme-text) 50%, transparent) !important;
+            color: color-mix(in srgb, var(--theme-text) 55%, transparent) !important;
         }
         [data-theme] .text-slate-500 {
-            color: color-mix(in srgb, var(--theme-text) 40%, transparent) !important;
+            color: color-mix(in srgb, var(--theme-text) 42%, transparent) !important;
         }
         [data-theme] .text-slate-600 {
-            color: color-mix(in srgb, var(--theme-text) 30%, transparent) !important;
+            color: color-mix(in srgb, var(--theme-text) 32%, transparent) !important;
         }
         [data-theme] .text-slate-700 {
-            color: color-mix(in srgb, var(--theme-text) 20%, transparent) !important;
+            color: color-mix(in srgb, var(--theme-text) 22%, transparent) !important;
         }
 
         /* Hardcoded body text color class */
@@ -266,13 +298,13 @@
 
         /* Chunk active highlight: follow theme primary and custom font color */
         [data-theme] .chunk-active {
-            background-color: color-mix(in srgb, var(--theme-primary) 15%, transparent) !important;
+            background-color: color-mix(in srgb, var(--theme-primary) 14%, transparent) !important;
             background-image: none !important;
             border-left-color: var(--theme-primary) !important;
             color: var(--theme-text) !important;
-            box-shadow: 0 0 25px color-mix(in srgb, var(--theme-primary) 12%, transparent) !important;
+            box-shadow: 0 0 25px color-mix(in srgb, var(--theme-primary) 15%, transparent) !important;
             transform: none !important;
-            filter: brightness(1.1);
+            filter: brightness(1.08);
             text-shadow: 0 0 1px color-mix(in srgb, var(--theme-text), transparent 40%);
         }
         [data-theme] .chunk-text:hover {
@@ -283,10 +315,10 @@
         [data-theme] .btn-primary {
             background: linear-gradient(to bottom right, color-mix(in srgb, var(--theme-primary) 70%, white), var(--theme-primary)) !important;
             color: #000 !important;
-            box-shadow: none;
+            box-shadow: 0 4px 16px -2px color-mix(in srgb, var(--theme-primary) 28%, transparent);
         }
         [data-theme] .btn-primary:hover {
-            box-shadow: 0 8px 20px color-mix(in srgb, var(--theme-primary) 30%, transparent) !important;
+            box-shadow: 0 8px 24px color-mix(in srgb, var(--theme-primary) 40%, transparent) !important;
         }
 
         /* Glass surfaces: use theme glass */
@@ -337,7 +369,7 @@
         /* Status indicator */
         [data-theme] #status-indicator {
             background: color-mix(in srgb, var(--theme-primary) 10%, transparent);
-            border-color: color-mix(in srgb, var(--theme-primary) 20%, transparent);
+            border-color: color-mix(in srgb, var(--theme-primary) 22%, transparent);
         }
 
         /* Progress bar gradient */
@@ -354,14 +386,25 @@
         }
 
         /* ===== LIGHT THEME SPECIFIC OVERRIDES (sepia + paper) ===== */
+        [data-theme="sepia"] body,
+        [data-theme="paper"] body {
+            background-color: var(--theme-bg) !important;
+            color: var(--theme-text) !important;
+        }
         [data-theme="sepia"] .glass,
         [data-theme="paper"] .glass {
-            box-shadow: 0 1px 8px rgba(0,0,0,0.06);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.06), 0 1px 3px rgba(0,0,0,0.04);
             backdrop-filter: blur(20px) saturate(1.2);
+            -webkit-backdrop-filter: blur(20px) saturate(1.2);
+            border-color: var(--theme-glass-border) !important;
         }
         [data-theme="sepia"] .bg-white\/5,
         [data-theme="paper"] .bg-white\/5 {
             background: rgba(0,0,0,0.04) !important;
+        }
+        [data-theme="sepia"] .bg-white\/\[0\.02\],
+        [data-theme="paper"] .bg-white\/\[0\.02\] {
+            background: rgba(0,0,0,0.02) !important;
         }
         [data-theme="sepia"] .border-white\/10,
         [data-theme="paper"] .border-white\/10,
@@ -373,109 +416,194 @@
         [data-theme="paper"] #play-btn {
             background: var(--theme-primary) !important;
             color: white !important;
-            box-shadow: 0 0 30px color-mix(in srgb, var(--theme-primary) 25%, transparent);
+            box-shadow: 0 0 25px color-mix(in srgb, var(--theme-primary) 35%, transparent);
         }
         [data-theme="sepia"] .btn-primary,
         [data-theme="paper"] .btn-primary {
+            background: linear-gradient(to bottom right, var(--theme-primary), var(--theme-primary-dim)) !important;
             color: white !important;
+            box-shadow: 0 4px 14px color-mix(in srgb, var(--theme-primary) 30%, transparent) !important;
         }
         [data-theme="sepia"] #sidebar-overlay,
         [data-theme="paper"] #sidebar-overlay {
-            background: rgba(0,0,0,0.3) !important;
+            background: rgba(0,0,0,0.35) !important;
         }
         [data-theme="sepia"] select,
         [data-theme="paper"] select {
             background-color: var(--theme-surface) !important;
-            border-color: rgba(0,0,0,0.1) !important;
+            border-color: rgba(0,0,0,0.12) !important;
+            color: var(--theme-text) !important;
+        }
+        [data-theme="sepia"] textarea,
+        [data-theme="paper"] textarea {
+            background-color: var(--theme-surface) !important;
+            border-color: rgba(0,0,0,0.12) !important;
+            color: var(--theme-text) !important;
         }
         /* Scrollbar for light themes */
         [data-theme="sepia"] ::-webkit-scrollbar-thumb,
         [data-theme="paper"] ::-webkit-scrollbar-thumb {
-            background: rgba(0,0,0,0.1) !important;
+            background: rgba(0,0,0,0.15) !important;
         }
         [data-theme="sepia"] ::-webkit-scrollbar-thumb:hover,
         [data-theme="paper"] ::-webkit-scrollbar-thumb:hover {
-            background: rgba(0,0,0,0.2) !important;
+            background: rgba(0,0,0,0.25) !important;
         }
 
         /* Theme transition on all dynamically-colored elements */
         .glass, .btn-primary, .chunk-text, .chunk-active, .sidebar-item,
         nav, header, footer, section, aside, select, input[type="range"] {
-            transition: background-color 0.5s ease, border-color 0.5s ease, color 0.5s ease, box-shadow 0.5s ease;
+            transition: background-color 0.45s ease, border-color 0.45s ease, color 0.45s ease, box-shadow 0.45s ease;
         }
 
-        /* Theme Picker Panel Styles */
+        /* Theme Picker Panel Styles (UI/UX Pro Max) */
         #theme-picker-panel {
             max-height: 0;
             overflow: hidden;
-            transition: max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease, padding 0.3s ease;
+            transition: max-height 0.45s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s ease, padding 0.3s ease;
             opacity: 0;
             padding-top: 0;
             padding-bottom: 0;
         }
-        #theme-picker-panel.open {
-            max-height: 300px;
+        #theme-picker-panel.open,
+        #theme-picker-panel.active {
+            max-height: 620px;
             opacity: 1;
-            padding-top: 1rem;
-            padding-bottom: 1rem;
+            padding-top: 0.75rem;
+            padding-bottom: 0.75rem;
         }
 
-        .theme-swatch {
-            width: 42px;
-            height: 42px;
-            border-radius: 50%;
-            cursor: pointer;
-            border: 2.5px solid transparent;
+        /* Interactive Theme Card */
+        .theme-card {
             position: relative;
-            transition: all 0.25s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.65rem;
+            padding: 0.65rem 0.75rem;
+            border-radius: 1.1rem;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            cursor: pointer;
+            text-align: left;
+            width: 100%;
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            overflow: hidden;
+        }
+        .theme-card:hover {
+            background: rgba(255, 255, 255, 0.07);
+            border-color: color-mix(in srgb, var(--card-accent, #00E5FF) 45%, rgba(255, 255, 255, 0.2));
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px -4px rgba(0, 0, 0, 0.35), 0 0 14px -2px color-mix(in srgb, var(--card-accent, #00E5FF) 25%, transparent);
+        }
+        .theme-card:active {
+            transform: translateY(0) scale(0.98);
+        }
+        .theme-card.active {
+            background: color-mix(in srgb, var(--card-accent, #00E5FF) 10%, rgba(255, 255, 255, 0.05));
+            border-color: var(--card-accent, #00E5FF);
+            box-shadow: 0 0 0 1px var(--card-accent, #00E5FF), 0 8px 24px -4px color-mix(in srgb, var(--card-accent, #00E5FF) 35%, transparent);
+        }
+
+        /* Live Palette Preview Pill */
+        .theme-card-preview {
+            width: 2.35rem;
+            height: 2.35rem;
+            border-radius: 0.75rem;
+            flex-shrink: 0;
             display: flex;
             align-items: center;
             justify-content: center;
-            background: var(--swatch-bg) !important;
-            box-shadow: inset 0 0 0 1px rgba(128,128,128,0.15);
+            position: relative;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.15), 0 2px 8px rgba(0, 0, 0, 0.25);
         }
-        .theme-swatch:hover {
-            transform: scale(1.18);
-            box-shadow: inset 0 0 0 1px rgba(128,128,128,0.15), 0 0 16px color-mix(in srgb, var(--swatch-color) 40%, transparent);
+        .theme-card-icon {
+            font-size: 0.95rem;
+            filter: drop-shadow(0 0 6px currentColor);
+            transition: transform 0.25s ease;
         }
-        .theme-swatch.active {
-            border-color: var(--swatch-color);
-            box-shadow: inset 0 0 0 1px rgba(128,128,128,0.15), 0 0 20px color-mix(in srgb, var(--swatch-color) 35%, transparent);
-        }
-        .theme-swatch.active::after {
-            content: '✓';
-            position: absolute;
-            font-size: 11px;
-            font-weight: 900;
-            z-index: 2;
-            color: var(--swatch-check, white);
-            text-shadow: 0 1px 3px rgba(0,0,0,0.4);
-        }
-        .theme-swatch-inner {
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            background: var(--swatch-color) !important;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+        .theme-card:hover .theme-card-icon {
+            transform: scale(1.15) rotate(5deg);
         }
 
-        /* Ring animation for active swatch */
-        @keyframes theme-ring {
-            0%, 100% { opacity: 0.4; transform: scale(0.9); }
-            50% { opacity: 1; transform: scale(1.15); }
+        /* Theme Card Info */
+        .theme-card-info {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            flex: 1;
+            gap: 0.1rem;
         }
-        .theme-swatch.active {
-            /* Fallback static styles already exist above */
+        .theme-card-title {
+            font-size: 0.76rem;
+            font-weight: 700;
+            color: var(--theme-text, #ffffff);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            letter-spacing: -0.01em;
+            transition: color 0.2s ease;
         }
-        .theme-swatch.active::before {
-            content: '';
+        .theme-card.active .theme-card-title {
+            color: var(--card-accent, #00E5FF);
+        }
+        .theme-card-mood {
+            font-size: 0.62rem;
+            line-height: 1.2;
+            color: color-mix(in srgb, var(--theme-text, #ffffff) 60%, transparent);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* Mode & Active Badge */
+        .theme-mode-badge {
+            font-size: 0.65rem;
+            line-height: 1;
+            padding: 0.15rem 0.35rem;
+            border-radius: 9999px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            flex-shrink: 0;
+        }
+        .theme-card-check {
             position: absolute;
-            inset: -4px;
-            border-radius: inherit;
-            box-shadow: 0 0 16px var(--swatch-color);
-            animation: theme-ring 2.5s infinite ease-in-out;
-            pointer-events: none;
-            z-index: -1;
+            top: 0.35rem;
+            right: 0.35rem;
+            width: 1rem;
+            height: 1rem;
+            border-radius: 50%;
+            background: var(--card-accent, #00E5FF);
+            color: #000;
+            font-size: 0.55rem;
+            font-weight: 900;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transform: scale(0.5);
+            transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+            box-shadow: 0 0 8px var(--card-accent, #00E5FF);
+        }
+        .theme-card.active .theme-card-check {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* Light Theme Overrides on Theme Cards */
+        [data-theme="sepia"] .theme-card,
+        [data-theme="paper"] .theme-card {
+            background: rgba(0, 0, 0, 0.03);
+            border-color: rgba(0, 0, 0, 0.08);
+        }
+        [data-theme="sepia"] .theme-card:hover,
+        [data-theme="paper"] .theme-card:hover {
+            background: rgba(0, 0, 0, 0.06);
+        }
+        [data-theme="sepia"] .theme-mode-badge,
+        [data-theme="paper"] .theme-mode-badge {
+            background: rgba(0, 0, 0, 0.06);
+            border-color: rgba(0, 0, 0, 0.08);
         }
 
         /* Responsive Sidebar Drawer for Mobile */
@@ -1559,66 +1687,148 @@
                 </div>
 
 
-                <!-- Theme Picker -->
+                <!-- Theme Picker (UI/UX Pro Max) -->
                 <div class="flex flex-col gap-0">
                     <button id="theme-toggle-btn"
                         class="glass flex items-center gap-3 p-4 rounded-3xl hover:bg-white/5 transition-all group cursor-pointer w-full"
                         title="Change Theme">
                         <div
-                            class="w-9 h-9 rounded-xl flex items-center justify-center bg-primary/10 group-hover:bg-primary group-hover:text-black transition-all">
+                            class="w-9 h-9 rounded-xl flex items-center justify-center bg-primary/10 group-hover:bg-primary group-hover:text-black transition-all shadow-[0_0_12px_rgba(0,229,255,0.2)] shrink-0">
                             <i class="fas fa-palette text-primary group-hover:text-black text-sm transition-colors"></i>
                         </div>
-                        <div class="flex flex-col items-start">
+                        <div class="flex flex-col items-start min-w-0 flex-1">
                             <span class="text-xs font-bold uppercase tracking-widest text-slate-500"
                                 data-i18n="reading-theme">Reading Theme</span>
-                            <span id="current-theme-name" class="text-sm font-bold text-primary">Midnight Cyan</span>
+                            <div class="flex items-center gap-1.5 w-full">
+                                <span id="current-theme-name" class="text-sm font-bold text-primary truncate">Cyber Obsidian</span>
+                                <span id="current-theme-mood" class="text-[10px] text-slate-400 font-medium truncate hidden sm:inline" data-i18n="theme-default-mood">Tập trung cao độ</span>
+                            </div>
                         </div>
                         <i id="theme-chevron"
                             class="fas fa-chevron-up ml-auto text-xs text-slate-600 transition-transform duration-300"></i>
                     </button>
 
-                    <div id="theme-picker-panel" class="glass rounded-3xl mx-0 mt-2 px-5">
-                        <div class="grid grid-cols-4 gap-4 justify-items-center">
-                            <div class="theme-swatch active" data-theme="default"
-                                style="--swatch-bg: #0b1326; --swatch-color: #00E5FF; --swatch-check: white;"
-                                title="Midnight Cyan">
-                                <div class="theme-swatch-inner"></div>
-                            </div>
-                            <div class="theme-swatch" data-theme="warm-night"
-                                style="--swatch-bg: #1a1410; --swatch-color: #FFB347; --swatch-check: white;"
-                                title="Warm Night">
-                                <div class="theme-swatch-inner"></div>
-                            </div>
-                            <div class="theme-swatch" data-theme="sepia"
-                                style="--swatch-bg: #f5f0e8; --swatch-color: #8B6914; --swatch-check: #3d3229;"
-                                title="Sepia Classic">
-                                <div class="theme-swatch-inner"></div>
-                            </div>
-                            <div class="theme-swatch" data-theme="forest"
-                                style="--swatch-bg: #0d1a12; --swatch-color: #4ADE80; --swatch-check: white;"
-                                title="Forest Deep">
-                                <div class="theme-swatch-inner"></div>
-                            </div>
-                            <div class="theme-swatch" data-theme="rose"
-                                style="--swatch-bg: #1a0f14; --swatch-color: #F472B6; --swatch-check: white;"
-                                title="Rose Dusk">
-                                <div class="theme-swatch-inner"></div>
-                            </div>
-                            <div class="theme-swatch" data-theme="paper"
-                                style="--swatch-bg: #fafaf9; --swatch-color: #2563EB; --swatch-check: #1c1917;"
-                                title="Paper White">
-                                <div class="theme-swatch-inner"></div>
-                            </div>
-                            <div class="theme-swatch" data-theme="mocha"
-                                style="--swatch-bg: #1e1714; --swatch-color: #D4A574; --swatch-check: white;"
-                                title="Mocha">
-                                <div class="theme-swatch-inner"></div>
-                            </div>
-                            <div class="theme-swatch" data-theme="ocean"
-                                style="--swatch-bg: #0a1628; --swatch-color: #38BDF8; --swatch-check: white;"
-                                title="Ocean Depth">
-                                <div class="theme-swatch-inner"></div>
-                            </div>
+                    <div id="theme-picker-panel" class="glass rounded-3xl mx-0 mt-2 p-3">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" id="theme-card-grid">
+                            <!-- 1. Cyber Obsidian -->
+                            <button type="button" class="theme-card active group" data-theme="default" style="--card-accent: #00E5FF;" title="Cyber Obsidian">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #080d1a 0%, #0e172a 60%, #00E5FF 120%);">
+                                    <span class="theme-card-icon" style="color: #00E5FF;"><i class="fas fa-bolt"></i></span>
+                                </div>
+                                <div class="theme-card-info">
+                                    <div class="flex items-center justify-between gap-1">
+                                        <span class="theme-card-title" data-i18n="theme-default-name">Cyber Obsidian</span>
+                                        <span class="theme-mode-badge" title="Chế độ Tối">🌙</span>
+                                    </div>
+                                    <span class="theme-card-mood" data-i18n="theme-default-mood">Tập trung cao độ</span>
+                                </div>
+                                <div class="theme-card-check"><i class="fas fa-check"></i></div>
+                            </button>
+
+                            <!-- 2. Warm Amber Night -->
+                            <button type="button" class="theme-card group" data-theme="warm-night" style="--card-accent: #F59E0B;" title="Warm Amber Night">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #14100c 0%, #1f1812 60%, #F59E0B 120%);">
+                                    <span class="theme-card-icon" style="color: #F59E0B;"><i class="fas fa-moon"></i></span>
+                                </div>
+                                <div class="theme-card-info">
+                                    <div class="flex items-center justify-between gap-1">
+                                        <span class="theme-card-title" data-i18n="theme-warm-night-name">Warm Amber Night</span>
+                                        <span class="theme-mode-badge" title="Chế độ Tối">🌙</span>
+                                    </div>
+                                    <span class="theme-card-mood" data-i18n="theme-warm-night-mood">Chống mỏi mắt đêm</span>
+                                </div>
+                                <div class="theme-card-check"><i class="fas fa-check"></i></div>
+                            </button>
+
+                            <!-- 3. Emerald Zen -->
+                            <button type="button" class="theme-card group" data-theme="forest" style="--card-accent: #10B981;" title="Emerald Zen">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #071510 0%, #0d2018 60%, #10B981 120%);">
+                                    <span class="theme-card-icon" style="color: #10B981;"><i class="fas fa-leaf"></i></span>
+                                </div>
+                                <div class="theme-card-info">
+                                    <div class="flex items-center justify-between gap-1">
+                                        <span class="theme-card-title" data-i18n="theme-forest-name">Emerald Zen</span>
+                                        <span class="theme-mode-badge" title="Chế độ Tối">🌙</span>
+                                    </div>
+                                    <span class="theme-card-mood" data-i18n="theme-forest-mood">Thư giãn thị giác</span>
+                                </div>
+                                <div class="theme-card-check"><i class="fas fa-check"></i></div>
+                            </button>
+
+                            <!-- 4. Sunset Velvet -->
+                            <button type="button" class="theme-card group" data-theme="rose" style="--card-accent: #EC4899;" title="Sunset Velvet">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #150a14 0%, #221020 60%, #EC4899 120%);">
+                                    <span class="theme-card-icon" style="color: #EC4899;"><i class="fas fa-heart"></i></span>
+                                </div>
+                                <div class="theme-card-info">
+                                    <div class="flex items-center justify-between gap-1">
+                                        <span class="theme-card-title" data-i18n="theme-rose-name">Sunset Velvet</span>
+                                        <span class="theme-mode-badge" title="Chế độ Tối">🌙</span>
+                                    </div>
+                                    <span class="theme-card-mood" data-i18n="theme-rose-mood">Cảm xúc & Thơ mộng</span>
+                                </div>
+                                <div class="theme-card-check"><i class="fas fa-check"></i></div>
+                            </button>
+
+                            <!-- 5. Nordic Ocean -->
+                            <button type="button" class="theme-card group" data-theme="ocean" style="--card-accent: #38BDF8;" title="Nordic Ocean">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #07131e 0%, #0c1d2e 60%, #38BDF8 120%);">
+                                    <span class="theme-card-icon" style="color: #38BDF8;"><i class="fas fa-compass"></i></span>
+                                </div>
+                                <div class="theme-card-info">
+                                    <div class="flex items-center justify-between gap-1">
+                                        <span class="theme-card-title" data-i18n="theme-ocean-name">Nordic Ocean</span>
+                                        <span class="theme-mode-badge" title="Chế độ Tối">🌙</span>
+                                    </div>
+                                    <span class="theme-card-mood" data-i18n="theme-ocean-mood">Tĩnh tâm & Sáng suốt</span>
+                                </div>
+                                <div class="theme-card-check"><i class="fas fa-check"></i></div>
+                            </button>
+
+                            <!-- 6. Royal Mocha -->
+                            <button type="button" class="theme-card group" data-theme="mocha" style="--card-accent: #D4A574;" title="Royal Mocha">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #16110e 0%, #221a15 60%, #D4A574 120%);">
+                                    <span class="theme-card-icon" style="color: #D4A574;"><i class="fas fa-mug-hot"></i></span>
+                                </div>
+                                <div class="theme-card-info">
+                                    <div class="flex items-center justify-between gap-1">
+                                        <span class="theme-card-title" data-i18n="theme-mocha-name">Royal Mocha</span>
+                                        <span class="theme-mode-badge" title="Chế độ Tối">🌙</span>
+                                    </div>
+                                    <span class="theme-card-mood" data-i18n="theme-mocha-mood">Ấm cúng & Lắng đọng</span>
+                                </div>
+                                <div class="theme-card-check"><i class="fas fa-check"></i></div>
+                            </button>
+
+                            <!-- 7. Vintage Sepia (Light) -->
+                            <button type="button" class="theme-card group" data-theme="sepia" style="--card-accent: #92400E;" title="Vintage Sepia">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #F7F2E7 0%, #EDE5D3 60%, #92400E 120%);">
+                                    <span class="theme-card-icon" style="color: #92400E;"><i class="fas fa-scroll"></i></span>
+                                </div>
+                                <div class="theme-card-info">
+                                    <div class="flex items-center justify-between gap-1">
+                                        <span class="theme-card-title" data-i18n="theme-sepia-name">Vintage Sepia</span>
+                                        <span class="theme-mode-badge" title="Chế độ Sáng">☀️</span>
+                                    </div>
+                                    <span class="theme-card-mood" data-i18n="theme-sepia-mood">Giấy cổ hoài niệm</span>
+                                </div>
+                                <div class="theme-card-check" style="color: #fff;"><i class="fas fa-check"></i></div>
+                            </button>
+
+                            <!-- 8. Paper Minimalist (Light) -->
+                            <button type="button" class="theme-card group" data-theme="paper" style="--card-accent: #2563EB;" title="Paper Minimalist">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 60%, #2563EB 120%);">
+                                    <span class="theme-card-icon" style="color: #2563EB;"><i class="fas fa-book-open"></i></span>
+                                </div>
+                                <div class="theme-card-info">
+                                    <div class="flex items-center justify-between gap-1">
+                                        <span class="theme-card-title" data-i18n="theme-paper-name">Paper Minimalist</span>
+                                        <span class="theme-mode-badge" title="Chế độ Sáng">☀️</span>
+                                    </div>
+                                    <span class="theme-card-mood" data-i18n="theme-paper-mood">Trang in tinh khôi</span>
+                                </div>
+                                <div class="theme-card-check" style="color: #fff;"><i class="fas fa-check"></i></div>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -2245,56 +2455,120 @@ Nội dung chương hai...</pre>
             if (window.innerWidth >= 1024) toggleSidebar(false);
         });
 
-        // ===== THEME SYSTEM =====
-        const THEME_NAMES = {
-            'default': 'Midnight Cyan',
-            'warm-night': 'Warm Night',
-            'sepia': 'Sepia Classic',
-            'forest': 'Forest Deep',
-            'rose': 'Rose Dusk',
-            'paper': 'Paper White',
-            'mocha': 'Mocha',
-            'ocean': 'Ocean Depth'
+        // ===== THEME SYSTEM (UI/UX PRO MAX) =====
+        const THEMES_DATA = {
+            'default': {
+                nameEn: 'Cyber Obsidian',
+                nameVi: 'Cyber Obsidian',
+                moodEn: 'High Focus & Cyber',
+                moodVi: 'Tập trung cao độ',
+                metaColor: '#080d1a',
+                isLight: false
+            },
+            'warm-night': {
+                nameEn: 'Warm Amber Night',
+                nameVi: 'Đêm Hổ Phách',
+                moodEn: 'Blue-Light Filter & Bedtime',
+                moodVi: 'Chống mỏi mắt đêm',
+                metaColor: '#14100c',
+                isLight: false
+            },
+            'forest': {
+                nameEn: 'Emerald Zen',
+                nameVi: 'Ngọc Lục Bảo Zen',
+                moodEn: 'Visual Relaxation & Zen',
+                moodVi: 'Thư giãn thị giác',
+                metaColor: '#071510',
+                isLight: false
+            },
+            'rose': {
+                nameEn: 'Sunset Velvet',
+                nameVi: 'Hoàng Hôn Velvet',
+                moodEn: 'Poetic & Atmospheric',
+                moodVi: 'Cảm xúc & Thơ mộng',
+                metaColor: '#150a14',
+                isLight: false
+            },
+            'ocean': {
+                nameEn: 'Nordic Ocean',
+                nameVi: 'Bắc Băng Dương',
+                moodEn: 'Mental Clarity & Serenity',
+                moodVi: 'Tĩnh tâm & Sáng suốt',
+                metaColor: '#07131e',
+                isLight: false
+            },
+            'mocha': {
+                nameEn: 'Royal Mocha',
+                nameVi: 'Cà Phê Mocha',
+                moodEn: 'Cozy & Warm Classic',
+                moodVi: 'Ấm cúng & Lắng đọng',
+                metaColor: '#16110e',
+                isLight: false
+            },
+            'sepia': {
+                nameEn: 'Vintage Sepia',
+                nameVi: 'Giấy Cổ Sepia',
+                moodEn: 'Vintage Parchment',
+                moodVi: 'Giấy cổ hoài niệm',
+                metaColor: '#F7F2E7',
+                isLight: true
+            },
+            'paper': {
+                nameEn: 'Paper Minimalist',
+                nameVi: 'Trang Giấy Trắng',
+                moodEn: 'Crisp Daylight Print',
+                moodVi: 'Trang in tinh khôi',
+                metaColor: '#F8FAFC',
+                isLight: true
+            }
         };
 
-        const THEME_META_COLORS = {
-            'default': '#0b1326',
-            'warm-night': '#1a1410',
-            'sepia': '#f5f0e8',
-            'forest': '#0d1a12',
-            'rose': '#1a0f14',
-            'paper': '#fafaf9',
-            'mocha': '#1e1714',
-            'ocean': '#0a1628'
+        const THEME_NAMES = {
+            'default': 'Cyber Obsidian',
+            'warm-night': 'Warm Amber Night',
+            'forest': 'Emerald Zen',
+            'rose': 'Sunset Velvet',
+            'ocean': 'Nordic Ocean',
+            'mocha': 'Royal Mocha',
+            'sepia': 'Vintage Sepia',
+            'paper': 'Paper Minimalist'
         };
 
         function applyTheme(themeId) {
             const root = document.documentElement;
+            const theme = THEMES_DATA[themeId] || THEMES_DATA['default'];
+            const actualId = THEMES_DATA[themeId] ? themeId : 'default';
 
             // Apply or remove data-theme attribute
-            if (themeId === 'default') {
+            if (actualId === 'default') {
                 root.removeAttribute('data-theme');
             } else {
-                root.setAttribute('data-theme', themeId);
+                root.setAttribute('data-theme', actualId);
             }
 
             // Update meta theme-color for mobile browser chrome
             const metaThemeColor = document.querySelector('meta[name="theme-color"]');
             if (metaThemeColor) {
-                metaThemeColor.content = THEME_META_COLORS[themeId] || '#0b1326';
+                metaThemeColor.content = theme.metaColor;
             }
 
-            // Update active swatch visual
-            document.querySelectorAll('.theme-swatch').forEach(sw => {
-                sw.classList.toggle('active', sw.dataset.theme === themeId);
+            // Update active visual on cards and swatches
+            document.querySelectorAll('.theme-card, .theme-swatch').forEach(el => {
+                el.classList.toggle('active', el.dataset.theme === actualId);
             });
 
-            // Update displayed theme name
+            // Update displayed theme name and mood subtitle
+            const lang = localStorage.getItem('ui-lang') || 'en';
             const nameEl = document.getElementById('current-theme-name');
-            if (nameEl) nameEl.textContent = THEME_NAMES[themeId] || 'Midnight Cyan';
+            if (nameEl) nameEl.textContent = lang === 'vi' ? theme.nameVi : theme.nameEn;
+            const moodEl = document.getElementById('current-theme-mood');
+            if (moodEl) moodEl.textContent = lang === 'vi' ? theme.moodVi : theme.moodEn;
 
             // Persist to localStorage
-            localStorage.setItem('reader-theme', themeId);
+            localStorage.setItem('reader-theme', actualId);
+
+            // Dispatch global custom event for widgets & PiP
+            window.dispatchEvent(new CustomEvent('themechange', { detail: { themeId: actualId, theme } }));
         }
 
         // Theme toggle button
@@ -2303,22 +2577,23 @@ Nội dung chương hai...</pre>
         const themeChevron = document.getElementById('theme-chevron');
 
         themeToggleBtn?.addEventListener('click', () => {
-            const isOpen = themePickerPanel.classList.contains('open');
+            const isOpen = themePickerPanel.classList.contains('open') || themePickerPanel.classList.contains('active');
             themePickerPanel.classList.toggle('open', !isOpen);
+            themePickerPanel.classList.toggle('active', !isOpen);
             themeChevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
         });
 
-        // Swatch click handlers
-        document.querySelectorAll('.theme-swatch').forEach(swatch => {
-            swatch.addEventListener('click', (e) => {
+        // Theme card & swatch click handlers
+        document.querySelectorAll('.theme-card, .theme-swatch').forEach(card => {
+            card.addEventListener('click', (e) => {
                 e.stopPropagation();
-                applyTheme(swatch.dataset.theme);
+                applyTheme(card.dataset.theme);
             });
         });
 
         // Restore saved theme on page load
         const savedTheme = localStorage.getItem('reader-theme');
-        if (savedTheme && THEME_NAMES[savedTheme]) {
+        if (savedTheme && THEMES_DATA[savedTheme]) {
             applyTheme(savedTheme);
         }
 
@@ -2576,7 +2851,23 @@ Nội dung chương hai...</pre>
                 "avg-speed": "Avg Speed",
                 "offline-storage": "Offline Storage",
                 "clear-cache": "Clear Cache",
-                "locally-cached": "Locally Cached"
+                "locally-cached": "Locally Cached",
+                "theme-default-name": "Cyber Obsidian",
+                "theme-default-mood": "High Focus & Cyber",
+                "theme-warm-night-name": "Warm Amber Night",
+                "theme-warm-night-mood": "Blue-Light Filter & Bedtime",
+                "theme-forest-name": "Emerald Zen",
+                "theme-forest-mood": "Visual Relaxation & Zen",
+                "theme-rose-name": "Sunset Velvet",
+                "theme-rose-mood": "Poetic & Atmospheric",
+                "theme-ocean-name": "Nordic Ocean",
+                "theme-ocean-mood": "Mental Clarity & Serenity",
+                "theme-mocha-name": "Royal Mocha",
+                "theme-mocha-mood": "Cozy & Warm Classic",
+                "theme-sepia-name": "Vintage Sepia",
+                "theme-sepia-mood": "Vintage Parchment",
+                "theme-paper-name": "Paper Minimalist",
+                "theme-paper-mood": "Crisp Daylight Print"
             },
             vi: {
                 "cloud-tts": "CLOUD TTS",
@@ -2616,7 +2907,23 @@ Nội dung chương hai...</pre>
                 "avg-speed": "Tốc độ TB",
                 "offline-storage": "Lưu trữ ngoại tuyến",
                 "clear-cache": "Xóa bộ nhớ đệm",
-                "locally-cached": "Đã lưu cục bộ"
+                "locally-cached": "Đã lưu cục bộ",
+                "theme-default-name": "Cyber Obsidian",
+                "theme-default-mood": "Tập trung cao độ",
+                "theme-warm-night-name": "Đêm Hổ Phách",
+                "theme-warm-night-mood": "Chống mỏi mắt đêm",
+                "theme-forest-name": "Ngọc Lục Bảo Zen",
+                "theme-forest-mood": "Thư giãn thị giác",
+                "theme-rose-name": "Hoàng Hôn Velvet",
+                "theme-rose-mood": "Cảm xúc & Thơ mộng",
+                "theme-ocean-name": "Bắc Băng Dương",
+                "theme-ocean-mood": "Tĩnh tâm & Sáng suốt",
+                "theme-mocha-name": "Cà Phê Mocha",
+                "theme-mocha-mood": "Ấm cúng & Lắng đọng",
+                "theme-sepia-name": "Giấy Cổ Sepia",
+                "theme-sepia-mood": "Giấy cổ hoài niệm",
+                "theme-paper-name": "Trang Giấy Trắng",
+                "theme-paper-mood": "Trang in tinh khôi"
             }
         };
 
@@ -2631,6 +2938,15 @@ Nội dung chương hai...</pre>
                 }
             });
             langBtn.textContent = lang === 'en' ? 'VI' : 'EN';
+            // Re-apply current theme display name in active language
+            const activeThemeId = localStorage.getItem('reader-theme') || 'default';
+            if (typeof THEMES_DATA !== 'undefined' && THEMES_DATA[activeThemeId]) {
+                const t = THEMES_DATA[activeThemeId];
+                const nameEl = document.getElementById('current-theme-name');
+                if (nameEl) nameEl.textContent = lang === 'vi' ? t.nameVi : t.nameEn;
+                const moodEl = document.getElementById('current-theme-mood');
+                if (moodEl) moodEl.textContent = lang === 'vi' ? t.moodVi : t.moodEn;
+            }
         }
 
         langBtn?.addEventListener('click', () => {

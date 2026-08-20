@@ -77,3 +77,33 @@ All code will be split via copy-paste. To maintain logic:
 - [ ] **Task 4.1**: Create the new modular entry point `static/js/app.js`.
 - [ ] **Task 4.2**: Update `static/index.html` to link to new files and remove monolithic code.
 - [ ] **Verification**: Test the application for full functionality (Playback, Auth, Library).
+
+## 6. UI/UX Pro Max Theme System Specification
+The theme system adheres to UI/UX Pro Max principles with dark-mode-first curated palettes, multi-layered glassmorphism, glowing micro-interactions, and real-time cross-window synchronization.
+
+### Standard Theme Tokens:
+| Variable | Description | Example (Cyber Obsidian) |
+|---|---|---|
+| `--theme-primary` | Main accent & glowing action color | `#00E5FF` |
+| `--theme-primary-dim` | Secondary / darker accent tone | `#0099b8` |
+| `--theme-bg` | Deep canvas background | `#080d1a` |
+| `--theme-surface` | Card / panel container surface | `#0e172a` |
+| `--theme-surface-high` | Elevated / active layer surface | `#18243e` |
+| `--theme-glass` | Multi-layered translucent backdrop | `rgba(14, 23, 42, 0.68)` |
+| `--theme-glass-border` | Delicate glass border highlight | `rgba(0, 229, 255, 0.16)` |
+| `--theme-text` | Primary high-contrast text | `#dae2fd` |
+| `--theme-text-reading` | Optimized body reading text | `#bac9cc` |
+| `--theme-text-muted` | Secondary/subtle metadata text | `#64748b` |
+| `--theme-glow` | Accent outer glow shadow | `rgba(0, 229, 255, 0.28)` |
+| `--theme-is-light` | Mode flag (`0`: dark, `1`: daylight) | `0` |
+
+### Curated Pro Max Palettes:
+1. `default`: **Cyber Obsidian** (Max Focus & Cyber Aesthetics)
+2. `warm-night`: **Warm Amber Night** (Blue-Light Filter & Bedtime Reading)
+3. `forest`: **Emerald Zen** (Visual Relaxation & Immersion)
+4. `rose`: **Sunset Velvet** (Poetic Fiction & Atmosphere)
+5. `ocean`: **Nordic Ocean** (Mental Clarity & Serenity)
+6. `mocha`: **Royal Mocha** (Cozy Classic & Warmth)
+7. `sepia`: **Vintage Sepia** (Nostalgic Parchment, Light)
+8. `paper`: **Paper Minimalist** (Crisp Daylight Print, Light)
+

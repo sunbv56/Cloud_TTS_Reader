@@ -507,10 +507,18 @@
         const contentWidth = dimensions.width - left * 2;
         const headerText = [chapterTitle, bookTitle].filter(Boolean).join(' • ');
 
+        const style = getComputedStyle(document.documentElement);
+        const bg = (style.getPropertyValue('--theme-bg') || '#080d1a').trim();
+        const surface = (style.getPropertyValue('--theme-surface') || '#0e172a').trim();
+        const surfaceHigh = (style.getPropertyValue('--theme-surface-high') || '#18243e').trim();
+        const textReading = (style.getPropertyValue('--theme-text-reading') || '#f8fafc').trim();
+        const textMain = (style.getPropertyValue('--theme-text') || '#ffffff').trim();
+        const isLight = style.getPropertyValue('--theme-is-light').trim() === '1';
+
         const background = ctx.createLinearGradient(0, 0, dimensions.width, dimensions.height);
-        background.addColorStop(0, '#0a101b');
-        background.addColorStop(0.55, '#101827');
-        background.addColorStop(1, '#122a35');
+        background.addColorStop(0, bg);
+        background.addColorStop(0.55, surface);
+        background.addColorStop(1, surfaceHigh);
         ctx.fillStyle = background;
         ctx.fillRect(0, 0, dimensions.width, dimensions.height);
 
@@ -524,13 +532,13 @@
         ctx.fillRect(0, 0, 5, dimensions.height);
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = '#f8fafc';
+        ctx.fillStyle = isLight ? textMain : '#f8fafc';
         const headerLines = fitText(ctx, headerText || 'Cloud TTS Reader', contentWidth, 1, '700', 15, 8);
         ctx.fillText(headerLines[0] || 'Cloud TTS Reader', left, 34);
         ctx.fillStyle = `${primary}88`;
         ctx.fillRect(left, 47, contentWidth, 2);
 
-        ctx.fillStyle = '#f8fafc';
+        ctx.fillStyle = isLight ? textReading : '#f8fafc';
         const progressTop = dimensions.height - 27;
         const currentAvailableHeight = Math.max(30, progressTop - 78 - 14);
         const lines = fitText(ctx, pair?.current || 'Sẵn sàng phát nội dung', contentWidth, 10, '600', 20, 8, currentAvailableHeight);
@@ -545,7 +553,7 @@
             const nextTop = textY + Math.max(8, Math.round(currentLineHeight * 0.55));
             const availableNextHeight = Math.max(0, progressTop - nextTop);
             const nextFontMaxLines = Math.max(1, Math.min(5, Math.floor(availableNextHeight / 12)));
-            ctx.fillStyle = '#64748b';
+            ctx.fillStyle = isLight ? '#78716c' : '#64748b';
             ctx.font = '600 10px Arial, sans-serif';
             const nextLabel = 'Tiếp theo';
             const labelWidth = ctx.measureText(nextLabel).width;
@@ -561,11 +569,11 @@
             }
         }
 
-        ctx.fillStyle = 'rgba(255,255,255,0.10)';
+        ctx.fillStyle = isLight ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)';
         ctx.fillRect(left, dimensions.height - 17, dimensions.width - left * 2, 3);
         ctx.fillStyle = primary;
         ctx.fillRect(left, dimensions.height - 17, (dimensions.width - left * 2) * progress / 100, 3);
-        ctx.fillStyle = '#94a3b8';
+        ctx.fillStyle = isLight ? '#78716c' : '#94a3b8';
         ctx.font = '600 10px Arial, sans-serif';
         ctx.fillText(`${Math.round(progress)}%`, dimensions.width - 52, dimensions.height - 21);
     }
@@ -626,6 +634,29 @@
     // ---------------------------------------------------------
     // Tier 3b: Document Picture-in-Picture (fallback — has origin bar)
     // ---------------------------------------------------------
+    function syncPipTheme() {
+        if (!pipWindow || !pipWindow.document) return;
+        const curTheme = document.documentElement.getAttribute('data-theme');
+        if (curTheme) {
+            pipWindow.document.documentElement.setAttribute('data-theme', curTheme);
+            pipWindow.document.body.setAttribute('data-theme', curTheme);
+        } else {
+            pipWindow.document.documentElement.removeAttribute('data-theme');
+            pipWindow.document.body.removeAttribute('data-theme');
+        }
+        const computed = getComputedStyle(document.documentElement);
+        [
+            '--theme-primary', '--theme-primary-dim', '--theme-bg',
+            '--theme-surface', '--theme-surface-high', '--theme-text',
+            '--theme-text-reading', '--theme-is-light'
+        ].forEach(prop => {
+            const val = computed.getPropertyValue(prop);
+            if (val) {
+                pipWindow.document.documentElement.style.setProperty(prop, val);
+            }
+        });
+    }
+
     async function openPiP() {
         if (pipWindow) {
             pipWindow.focus();
@@ -652,12 +683,9 @@
             link.href = href;
             pipWindow.document.head.appendChild(link);
         }
-        // Mirror the active color theme variable so the progress bar matches.
-        const primary = getComputedStyle(document.documentElement)
-            .getPropertyValue('--theme-primary');
-        if (primary) {
-            pipWindow.document.documentElement.style.setProperty('--theme-primary', primary);
-        }
+
+        // Mirror active color theme and variables
+        syncPipTheme();
 
         pipWindow.document.title = 'Cloud TTS Reader';
         pipWindow.document.body.classList.add('mpw-pip-body');
@@ -684,6 +712,14 @@
         if (!syncTimer) syncTimer = setInterval(syncNow, SYNC_INTERVAL_MS);
         syncNow();
     }
+
+    // Global listener for live theme changes
+    window.addEventListener('themechange', () => {
+        syncPipTheme();
+        if (pipCanvas && pipVideo && document.pictureInPictureElement === pipVideo) {
+            drawPipFrame();
+        }
+    });
 
     // ---------------------------------------------------------
     // Public API (used by app.js — Tier 2 hooks)

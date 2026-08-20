@@ -5718,50 +5718,134 @@ clearCacheBtn?.addEventListener('click', async () => {
     }
 });
 
-// --- Theme Management ---
+// --- Theme Management (UI/UX Pro Max) ---
+const THEMES_METADATA = {
+    'default': {
+        nameEn: 'Cyber Obsidian',
+        nameVi: 'Cyber Obsidian',
+        moodEn: 'High Focus & Cyber',
+        moodVi: 'Tập trung cao độ',
+        metaColor: '#080d1a',
+        isLight: false
+    },
+    'warm-night': {
+        nameEn: 'Warm Amber Night',
+        nameVi: 'Đêm Hổ Phách',
+        moodEn: 'Blue-Light Filter & Bedtime',
+        moodVi: 'Chống mỏi mắt đêm',
+        metaColor: '#14100c',
+        isLight: false
+    },
+    'forest': {
+        nameEn: 'Emerald Zen',
+        nameVi: 'Ngọc Lục Bảo Zen',
+        moodEn: 'Visual Relaxation & Zen',
+        moodVi: 'Thư giãn thị giác',
+        metaColor: '#071510',
+        isLight: false
+    },
+    'rose': {
+        nameEn: 'Sunset Velvet',
+        nameVi: 'Hoàng Hôn Velvet',
+        moodEn: 'Poetic & Atmospheric',
+        moodVi: 'Cảm xúc & Thơ mộng',
+        metaColor: '#150a14',
+        isLight: false
+    },
+    'ocean': {
+        nameEn: 'Nordic Ocean',
+        nameVi: 'Bắc Băng Dương',
+        moodEn: 'Mental Clarity & Serenity',
+        moodVi: 'Tĩnh tâm & Sáng suốt',
+        metaColor: '#07131e',
+        isLight: false
+    },
+    'mocha': {
+        nameEn: 'Royal Mocha',
+        nameVi: 'Cà Phê Mocha',
+        moodEn: 'Cozy & Warm Classic',
+        moodVi: 'Ấm cúng & Lắng đọng',
+        metaColor: '#16110e',
+        isLight: false
+    },
+    'sepia': {
+        nameEn: 'Vintage Sepia',
+        nameVi: 'Giấy Cổ Sepia',
+        moodEn: 'Vintage Parchment',
+        moodVi: 'Giấy cổ hoài niệm',
+        metaColor: '#F7F2E7',
+        isLight: true
+    },
+    'paper': {
+        nameEn: 'Paper Minimalist',
+        nameVi: 'Trang Giấy Trắng',
+        moodEn: 'Crisp Daylight Print',
+        moodVi: 'Trang in tinh khôi',
+        metaColor: '#F8FAFC',
+        isLight: true
+    }
+};
+
 function applyTheme(themeId) {
-    // Optimization: Skip transition if theme is already active
-    if (document.documentElement.getAttribute('data-theme') === themeId) {
-        // Still update swatches just in case
-        document.querySelectorAll('.theme-swatch').forEach(sw => {
-            const isActive = sw.dataset.theme === themeId;
-            sw.classList.toggle('active', isActive);
-            if (isActive) {
-                const nameEl = document.getElementById('current-theme-name');
-                if (nameEl) nameEl.innerText = sw.getAttribute('title');
-            }
+    const actualId = THEMES_METADATA[themeId] ? themeId : 'default';
+    const theme = THEMES_METADATA[actualId];
+    const curThemeAttr = document.documentElement.getAttribute('data-theme') || 'default';
+
+    const updateDomTheme = () => {
+        if (actualId === 'default') {
+            document.documentElement.removeAttribute('data-theme');
+        } else {
+            document.documentElement.setAttribute('data-theme', actualId);
+        }
+        STATE.theme = actualId;
+        localStorage.setItem('reader-theme', actualId);
+
+        // Update meta theme-color
+        const metaThemeColor = document.querySelector('meta[name="theme-color"]');
+        if (metaThemeColor) {
+            metaThemeColor.content = theme.metaColor;
+        }
+
+        // Update UI theme cards and swatches
+        document.querySelectorAll('.theme-card, .theme-swatch').forEach(el => {
+            el.classList.toggle('active', el.dataset.theme === actualId);
         });
+
+        // Update displayed name & mood
+        const lang = localStorage.getItem('ui-lang') || 'en';
+        const nameEl = document.getElementById('current-theme-name');
+        if (nameEl) nameEl.textContent = lang === 'vi' ? theme.nameVi : theme.nameEn;
+        const moodEl = document.getElementById('current-theme-mood');
+        if (moodEl) moodEl.textContent = lang === 'vi' ? theme.moodVi : theme.moodEn;
+
+        // Dispatch global custom event
+        window.dispatchEvent(new CustomEvent('themechange', { detail: { themeId: actualId, theme } }));
+    };
+
+    if (curThemeAttr === actualId) {
+        updateDomTheme();
         return;
     }
 
-    safeViewTransition(() => {
-        document.documentElement.setAttribute('data-theme', themeId);
-        STATE.theme = themeId;
-        localStorage.setItem('reader-theme', themeId);
-
-        // Update UI swatches
-        document.querySelectorAll('.theme-swatch').forEach(sw => {
-            const isActive = sw.dataset.theme === themeId;
-            sw.classList.toggle('active', isActive);
-            if (isActive) {
-                document.getElementById('current-theme-name').innerText = sw.getAttribute('title');
-            }
-        });
-    });
+    safeViewTransition(updateDomTheme);
 }
 
 document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
     const panel = document.getElementById('theme-picker-panel');
     const chevron = document.getElementById('theme-chevron');
     if (panel) {
-        panel.classList.toggle('active');
-        chevron?.classList.toggle('rotate-180');
+        const isOpen = panel.classList.contains('open') || panel.classList.contains('active');
+        panel.classList.toggle('open', !isOpen);
+        panel.classList.toggle('active', !isOpen);
+        if (chevron) {
+            chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+        }
     }
 });
 
-document.querySelectorAll('.theme-swatch').forEach(sw => {
-    sw.addEventListener('click', () => {
-        const theme = sw.dataset.theme;
+document.querySelectorAll('.theme-card, .theme-swatch').forEach(el => {
+    el.addEventListener('click', () => {
+        const theme = el.dataset.theme;
         applyTheme(theme);
         saveProgress(true); // Persist theme change immediately
     });
