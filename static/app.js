@@ -2103,6 +2103,10 @@ async function loadProgress(bookId) {
     return null;
 }
 
+function hasSavedProgressCursor(progress) {
+    return progress?.last_read_chunk !== undefined;
+}
+
 function getTotalChunks() {
     if (!STATE.currentBook) return 0;
     // --- FIX BUG 2: Use precomputed total for segmented/metadata-only books ---
@@ -3171,9 +3175,13 @@ async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
         progress = fallbackProgress;
         console.warn('[Progress] Point-read failed; using library snapshot:', err);
     }
-    if (!progress && fallbackProgress) {
+    // A point-read can return a partial progress document (for example after
+    // metadata-only writes). In that case it must not replace the complete
+    // snapshot that rendered the Discovery card, or the forced save below
+    // would overwrite the real cursor with chunk zero.
+    if ((!progress || !hasSavedProgressCursor(progress)) && hasSavedProgressCursor(fallbackProgress)) {
         progress = fallbackProgress;
-        console.info('[Progress] Point-read empty; using library snapshot for', STATE.currentBookId);
+        console.info('[Progress] Point-read missing cursor; using library snapshot for', STATE.currentBookId);
     }
     if (loadGeneration !== STATE.loadGeneration) return false;
     // Restore metadata independently from the playback cursor. Older records
@@ -3181,7 +3189,7 @@ async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
     if (progress?.title) STATE.currentBook.title = progress.title;
     if (progress?.filename) STATE.currentFilename = progress.filename;
 
-    if (progress && progress.last_read_chunk !== undefined) {
+    if (hasSavedProgressCursor(progress)) {
 
         const indices = getLocalIndices(progress.last_read_chunk);
         STATE.currentChapterIndex = indices.chapterIndex;

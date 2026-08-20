@@ -22,6 +22,8 @@ test('progress read failures do not fall back to destructive chapter-zero saves'
     assert.match(loadProgress, /throw err;/);
     assert.match(loadBook, /progress = await loadProgress\(STATE\.currentBookId\);/);
     assert.match(loadBook, /using library snapshot/);
+    assert.match(loadBook, /!hasSavedProgressCursor\(progress\)\)+\s*&& hasSavedProgressCursor\(fallbackProgress\)/);
+    assert.match(loadBook, /Point-read missing cursor; using library snapshot/);
     assert.match(loadBook, /if \(loadGeneration !== STATE\.loadGeneration\) return false;/);
     assert.doesNotMatch(loadBook, /loadProgress\(STATE\.currentBookId\)[\s\S]{0,300}catch[\s\S]{0,100}currentChapterIndex = 0/);
 });
