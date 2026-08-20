@@ -3,6 +3,11 @@ primary_region = 'iad'
 
 [build]
 
+[env]
+  MALLOC_TRIM_THRESHOLD_ = "65536"
+  LD_PRELOAD = "/usr/lib/x86_64-linux-gnu/libjemalloc.so.2"
+  PYTHONUNBUFFERED = "1"
+
 [http_service]
   internal_port = 8008
   force_https = true

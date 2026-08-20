@@ -201,6 +201,7 @@ class ImportRuntimeTest(unittest.IsolatedAsyncioTestCase):
         }
         with patch.dict(os.environ, settings, clear=False), patch("boto3.client") as client:
             backend = B2StorageBackend()
+            _ = backend.client
         config = client.call_args.kwargs["config"]
         self.assertEqual(config.connect_timeout, 7)
         self.assertEqual(config.read_timeout, 42)

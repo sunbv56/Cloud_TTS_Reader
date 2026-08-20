@@ -6,6 +6,7 @@ import re
 import json
 import asyncio
 import codecs
+import ctypes
 import edge_tts
 import tempfile
 import gc
@@ -16,9 +17,6 @@ import hashlib
 import threading
 from collections import OrderedDict
 from functools import wraps
-from ebooklib import epub, ITEM_DOCUMENT
-from bs4 import BeautifulSoup
-from pypdf import PdfReader
 import firebase_admin
 from firebase_admin import credentials, storage as firebase_storage, firestore, auth
 from storage_adapter import get_storage_backend
@@ -79,7 +77,24 @@ except Exception as e:
     print(f"Storage backend could not be initialized: {e}")
     storage = None
 
+def _reclaim_memory():
+    """Force Python garbage collection and return free pages to the OS (glibc/jemalloc)."""
+    gc.collect()
+    try:
+        if hasattr(ctypes, "CDLL"):
+            libc = ctypes.CDLL("libc.so.6")
+            if hasattr(libc, "malloc_trim"):
+                libc.malloc_trim(0)
+    except Exception:
+        pass
+
 app = FastAPI()
+
+@app.on_event("startup")
+async def _on_startup():
+    _reclaim_memory()
+    logger.info("Application startup complete. Baseline memory reclaimed.")
+
 # The Fly machine has 256 MB. Two streams remain the default; this trial allows
 # at most three concurrent Edge-TTS streams and still clamps larger requests.
 NUM_WORKERS = 2
@@ -582,6 +597,8 @@ def _chapter_from_text(text: str, fallback_title: str):
 
 
 def parse_epub_chapters(file_path: str):
+    from ebooklib import epub, ITEM_DOCUMENT
+    from bs4 import BeautifulSoup
     book = epub.read_epub(file_path, options={"ignore_ncx": False})
     chapters = []
     for item in book.get_items_of_type(ITEM_DOCUMENT):
@@ -596,6 +613,7 @@ def parse_epub_chapters(file_path: str):
 
 
 def parse_pdf_chapters(file_path: str):
+    from pypdf import PdfReader
     reader = PdfReader(file_path)
     if reader.is_encrypted:
         raise ValueError("PDF is encrypted or password protected")
@@ -611,14 +629,17 @@ def parse_pdf_chapters(file_path: str):
 
 def parse_book_file(file_path: str, filename: str):
     """Parse TXT, EPUB or text-based PDF into the canonical chapter format."""
-    extension = os.path.splitext(filename or file_path)[1].lower()
-    if extension == ".txt":
-        return parse_chapters_from_file(file_path)
-    if extension == ".epub":
-        return parse_epub_chapters(file_path)
-    if extension == ".pdf":
-        return parse_pdf_chapters(file_path)
-    raise ValueError("Unsupported book format")
+    try:
+        extension = os.path.splitext(filename or file_path)[1].lower()
+        if extension == ".txt":
+            return parse_chapters_from_file(file_path)
+        if extension == ".epub":
+            return parse_epub_chapters(file_path)
+        if extension == ".pdf":
+            return parse_pdf_chapters(file_path)
+        raise ValueError("Unsupported book format")
+    finally:
+        _reclaim_memory()
 
 
 def write_canonical_text(file_path: str, chapters: List[dict]):

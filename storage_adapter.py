@@ -226,6 +226,15 @@ class _B2Blob:
 
 class B2StorageBackend:
     def __init__(self):
+        self.bucket_name = os.getenv("B2_BUCKET_NAME", "").strip()
+        self._client = None
+        self._transfer_config = None
+        self._client_error = None
+        self._initialized = False
+
+    def _ensure_client(self):
+        if self._initialized:
+            return
         try:
             import boto3
             from botocore.config import Config
@@ -255,7 +264,7 @@ class B2StorageBackend:
             )
         except (TypeError, ValueError):
             self.download_retry_backoff = 0.5
-        self.client = boto3.client(
+        self._client = boto3.client(
             "s3",
             endpoint_url=endpoint,
             region_name=region,
@@ -269,13 +278,24 @@ class B2StorageBackend:
         )
         # boto3's default S3Transfer uses 10 threads x 8 MiB parts. That is
         # safe for a large host, but it can consume most of a 256 MB Fly VM.
-        self.transfer_config = TransferConfig(
+        self._transfer_config = TransferConfig(
             multipart_threshold=16 * 1024 * 1024,
             multipart_chunksize=4 * 1024 * 1024,
             max_concurrency=1,
             use_threads=False,
         )
         self._client_error = ClientError
+        self._initialized = True
+
+    @property
+    def client(self):
+        self._ensure_client()
+        return self._client
+
+    @property
+    def transfer_config(self):
+        self._ensure_client()
+        return self._transfer_config
 
     def bucket(self):
         return self
@@ -300,7 +320,8 @@ class B2StorageBackend:
             )
 
     def is_not_found(self, exc):
-        if isinstance(exc, self._client_error):
+        self._ensure_client()
+        if self._client_error and isinstance(exc, self._client_error):
             return exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404 or exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}
         return False
 

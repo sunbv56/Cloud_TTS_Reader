@@ -1,6 +1,5 @@
 fastapi
 uvicorn[standard]
-gradio
 edge-tts
 firebase-admin
 python-multipart
