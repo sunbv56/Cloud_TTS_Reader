@@ -4371,13 +4371,6 @@ function highlightSentence(index) {
 async function togglePlayback() {
     if (!STATE.currentBook) return;
 
-    const mediaPlayer = document.getElementById('media-player');
-    const playerShell = document.getElementById('media-player-shell');
-    if (mediaPlayer.classList.contains('minimized-player') &&
-        !playerShell.classList.contains('player-discovery-dock')) {
-        toggleMinimize(false);
-    }
-
     if (audio.paused) {
         document.getElementById('status-indicator').innerText = "Connecting...";
         if (!(await waitForWebSocket())) {
