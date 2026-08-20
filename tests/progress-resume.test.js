@@ -28,6 +28,28 @@ test('progress read failures do not fall back to destructive chapter-zero saves'
     assert.doesNotMatch(loadBook, /loadProgress\(STATE\.currentBookId\)[\s\S]{0,300}catch[\s\S]{0,100}currentChapterIndex = 0/);
 });
 
+test('partial library documents and reset pauses cannot corrupt another book cursor', () => {
+    const reset = functionBody(appJs, 'async function resetAudioEngine()', '\n// Keep only the content needed');
+    const storageLoad = functionBody(appJs, 'async function loadBookFromStorage(bookId, bookData)', '\n// --- Auth state is now handled inside startFirebase');
+    const refreshLibrary = functionBody(appJs, 'async function refreshLibrary()', '\n/** Download the canonical source TXT');
+
+    assert.match(reset, /STATE\.isTransitioning = true;[\s\S]*audio\.pause\(\);/);
+    assert.doesNotMatch(storageLoad, /STATE\.currentBookId = bookId;\s*updateLibraryHighlight\(\);/);
+    assert.match(refreshLibrary, /hasBookProgressIdentity\(\{ \.\.\.data, filename \}\)/);
+    assert.match(refreshLibrary, /Skipping incomplete library document/);
+    assert.match(refreshLibrary, /getProgressPercent\(data\)\.toFixed\(1\)/);
+    assert.match(appJs, /rawCursor !== undefined && rawCursor !== null && rawCursor !== ''/);
+});
+
+test('story and image metadata are shape-checked before use', () => {
+    const storageLoad = functionBody(appJs, 'async function loadBookFromStorage(bookId, bookData)', '\n// --- Auth state is now handled inside startFirebase');
+    const manifest = functionBody(appJs, 'async function loadImageManifest(bookId)', '\nasync function saveImageManifest');
+
+    assert.match(storageLoad, /hasUsableSegmentedMetadata/);
+    assert.match(storageLoad, /Ignoring incomplete segmented metadata/);
+    assert.match(manifest, /Array\.isArray\(normalized\.images\)/);
+});
+
 test('progress saves are serialized and playback is tied to the active load', () => {
     const saveProgress = functionBody(appJs, 'async function saveProgress(force = false)', '\nasync function loadProgress');
     const progressWriter = functionBody(appJs, 'function enqueueProgressSnapshot(snapshot, version, retryAttempt = 0)', '\nfunction retryPendingProgressSaveNow');

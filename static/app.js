@@ -868,12 +868,15 @@ function safeViewTransition(callback) {
 async function resetAudioEngine() {
     console.log("Resetting Audio Engine for new session...");
 
+    // Mark the intentional reset before pausing. The pause event must not
+    // checkpoint the previous book under a newly selected book ID.
+    STATE.isTransitioning = true;
+
     // 1. Explicitly stop playback and reset clock
     audio.pause();
     audio.currentTime = 0; // Immediate UI reset
     STATE.isPlaying = false;
     STATE.isStalled = false;
-    STATE.isTransitioning = true; // Block stall detector during reset
 
     // 2. Increment Session ID to invalidate all pending WebSocket messages
     STATE.sessionId++;
@@ -1707,6 +1710,9 @@ async function loadImageManifest(bookId) {
         if (!response.ok) throw new Error(`Manifest HTTP ${response.status}`);
         const manifest = await response.json();
         const normalized = { version: 1, coverId: null, images: [], ...manifest };
+        if (!Array.isArray(normalized.images) || normalized.images.some(image => !image || typeof image.id !== 'string' || !image.id.trim())) {
+            throw new Error('Image manifest has an invalid images list');
+        }
         STATE.imageManifestCache.set(bookId, normalized);
         return normalized;
     } catch (err) {
@@ -2104,7 +2110,26 @@ async function loadProgress(bookId) {
 }
 
 function hasSavedProgressCursor(progress) {
-    return progress?.last_read_chunk !== undefined;
+    const rawCursor = progress?.last_read_chunk;
+    return rawCursor !== undefined && rawCursor !== null && rawCursor !== ''
+        && Number.isFinite(Number(rawCursor)) && Number(rawCursor) >= 0;
+}
+
+function hasBookProgressIdentity(progress) {
+    if (!progress) return false;
+    if (Object.prototype.hasOwnProperty.call(progress, 'last_read_chunk')) {
+        return hasSavedProgressCursor(progress);
+    }
+    const title = typeof progress.title === 'string' ? progress.title.trim() : '';
+    const filename = typeof progress.filename === 'string' ? progress.filename.trim() : '';
+    return Boolean(title && filename);
+}
+
+function getProgressPercent(progress) {
+    const current = Number(progress?.last_read_chunk);
+    const total = Number(progress?.total_chunks);
+    if (!Number.isFinite(current) || !Number.isFinite(total) || total <= 0) return 0;
+    return Math.max(0, Math.min(100, current / total * 100));
 }
 
 function getTotalChunks() {
@@ -2195,11 +2220,19 @@ async function refreshLibrary() {
         querySnapshot.forEach((docSnap) => {
             const data = docSnap.data();
             const bookId = docSnap.id;
-            const rawProgress = data.total_chunks > 0
-                ? (data.last_read_chunk / data.total_chunks * 100)
-                : 0;
-            const progress = rawProgress.toFixed(1);
             const filename = data.filename || (bookId.replace('book_', '') + '.txt');
+            if (!hasBookProgressIdentity({ ...data, filename })) {
+                console.warn('[Progress] Skipping incomplete library document', {
+                    bookId,
+                    fields: Object.keys(data)
+                });
+                return;
+            }
+            data.filename = filename;
+            data.title = typeof data.title === 'string' && data.title.trim()
+                ? data.title.trim()
+                : filename;
+            const progress = getProgressPercent(data).toFixed(1);
             discoveryLibrary.push({ id: bookId, title: data.title || filename, progress });
 
             // ── Sidebar Book List Card ───────────────────────────────────────
@@ -2821,7 +2854,21 @@ async function loadBookFromStorage(bookId, bookData) {
             console.log("Found segmented story info:", bookInfo);
         }
 
-        if (bookInfo && bookInfo.isSegmented) {
+        const hasUsableSegmentedMetadata = Boolean(
+            bookInfo?.isSegmented === true &&
+            typeof bookInfo.filename === 'string' && bookInfo.filename.trim() &&
+            Number.isInteger(Number(bookInfo.totalChapters)) && Number(bookInfo.totalChapters) > 0 &&
+            Number.isInteger(Number(bookInfo.segmentsCount)) && Number(bookInfo.segmentsCount) > 0
+        );
+        if (bookInfo?.isSegmented && !hasUsableSegmentedMetadata) {
+            console.warn('[Storage] Ignoring incomplete segmented metadata', {
+                bookId,
+                fields: Object.keys(bookInfo)
+            });
+            bookInfo = null;
+        }
+
+        if (hasUsableSegmentedMetadata) {
             // Segmented Load Flow
             const loaded = await loadBook(bookInfo, bookId, bookInfo.filename, bookData);
             if (!loaded) return;
@@ -2859,9 +2906,6 @@ async function loadBookFromStorage(bookId, bookData) {
             const data = await parseRes.json();
             if (!isCurrentSelection()) return;
             markLoad('legacy_parse');
-
-            STATE.currentBookId = bookId;
-            updateLibraryHighlight();
 
             const loaded = await loadBook(data, bookId, filename, bookData);
             if (!loaded) return;
