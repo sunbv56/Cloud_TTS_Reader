@@ -29,3 +29,6 @@ Thumbs.db
 !requirements.txt
 !static/examples/*.txt
 .gstack/
+.kilo/
+memory/
+*_backup*.*

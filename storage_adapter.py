@@ -320,9 +320,24 @@ class B2StorageBackend:
             )
 
     def is_not_found(self, exc):
-        self._ensure_client()
-        if self._client_error and isinstance(exc, self._client_error):
-            return exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404 or exc.response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}
+        error_name = type(exc).__name__
+        if error_name in {"NoSuchKey", "NotFound", "404", "ResourceNotFoundError"}:
+            return True
+        if hasattr(exc, "response") and isinstance(exc.response, dict):
+            status = exc.response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+            code = exc.response.get("Error", {}).get("Code")
+            if status == 404 or code in {"404", "NoSuchKey", "NotFound"}:
+                return True
+        try:
+            self._ensure_client()
+            if self._client_error and isinstance(exc, self._client_error):
+                response = getattr(exc, "response", {})
+                return (
+                    response.get("ResponseMetadata", {}).get("HTTPStatusCode") == 404
+                    or response.get("Error", {}).get("Code") in {"404", "NoSuchKey", "NotFound"}
+                )
+        except Exception:
+            pass
         return False
 
 

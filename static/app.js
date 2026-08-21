@@ -1,8 +1,9 @@
 // Firebase Modules
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-import { getFirestore, doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, getFirestore, doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { compressImageForStorage, IMAGE_MAX_BYTES } from "./js/image-manager.js";
+import { toggleSidebar } from "./js/modules/ui-interactions.js";
 
 // Firebase placeholders (Initialized via API)
 let app, auth, db, provider;
@@ -89,6 +90,8 @@ let STATE = {
     isDownloading: false,
     downloadBuffer: new Map(),
     downloadExpected: 0,
+    downloadPendingQueue: [],
+    downloadInFlight: new Set(),
     downloadResolve: null,
     downloadReject: null,
     downloadChunkMeta: new Map(), // key -> { chapterIndex, index, text, voice, rate, pitch, volume } for retry
@@ -399,7 +402,14 @@ async function startFirebase() {
 
         app = initializeApp(firebaseConfig);
         auth = getAuth(app);
-        db = getFirestore(app);
+        try {
+            db = initializeFirestore(app, {
+                experimentalForceLongPolling: true,
+                useFetchStreams: false,
+            });
+        } catch (e) {
+            db = getFirestore(app);
+        }
         provider = new GoogleAuthProvider();
 
         // Bind Auth Change
@@ -1294,50 +1304,53 @@ async function initWebSocket() {
                         }
                     }
 
-                    // --- Download Mode Retry Logic ---
-                    if (STATE.isDownloading && STATE.downloadChunkMeta.has(failKey)) {
-                        const MAX_RETRIES = 3;
-                        const retries = (STATE.downloadRetryCount.get(failKey) || 0) + 1;
-                        STATE.downloadRetryCount.set(failKey, retries);
+                    // --- Download Mode Retry Logic with Backoff & Sliding Window ---
+                    if (STATE.isDownloading) {
+                        STATE.downloadInFlight?.delete(failKey);
+                        STATE.fetchingSet.delete(failKey);
 
-                        if (retries <= MAX_RETRIES) {
-                            // Retry after a short delay
-                            const delay = retries * 1500; // 1.5s, 3s, 4.5s
-                            console.warn(`[Download] Retrying chunk ${failKey} (attempt ${retries}/${MAX_RETRIES}) in ${delay}ms...`);
+                        const isQueueFull = (data.error || '').toLowerCase().includes('queue is full');
+                        const MAX_RETRIES = 5;
+                        const meta = STATE.downloadChunkMeta.get(failKey);
 
-                            // Update status UI
-                            const statusEl = document.getElementById('toc-download-status');
-                            const received = STATE.downloadBuffer.size;
-                            const total = STATE.downloadExpected;
-                            if (statusEl) statusEl.innerText = `Retrying failed chunk (${retries}/${MAX_RETRIES})... (${received}/${total})`;
+                        if (meta) {
+                            if (isQueueFull) {
+                                // Backend queue is full: requeue with soft backoff without consuming retry quota
+                                console.warn(`[Download] Backend queue full for chunk ${failKey}. Requeueing in 600ms...`);
+                                setTimeout(() => {
+                                    if (!STATE.isDownloading) return;
+                                    STATE.downloadPendingQueue?.unshift(meta);
+                                    if (typeof dispatchDownloadQueue === 'function') dispatchDownloadQueue();
+                                }, 600);
+                            } else {
+                                const retries = (STATE.downloadRetryCount.get(failKey) || 0) + 1;
+                                STATE.downloadRetryCount.set(failKey, retries);
 
-                            setTimeout(() => {
-                                if (!STATE.isDownloading) return; // cancelled
-                                const meta = STATE.downloadChunkMeta.get(failKey);
-                                if (!meta) return;
-                                STATE.fetchingSet.add(failKey);
-                                STATE.ws.send(JSON.stringify({
-                                    type: "PREFETCH",
-                                    index: meta.index,
-                                    chapterIndex: meta.chapterIndex,
-                                    text: meta.text,
-                                    voice: meta.voice,
-                                    rate: meta.rate,
-                                    pitch: meta.pitch,
-                                    volume: meta.volume,
-                                    numWorkers: STATE.settings.numWorkers,
-                                    sessionId: STATE.sessionId
-                                }));
-                            }, delay);
-                        } else {
-                            // Max retries exhausted → fail the whole download
-                            console.error(`[Download] Chunk ${failKey} failed after ${MAX_RETRIES} retries. Aborting download.`);
-                            if (STATE.downloadReject) {
-                                STATE.downloadReject(new Error(`Chunk ${failKey} failed after ${MAX_RETRIES} retries. Download aborted.`));
-                                STATE.downloadReject = null;
-                                STATE.downloadResolve = null;
+                                if (retries <= MAX_RETRIES) {
+                                    const delay = Math.min(6000, retries * 1200);
+                                    console.warn(`[Download] Retrying chunk ${failKey} (attempt ${retries}/${MAX_RETRIES}) in ${delay}ms...`);
+
+                                    const statusEl = document.getElementById('toc-download-status');
+                                    const received = STATE.downloadBuffer.size;
+                                    const total = STATE.downloadExpected;
+                                    if (statusEl) statusEl.innerText = `Retrying failed chunk (${retries}/${MAX_RETRIES})... (${received}/${total})`;
+
+                                    setTimeout(() => {
+                                        if (!STATE.isDownloading) return;
+                                        STATE.downloadPendingQueue?.push(meta);
+                                        if (typeof dispatchDownloadQueue === 'function') dispatchDownloadQueue();
+                                    }, delay);
+                                } else {
+                                    console.error(`[Download] Chunk ${failKey} failed after ${MAX_RETRIES} retries. Aborting download.`);
+                                    if (STATE.downloadReject) {
+                                        STATE.downloadReject(new Error(`Chunk ${failKey} failed after ${MAX_RETRIES} retries (${data.error || 'TTS Error'}).`));
+                                        STATE.downloadReject = null;
+                                        STATE.downloadResolve = null;
+                                    }
+                                }
                             }
                         }
+                        if (typeof dispatchDownloadQueue === 'function') dispatchDownloadQueue();
                     }
                 } else {
                     document.getElementById('status-indicator').innerText = "Ready";
@@ -1361,6 +1374,13 @@ async function initWebSocket() {
             if (STATE.isDownloading) {
                 const key = `${currentMetadata.chapterIndex}_${currentMetadata.index}`;
                 STATE.downloadBuffer.set(key, arrayBuffer);
+                STATE.downloadInFlight?.delete(key);
+                STATE.fetchingSet.delete(key);
+
+                // Slot freed: dispatch next pending chunk in sliding window pipeline
+                if (typeof dispatchDownloadQueue === 'function') {
+                    dispatchDownloadQueue();
+                }
 
                 // Update download progress UI
                 const received = STATE.downloadBuffer.size;
@@ -2786,14 +2806,21 @@ async function confirmMergeChapters() {
     button.disabled = true;
     APP_STATUS.set(`Đang nối ${chapters.length} chương...`);
     try {
-        const formData = new FormData();
-        formData.append('userId', STATE.user.uid);
-        formData.append('bookId', mergeSession.bookId);
-        formData.append('filename', mergeSession.filename);
-        formData.append('chapters', JSON.stringify(chapters));
-        const response = await authFetch('/api/append-chapters', { method: 'POST', body: formData });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Không thể nối chương.');
+        const response = await authFetch('/api/append-chapters', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: STATE.user.uid,
+                bookId: mergeSession.bookId,
+                filename: mergeSession.filename,
+                chapters: chapters
+            })
+        });
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) {
+            const errorMsg = data.error || (Array.isArray(data.detail) ? data.detail.map(d => d.msg).join(', ') : data.detail) || 'Không thể nối chương.';
+            throw new Error(errorMsg);
+        }
         const totalChunks = data.chapters.reduce((sum, chapter) => sum + (chapter.count || 0), 0);
         await setDoc(doc(db, 'users', STATE.user.uid, 'progress', mergeSession.bookId), { total_chunks: totalChunks }, { merge: true });
         const { bookId, filename } = mergeSession;
@@ -3735,6 +3762,43 @@ function deselectAllChapters() {
     updateDownloadBar();
 }
 
+function dispatchDownloadQueue() {
+    if (!STATE.isDownloading || !STATE.ws || STATE.ws.readyState !== WebSocket.OPEN) return;
+
+    // Fast parallel download pipeline: 50 concurrent in-flight workers for offline download
+    const maxConcurrency = 50;
+
+    while (
+        STATE.downloadInFlight &&
+        STATE.downloadInFlight.size < maxConcurrency &&
+        STATE.downloadPendingQueue &&
+        STATE.downloadPendingQueue.length > 0
+    ) {
+        const task = STATE.downloadPendingQueue.shift();
+        const key = `${task.chapterIndex}_${task.index}`;
+
+        if (STATE.downloadBuffer.has(key)) {
+            continue;
+        }
+
+        STATE.downloadInFlight.add(key);
+        STATE.fetchingSet.add(key);
+
+        STATE.ws.send(JSON.stringify({
+            type: "PREFETCH",
+            index: task.index,
+            chapterIndex: task.chapterIndex,
+            text: applySkipDictionary(task.text),
+            voice: task.voice,
+            rate: task.rate,
+            pitch: task.pitch,
+            volume: task.volume,
+            numWorkers: 50,
+            sessionId: STATE.sessionId
+        }));
+    }
+}
+
 async function downloadSelectedChapters() {
     const checkboxes = document.querySelectorAll('.toc-chapter-checkbox:checked');
     if (checkboxes.length === 0) {
@@ -3743,6 +3807,10 @@ async function downloadSelectedChapters() {
     }
 
     const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.chapterIndex));
+    if (selectedIndices.length > 5) {
+        alert('Tối đa chỉ cho tải 5 chương trong một lần tải để đảm bảo tốc độ siêu tốc và kết nối ổn định. Vui lòng chọn tối đa 5 chương.');
+        return;
+    }
 
     // UI elements
     const downloadBtn = document.getElementById('toc-download-btn');
@@ -3817,34 +3885,29 @@ async function downloadSelectedChapters() {
         STATE.downloadBuffer = new Map();
         STATE.downloadExpected = chapters.reduce((sum, ch) => sum + ch.sentences.length, 0);
 
-        document.getElementById('status-indicator').innerText = "Downloading Offline...";
+        document.getElementById('status-indicator').innerText = "Downloading Offline (50 Workers)...";
         progressBar.style.width = '0%';
         percentEl.innerText = '0%';
         chapterInfo.innerText = `0 / ${STATE.downloadExpected} chunks`;
-        statusEl.innerText = `Dispatching ${STATE.downloadExpected} chunks to ${STATE.settings.numWorkers} workers...`;
+        statusEl.innerText = `Dispatching ${STATE.downloadExpected} chunks to 50 parallel workers...`;
 
-        console.log(`[Download] Starting parallel download: ${STATE.downloadExpected} chunks across ${chapters.length} chapters`);
+        console.log(`[Download] Starting 50-worker parallel download: ${STATE.downloadExpected} chunks across ${chapters.length} chapters`);
 
         // 4. Ensure WebSocket is connected (workers are needed!)
         if (!(await waitForWebSocket())) {
             throw new Error("WebSocket connection timeout.");
         }
 
-        // 5. Send ALL sentences as PREFETCH tasks — workers process in parallel!
-        // Also cache chunk metadata for retry on failure
+        // 5. Build pipeline queue & start sliding window dispatch
         STATE.downloadChunkMeta = new Map();
         STATE.downloadRetryCount = new Map();
+        STATE.downloadPendingQueue = [];
+        STATE.downloadInFlight = new Set();
 
         for (const chapter of chapters) {
             for (let s = 0; s < chapter.sentences.length; s++) {
-                // Check if cancelled before sending each chunk
-                if (!STATE.isDownloading) return;
-
                 const key = `${chapter.chapterIndex}_${s}`;
-                STATE.fetchingSet.add(key);
-
-                // Cache metadata so failed chunks can be retried
-                STATE.downloadChunkMeta.set(key, {
+                const task = {
                     index: s,
                     chapterIndex: chapter.chapterIndex,
                     text: chapter.sentences[s],
@@ -3852,36 +3915,28 @@ async function downloadSelectedChapters() {
                     rate,
                     pitch,
                     volume
-                });
-
-                STATE.ws.send(JSON.stringify({
-                    type: "PREFETCH",
-                    index: s,
-                    chapterIndex: chapter.chapterIndex,
-                    text: applySkipDictionary(chapter.sentences[s]),
-                    voice: voice,
-                    rate: rate,
-                    pitch: pitch,
-                    volume: volume,
-                    numWorkers: STATE.settings.numWorkers,
-                    sessionId: STATE.sessionId
-                }));
+                };
+                STATE.downloadChunkMeta.set(key, task);
+                STATE.downloadPendingQueue.push(task);
             }
         }
+
+        // Kick off concurrent download pipeline with sliding window!
+        dispatchDownloadQueue();
 
         // 6. Wait for ALL chunks to be received by the WS binary handler
         await new Promise((resolve, reject) => {
             STATE.downloadResolve = resolve;
             STATE.downloadReject = reject;
 
-            // Safety timeout: 10 minutes max
+            // Safety timeout: 15 minutes max
             setTimeout(() => {
                 if (STATE.downloadResolve) {
                     STATE.downloadResolve = null;
                     STATE.downloadReject = null;
                     reject(new Error(`Download timed out (${STATE.downloadBuffer.size}/${STATE.downloadExpected} received)`));
                 }
-            }, 10 * 60 * 1000);
+            }, 15 * 60 * 1000);
         });
 
         // 7. All chunks received! Sort by chapter then sentence index and concatenate
@@ -3936,6 +3991,8 @@ async function downloadSelectedChapters() {
         STATE.isDownloading = false;
         STATE.downloadBuffer = new Map();
         STATE.downloadExpected = 0;
+        STATE.downloadPendingQueue = [];
+        STATE.downloadInFlight = new Set();
         STATE.downloadResolve = null;
         STATE.downloadReject = null;
         STATE.downloadChunkMeta = new Map();
@@ -5830,25 +5887,11 @@ function applyTheme(themeId) {
     safeViewTransition(updateDomTheme);
 }
 
-document.getElementById('theme-toggle-btn')?.addEventListener('click', () => {
-    const panel = document.getElementById('theme-picker-panel');
-    const chevron = document.getElementById('theme-chevron');
-    if (panel) {
-        const isOpen = panel.classList.contains('open') || panel.classList.contains('active');
-        panel.classList.toggle('open', !isOpen);
-        panel.classList.toggle('active', !isOpen);
-        if (chevron) {
-            chevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
-        }
+window.addEventListener('themechange', (e) => {
+    STATE.theme = e.detail?.themeId || 'default';
+    if (typeof saveProgress === 'function') {
+        saveProgress(true);
     }
-});
-
-document.querySelectorAll('.theme-card, .theme-swatch').forEach(el => {
-    el.addEventListener('click', () => {
-        const theme = el.dataset.theme;
-        applyTheme(theme);
-        saveProgress(true); // Persist theme change immediately
-    });
 });
 
 // --- Easter Egg: Crawler Script Copy (5s Hold on Logo) ---
