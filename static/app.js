@@ -3031,11 +3031,40 @@ async function confirmMergeChapters() {
             const errorMsg = data.error || (Array.isArray(data.detail) ? data.detail.map(d => d.msg).join(', ') : data.detail) || 'Không thể nối chương.';
             throw new Error(errorMsg);
         }
-        const totalChunks = data.chapters.reduce((sum, chapter) => sum + (chapter.count || 0), 0);
-        await setDoc(doc(db, 'users', STATE.user.uid, 'progress', mergeSession.bookId), { total_chunks: totalChunks }, { merge: true });
+
         const { bookId, filename } = mergeSession;
         closeMergeModal();
-        if (STATE.currentBookId === bookId) await loadBook(data, bookId, filename);
+
+        // Fetch fresh metadata from backend to sync total chunks and state
+        const metaRes = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/metadata`);
+        if (metaRes.ok) {
+            const bookInfo = await metaRes.json();
+            let totalChunks = 0;
+            if (bookInfo.chapterCounts && Array.isArray(bookInfo.chapterCounts)) {
+                totalChunks = bookInfo.chapterCounts.reduce((sum, c) => sum + (c || 0), 0);
+            } else if (bookInfo.chaptersSummary && Array.isArray(bookInfo.chaptersSummary)) {
+                totalChunks = bookInfo.chaptersSummary.reduce((sum, c) => sum + (c?.count || 0), 0);
+            } else if (Array.isArray(data)) {
+                totalChunks = data.reduce((sum, c) => sum + (c?.count || 0), 0);
+            }
+
+            if (totalChunks > 0) {
+                await setDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId), { total_chunks: totalChunks }, { merge: true });
+            }
+
+            if (!bookInfo.isSegmented && bookInfo.chaptersSummary) {
+                bookInfo.chapters = bookInfo.chaptersSummary.map(ch => ({
+                    title: ch.title,
+                    count: ch.count,
+                    sentences: null
+                }));
+            }
+
+            if (STATE.currentBookId === bookId) {
+                await loadBook(bookInfo, bookId, filename);
+            }
+        }
+
         await refreshLibrary();
         APP_STATUS.set('Nối chương thành công');
         APP_STATUS.toast(`Đã nối ${chapters.length} chương thành công.`, 'success');
