@@ -820,16 +820,72 @@ function applySkipDictionary(text) {
     return result.length > 0 ? result : ' ';
 }
 
-// --- Loading Overlay Helpers ---
-function showLoading(text = "Processing Masterpiece") {
+// --- Loading Overlay Helpers (UI/UX Pro Max + GSAP) ---
+function showLoading(text = "Processing Masterpiece", { subtext = "Vui lòng đợi trong giây lát...", progress = null, status = "Tiến trình" } = {}) {
     const overlay = document.getElementById('global-loading');
     const textEl = document.getElementById('loading-text');
-    if (overlay && textEl) {
-        textEl.innerText = text;
+    const subtextEl = document.getElementById('loading-subtext');
+    const progressContainer = document.getElementById('loading-progress-container');
+    const progressBar = document.getElementById('loading-progress-bar');
+    const progressPercent = document.getElementById('loading-percentage');
+    const progressStatus = document.getElementById('loading-progress-status');
+
+    if (overlay) {
+        if (textEl) textEl.innerText = text;
+        if (subtextEl) {
+            subtextEl.innerText = subtext;
+            subtextEl.classList.toggle('hidden', !subtext);
+        }
+        if (progressContainer) {
+            if (progress !== null && Number.isFinite(progress)) {
+                progressContainer.classList.remove('hidden');
+                if (progressStatus) progressStatus.innerText = status;
+                const safePercent = Math.max(0, Math.min(100, Math.round(progress)));
+                if (window.MotionLayer?.animateProgressBar && progressBar) {
+                    window.MotionLayer.animateProgressBar(progressBar, safePercent);
+                } else if (progressBar) {
+                    progressBar.style.width = `${safePercent}%`;
+                }
+                if (window.MotionLayer?.animateCounter && progressPercent) {
+                    window.MotionLayer.animateCounter(progressPercent, safePercent);
+                } else if (progressPercent) {
+                    progressPercent.innerText = `${safePercent}%`;
+                }
+            } else {
+                progressContainer.classList.add('hidden');
+            }
+        }
         overlay.classList.remove('hidden');
         overlay.classList.add('flex');
-        // Fade in effect
         setTimeout(() => overlay.classList.remove('opacity-0'), 10);
+    }
+}
+
+function updateLoadingProgress(progress, text = null, subtext = null, status = null) {
+    const textEl = document.getElementById('loading-text');
+    const subtextEl = document.getElementById('loading-subtext');
+    const progressContainer = document.getElementById('loading-progress-container');
+    const progressBar = document.getElementById('loading-progress-bar');
+    const progressPercent = document.getElementById('loading-percentage');
+    const progressStatus = document.getElementById('loading-progress-status');
+
+    if (text && textEl) textEl.innerText = text;
+    if (subtext && subtextEl) subtextEl.innerText = subtext;
+    if (status && progressStatus) progressStatus.innerText = status;
+
+    if (progressContainer && progress !== null && Number.isFinite(progress)) {
+        progressContainer.classList.remove('hidden');
+        const safePercent = Math.max(0, Math.min(100, Math.round(progress)));
+        if (window.MotionLayer?.animateProgressBar && progressBar) {
+            window.MotionLayer.animateProgressBar(progressBar, safePercent);
+        } else if (progressBar) {
+            progressBar.style.width = `${safePercent}%`;
+        }
+        if (window.MotionLayer?.animateCounter && progressPercent) {
+            window.MotionLayer.animateCounter(progressPercent, safePercent);
+        } else if (progressPercent) {
+            progressPercent.innerText = `${safePercent}%`;
+        }
     }
 }
 
@@ -840,7 +896,23 @@ function hideLoading() {
         setTimeout(() => {
             overlay.classList.add('hidden');
             overlay.classList.remove('flex');
-        }, 500);
+            const progressContainer = document.getElementById('loading-progress-container');
+            const progressBar = document.getElementById('loading-progress-bar');
+            const progressPercent = document.getElementById('loading-percentage');
+            if (progressContainer) progressContainer.classList.add('hidden');
+            if (progressBar) progressBar.style.width = '0%';
+            if (progressPercent) progressPercent.innerText = '0%';
+        }, 400);
+    }
+}
+
+function setButtonLoading(button, isLoading, loadingText = '') {
+    if (typeof button === 'string') button = document.getElementById(button);
+    if (!button) return;
+    if (window.MotionLayer?.setButtonLoading) {
+        window.MotionLayer.setButtonLoading(button, isLoading, loadingText);
+    } else {
+        button.disabled = !!isLoading;
     }
 }
 
@@ -1099,6 +1171,9 @@ document.querySelectorAll('[data-close-upload-files]').forEach(el => el.addEvent
 async function processImageFiles(fileList) {
     const files = Array.from(fileList || []).filter(file => file && (file.type?.startsWith('image/') || /\.(jpg|jpeg|png|webp|gif|bmp|avif|image)$/i.test(file.name || '')));
     if (!files.length) return;
+    const addBtn = document.getElementById('image-manager-add-btn');
+    setButtonLoading(addBtn, true, 'Đang xử lý...');
+    showLoading(`Đang xử lý ${files.length} ảnh...`, { progress: 0, status: 'Nén & Tải ảnh' });
     try {
         const bookId = imageManagerBookId || STATE.currentBookId;
         if (!bookId || !STATE.user) throw new Error('Hãy mở một truyện và đăng nhập trước.');
@@ -1109,10 +1184,13 @@ async function processImageFiles(fileList) {
         }
         await renderImageManager();
         await refreshLibrary();
+        APP_STATUS.toast(`Đã cập nhật ${files.length} ảnh thành công.`, 'success');
     } catch (err) {
         console.error('[Images] Manage error:', err);
         alert(`Không thể cập nhật ảnh: ${err.message}`);
     } finally {
+        setButtonLoading(addBtn, false);
+        hideLoading();
         STATE.imageEditTargetId = null;
         if (imageInput) imageInput.value = '';
     }
@@ -1771,15 +1849,40 @@ async function saveImageManifest(bookId, manifest) {
 
 async function uploadBookImages(bookId, files, bookTitle = '') {
     if (!STATE.user || !bookId || !files?.length) return null;
-    // New books (and legacy books with no images) do not have a manifest yet.
-    // Reuse the currently loaded manifest when this is the open book; otherwise
-    // start empty instead of making an expected 404 request before first upload.
     const manifest = STATE.currentBookId === bookId && STATE.imageManifest
         ? STATE.imageManifest
         : { version: 1, coverId: null, images: [] };
-    for (const sourceFile of files) {
-        const file = await compressImageForStorage(sourceFile);
+    const totalFiles = files.length;
+    for (let idx = 0; idx < totalFiles; idx++) {
+        const sourceFile = files[idx];
+        const basePercent = (idx / totalFiles) * 100;
+        const fileWeight = (1 / totalFiles) * 100;
+
+        updateLoadingProgress(
+            basePercent + fileWeight * 0.2,
+            `Đang xử lý ảnh (${idx + 1}/${totalFiles})`,
+            `Nén ${sourceFile.name}...`,
+            `Xử lý ảnh ${idx + 1}/${totalFiles}`
+        );
+
+        const file = await compressImageForStorage(sourceFile, {
+            onProgress: (passPercent) => {
+                updateLoadingProgress(
+                    basePercent + fileWeight * (passPercent / 100 * 0.4),
+                    `Đang xử lý ảnh (${idx + 1}/${totalFiles})`,
+                    `Tối ưu dung lượng ${sourceFile.name}...`
+                );
+            }
+        });
         if (file.size > IMAGE_MAX_BYTES) throw new Error(`${sourceFile.name} vượt quá 150 KB sau tối ưu.`);
+
+        updateLoadingProgress(
+            basePercent + fileWeight * 0.65,
+            `Đang tải lên ảnh (${idx + 1}/${totalFiles})`,
+            `Đang tải ${file.name} lên đám mây...`,
+            `Tải lên ${idx + 1}/${totalFiles}`
+        );
+
         const imageId = `img_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
         const formData = new FormData();
         formData.append('imageId', imageId);
@@ -1798,6 +1901,12 @@ async function uploadBookImages(bookId, files, bookTitle = '') {
             createdAt: new Date().toISOString()
         });
         if (!manifest.coverId) manifest.coverId = imageId;
+
+        updateLoadingProgress(
+            ((idx + 1) / totalFiles) * 100,
+            `Đã xong ảnh ${idx + 1}/${totalFiles}`,
+            `Hoàn tất ${sourceFile.name}`
+        );
     }
     await saveImageManifest(bookId, manifest);
     await setDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId), {
@@ -1950,6 +2059,28 @@ async function renderImageManager() {
     const title = document.getElementById('image-manager-book-title');
     const bookId = imageManagerBookId || STATE.currentBookId;
     if (!list || !bookId) return;
+
+    // Show skeleton placeholders before manifest arrives if list is empty
+    if (!list.children.length) {
+        list.innerHTML = `
+            <div class="skeleton-card skeleton-shimmer">
+                <div class="skeleton-thumb skeleton-shimmer"></div>
+                <div class="flex-1 space-y-2">
+                    <div class="skeleton-line skeleton-shimmer w-3/5 h-4"></div>
+                    <div class="skeleton-line skeleton-shimmer w-2/5 h-3"></div>
+                </div>
+            </div>
+            <div class="skeleton-card skeleton-shimmer">
+                <div class="skeleton-thumb skeleton-shimmer"></div>
+                <div class="flex-1 space-y-2">
+                    <div class="skeleton-line skeleton-shimmer w-4/5 h-4"></div>
+                    <div class="skeleton-line skeleton-shimmer w-1/3 h-3"></div>
+                </div>
+            </div>
+        `;
+        window.MotionLayer?.animateSkeletonEntrance?.(list);
+    }
+
     const manifest = await loadImageManifest(bookId);
     STATE.imageManifest = manifest;
     if (title) title.textContent = `${imageManagerBookTitle || STATE.currentBook?.title || 'Truyện hiện tại'} · ${manifest.images.length} ảnh`;
@@ -1964,7 +2095,7 @@ async function renderImageManager() {
     }
     for (const image of manifest.images) {
         const row = document.createElement('div');
-        row.className = 'flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3';
+        row.className = 'flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 transition-all';
         const thumb = document.createElement('img');
         thumb.className = 'w-16 h-16 rounded-xl object-cover bg-black/20 shrink-0';
         thumb.alt = image.alt || 'Ảnh minh họa';
@@ -1984,7 +2115,19 @@ async function renderImageManager() {
         coverBtn.className = 'rounded-lg px-2.5 py-2 text-xs font-bold hover:bg-primary/15 hover:text-primary transition-colors';
         coverBtn.textContent = manifest.coverId === image.id ? 'Đang là bìa' : 'Đặt bìa';
         coverBtn.disabled = manifest.coverId === image.id;
-        coverBtn.onclick = async () => { await setBookCover(bookId, image.id); await renderImageManager(); await refreshLibrary(); };
+        coverBtn.onclick = async () => {
+            setButtonLoading(coverBtn, true, '...');
+            try {
+                await setBookCover(bookId, image.id);
+                await renderImageManager();
+                await refreshLibrary();
+                APP_STATUS.toast('Đã đặt làm ảnh bìa.', 'success');
+            } catch (err) {
+                APP_STATUS.error(err, 'Không thể đặt ảnh bìa');
+            } finally {
+                setButtonLoading(coverBtn, false);
+            }
+        };
         const cropBtn = document.createElement('button');
         cropBtn.className = 'rounded-lg px-2.5 py-2 text-xs font-bold hover:bg-primary/15 hover:text-primary transition-colors';
         cropBtn.textContent = 'Crop bìa';
@@ -1999,9 +2142,20 @@ async function renderImageManager() {
         deleteBtn.textContent = 'Xóa';
         deleteBtn.onclick = async () => {
             if (!confirm(`Xóa ảnh “${image.alt || 'minh họa'}”?`)) return;
-            await removeBookImage(bookId, image.id);
-            await renderImageManager();
-            await refreshLibrary();
+            setButtonLoading(deleteBtn, true, '...');
+            if (window.MotionLayer?.animateItemRemoval) {
+                window.MotionLayer.animateItemRemoval(row, async () => {
+                    await removeBookImage(bookId, image.id);
+                    await renderImageManager();
+                    await refreshLibrary();
+                    APP_STATUS.toast('Đã xóa ảnh.', 'success');
+                });
+            } else {
+                await removeBookImage(bookId, image.id);
+                await renderImageManager();
+                await refreshLibrary();
+                APP_STATUS.toast('Đã xóa ảnh.', 'success');
+            }
         };
         actions.append(coverBtn, cropBtn, replaceBtn, deleteBtn);
         row.append(thumb, info, actions);
@@ -2509,15 +2663,19 @@ async function refreshLibrary() {
 /** Download the canonical source TXT for a book. The backend handles master
  * files and segmented-book reconstruction so the browser never assembles JSON
  * segments in memory. */
-async function downloadTextBook(bookId, title = 'book') {
+async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
     if (!STATE.user || !bookId) {
         alert('Please login first to download books.');
         return;
     }
 
+    const btn = triggerBtn || (bookId === STATE.currentBookId ? document.getElementById('toc-download-txt-btn') : null);
+    if (btn) setButtonLoading(btn, true, 'Đang chuẩn bị...');
+
     const status = document.getElementById('status-indicator');
     const previousStatus = status?.innerText || 'Ready';
     if (status) status.innerText = 'Preparing TXT...';
+    APP_STATUS.toast('Đang xuất file TXT toàn bộ tác phẩm...', 'info');
 
     try {
         const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/export-text`);
@@ -2546,11 +2704,16 @@ async function downloadTextBook(bookId, title = 'book') {
         anchor.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
         if (status) status.innerText = 'TXT download started';
+        APP_STATUS.toast(`Đã tải xuống file "${filename}" thành công!`, 'success');
+        if (btn && window.MotionLayer?.animateSuccessCheck) {
+            window.MotionLayer.animateSuccessCheck(btn);
+        }
     } catch (err) {
         console.error('[Export TXT]', err);
         alert(`Không thể tải file TXT: ${err.message}`);
         if (status) status.innerText = 'TXT download failed';
     } finally {
+        if (btn) setButtonLoading(btn, false);
         setTimeout(() => {
             if (status && (status.innerText === 'TXT download started' || status.innerText === 'TXT download failed')) {
                 status.innerText = previousStatus || 'Ready';
@@ -2850,7 +3013,7 @@ async function confirmMergeChapters() {
         return;
     }
     const button = document.getElementById('confirm-merge-btn');
-    button.disabled = true;
+    setButtonLoading(button, true, 'Đang nối chương...');
     APP_STATUS.set(`Đang nối ${chapters.length} chương...`);
     try {
         const response = await authFetch('/api/append-chapters', {
@@ -2875,12 +3038,12 @@ async function confirmMergeChapters() {
         if (STATE.currentBookId === bookId) await loadBook(data, bookId, filename);
         await refreshLibrary();
         APP_STATUS.set('Nối chương thành công');
-        APP_STATUS.toast(`Đã nối ${chapters.length} chương.`, 'success');
+        APP_STATUS.toast(`Đã nối ${chapters.length} chương thành công.`, 'success');
     } catch (error) {
         console.error('[Merge save] Error:', error);
         APP_STATUS.error(error, 'Nối chương thất bại; bạn có thể thử lại.');
     } finally {
-        button.disabled = false;
+        setButtonLoading(button, false);
     }
 }
 
@@ -3063,7 +3226,11 @@ const handleFileUpload = async (e) => {
 
     const illustrations = includeImages ? selectedFiles.filter(candidate => candidate !== file) : [];
 
-    showLoading("Uploading & Partitioning " + file.name + "...");
+    showLoading("Đang tải lên " + file.name, {
+        subtext: "Đang kiểm tra & phân tách chương...",
+        progress: 10,
+        status: "Tải sách"
+    });
     const formData = new FormData();
     formData.append('userId', STATE.user.uid);
     formData.append('file', file);
@@ -3082,7 +3249,7 @@ const handleFileUpload = async (e) => {
             }
         }
         const estimatedChapters = separatorCount + 1;
-        APP_STATUS.set(file.name.toLowerCase().endsWith('.txt') ? `Found ~${estimatedChapters} chapters. Preparing...` : 'Đang phân tích nội dung...');
+        updateLoadingProgress(25, "Đang xử lý truyện...", file.name.toLowerCase().endsWith('.txt') ? `Tìm thấy ~${estimatedChapters} chương. Đang gửi lên cloud...` : 'Đang phân tích cấu trúc...', 'Gửi dữ liệu');
         const response = await authFetch('/api/upload-story', {
             method: 'POST',
             body: formData
@@ -3117,6 +3284,7 @@ const handleFileUpload = async (e) => {
         }
         const data = await response.json();
 
+        updateLoadingProgress(illustrations.length ? 50 : 85, "Đang khởi tạo mục lục...", "Tải thông tin metadata từ server...", "Khởi tạo");
         // Fetch fresh metadata
         const metaRes = await authFetch(`/api/stories/${STATE.user.uid}/${data.storyId}/metadata`);
         let bookInfo = await metaRes.json();
@@ -3141,10 +3309,12 @@ const handleFileUpload = async (e) => {
             }
         }
 
+        updateLoadingProgress(95, "Đang mở sách...", "Sắp xong rồi!", "Hoàn tất");
         // --- FIX BUG 6: Await loadBook and call refreshLibrary directly ---
         const loaded = await loadBook(bookInfo, data.storyId, data.filename || file.name);
         if (!loaded) return;
         await refreshLibrary();
+        APP_STATUS.toast(`Đã thêm "${bookInfo.title || file.name}" vào thư viện!`, 'success');
         STATE.pendingImageFiles = [];
         if (imageInput) imageInput.value = '';
     } catch (err) {
@@ -3599,7 +3769,17 @@ async function renderChapter(index, expectedLoadGeneration = STATE.loadGeneratio
 
     // Lazy load sentences if missing
     if (!chapter.sentences) {
-        textContainer.innerHTML = '<div class="text-center p-8 text-primary/50 italic animate-pulse">Đang tải nội dung chương...</div>';
+        textContainer.innerHTML = `
+            <div class="space-y-4 p-4 lg:p-8 max-w-3xl mx-auto w-full">
+                <div class="skeleton-line skeleton-shimmer w-1/3 h-7 mb-6"></div>
+                <div class="skeleton-line skeleton-shimmer w-full h-4"></div>
+                <div class="skeleton-line skeleton-shimmer w-11/12 h-4"></div>
+                <div class="skeleton-line skeleton-shimmer w-4/5 h-4 mb-6"></div>
+                <div class="skeleton-line skeleton-shimmer w-full h-4"></div>
+                <div class="skeleton-line skeleton-shimmer w-10/12 h-4"></div>
+                <div class="skeleton-line skeleton-shimmer w-3/4 h-4"></div>
+            </div>`;
+        window.MotionLayer?.animateSkeletonEntrance?.(textContainer);
         try {
             await fetchChapterSentences(index, expectedLoadGeneration, expectedBookId);
         } catch (e) {
@@ -4073,19 +4253,17 @@ function stopDownload() {
 async function deleteSelectedChapters() {
     const checkboxes = document.querySelectorAll('.toc-chapter-checkbox:checked');
     if (checkboxes.length === 0) {
-        alert('Please select at least one chapter to delete.');
+        APP_STATUS.toast('Vui lòng chọn ít nhất một chương để xóa.');
         return;
     }
 
     const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.chapterIndex));
-    const confirmMsg = `Are you sure you want to delete ${selectedIndices.length} chapter(s)?\nThis will permanently modify the source file.`;
+    const confirmMsg = `Bạn có chắc chắn muốn xóa ${selectedIndices.length} chương đã chọn không?\nThao tác này sẽ cập nhật trực tiếp vào file lưu trữ.`;
 
     if (!confirm(confirmMsg)) return;
 
     const btn = document.getElementById('toc-delete-btn');
-    const originalHTML = btn.innerHTML;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Deleting...</span>';
-    btn.disabled = true;
+    setButtonLoading(btn, true, 'Đang xóa...');
 
     try {
         const formData = new FormData();
@@ -4126,7 +4304,7 @@ async function deleteSelectedChapters() {
         const bookRef = doc(db, "users", STATE.user.uid, "progress", STATE.currentBookId);
         await setDoc(bookRef, { total_chunks: newTotalChunks }, { merge: true });
 
-        alert('Chapters deleted successfully!');
+        APP_STATUS.toast(`Đã xóa ${selectedIndices.length} chương thành công!`, 'success');
 
         // Reset UI
         toggleSelectMode();
@@ -4134,7 +4312,7 @@ async function deleteSelectedChapters() {
 
         // --- AUTO-DELETE STORY IF EMPTY ---
         if (data.chapters.length === 0) {
-            alert('Tất cả các chương đã bị xóa. Đang gỡ bỏ truyện khỏi thư viện...');
+            APP_STATUS.toast('Tất cả các chương đã bị xóa. Đang gỡ truyện khỏi thư viện...', 'info');
             await deleteBook(STATE.currentBookId, STATE.currentFilename, STATE.currentBook.title, true);
             return;
         }
@@ -4147,10 +4325,9 @@ async function deleteSelectedChapters() {
 
     } catch (err) {
         console.error('Delete Error:', err);
-        alert(`Error: ${err.message}`);
+        APP_STATUS.error(err, 'Không thể xóa chương.');
     } finally {
-        btn.innerHTML = originalHTML;
-        btn.disabled = false;
+        setButtonLoading(btn, false);
     }
 }
 
@@ -5414,6 +5591,10 @@ async function triggerManualSave() {
         });
 
         icon.className = "fas fa-check text-green-400";
+        if (window.MotionLayer?.animateSuccessCheck) {
+            window.MotionLayer.animateSuccessCheck(icon);
+        }
+        APP_STATUS.toast('Đã lưu tiến độ đọc lên đám mây.', 'success');
         setTimeout(() => {
             icon.className = "fas fa-cloud-upload-alt text-lg";
             btn.classList.remove('pointer-events-none');

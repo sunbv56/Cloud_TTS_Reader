@@ -22,6 +22,8 @@
             'image-manager-modal',
             'stats-modal',
             'edit-chapter-modal',
+            'merge-chapters-modal',
+            'image-crop-modal',
             'global-loading'
         ].map(id => document.getElementById(id)).filter(Boolean);
         const visibility = new WeakMap();
@@ -65,8 +67,8 @@
             const panel = panelFor(element);
             if (element.id === 'global-loading') {
                 gsap.fromTo(panel,
-                    { autoAlpha: 0 },
-                    { autoAlpha: 1, duration: 0.2, ease: 'power2.out' }
+                    { autoAlpha: 0, scale: 0.94 },
+                    { autoAlpha: 1, scale: 1, duration: 0.25, ease: 'back.out(1.4)' }
                 );
                 return;
             }
@@ -241,6 +243,113 @@
             statusObserver.observe(statusIndicator, { childList: true, characterData: true, subtree: true });
         }
     }
+
+    // Expose MotionLayer utilities globally
+    window.MotionLayer = {
+        animateProgressBar(fillEl, percent, duration = 0.35) {
+            const gsap = window.gsap;
+            const target = Math.max(0, Math.min(100, percent));
+            if (!fillEl) return;
+            if (!gsap) {
+                fillEl.style.width = `${target}%`;
+                return;
+            }
+            gsap.to(fillEl, {
+                width: `${target}%`,
+                duration: duration,
+                ease: 'power2.out'
+            });
+        },
+        animateCounter(el, targetVal, duration = 0.35, suffix = '%') {
+            const gsap = window.gsap;
+            if (!el) return;
+            if (!gsap) {
+                el.textContent = `${Math.round(targetVal)}${suffix}`;
+                return;
+            }
+            const currentVal = parseInt(el.textContent, 10) || 0;
+            const obj = { val: currentVal };
+            gsap.to(obj, {
+                val: targetVal,
+                duration: duration,
+                ease: 'power2.out',
+                onUpdate: () => {
+                    el.textContent = `${Math.round(obj.val)}${suffix}`;
+                }
+            });
+        },
+        setButtonLoading(btn, isLoading, loadingText = '') {
+            if (!btn) return;
+            const gsap = window.gsap;
+            if (isLoading) {
+                if (!btn.dataset.originalHtml) {
+                    btn.dataset.originalHtml = btn.innerHTML;
+                }
+                btn.disabled = true;
+                btn.classList.add('btn-loading');
+                btn.innerHTML = `<span class="btn-loading-spinner"><i class="fas fa-spinner fa-spin"></i><span>${loadingText || 'Đang xử lý...'}</span></span><span class="btn-text-content">${btn.dataset.originalHtml}</span>`;
+                if (gsap) {
+                    gsap.fromTo(btn, { scale: 0.96 }, { scale: 1, duration: 0.2, ease: 'power2.out' });
+                }
+            } else {
+                btn.disabled = false;
+                btn.classList.remove('btn-loading');
+                if (btn.dataset.originalHtml) {
+                    btn.innerHTML = btn.dataset.originalHtml;
+                    delete btn.dataset.originalHtml;
+                }
+                if (gsap) {
+                    gsap.fromTo(btn, { scale: 0.96 }, { scale: 1, duration: 0.25, ease: 'back.out(1.5)' });
+                }
+            }
+        },
+        animateSuccessCheck(buttonOrIcon) {
+            const gsap = window.gsap;
+            if (!buttonOrIcon) return;
+            if (!gsap) return;
+            gsap.timeline()
+                .to(buttonOrIcon, { scale: 1.25, color: '#10b981', duration: 0.2, ease: 'back.out(2)' })
+                .to(buttonOrIcon, { scale: 1, color: '', duration: 0.3, delay: 0.8, ease: 'power2.inOut' });
+        },
+        animateItemRemoval(element, onComplete) {
+            const gsap = window.gsap;
+            if (!element) {
+                if (onComplete) onComplete();
+                return;
+            }
+            if (!gsap) {
+                element.remove();
+                if (onComplete) onComplete();
+                return;
+            }
+            gsap.to(element, {
+                opacity: 0,
+                x: 20,
+                scale: 0.95,
+                height: 0,
+                paddingTop: 0,
+                paddingBottom: 0,
+                marginTop: 0,
+                marginBottom: 0,
+                duration: 0.28,
+                ease: 'power2.in',
+                onComplete: () => {
+                    element.remove();
+                    if (onComplete) onComplete();
+                }
+            });
+        },
+        animateSkeletonEntrance(container) {
+            const gsap = window.gsap;
+            if (!gsap || !container) return;
+            const items = container.querySelectorAll('.skeleton-card, .skeleton-line, .skeleton-shimmer');
+            if (!items.length) return;
+            gsap.fromTo(items,
+                { autoAlpha: 0, y: 8 },
+                { autoAlpha: 1, y: 0, duration: 0.24, stagger: 0.04, ease: 'power2.out' }
+            );
+        }
+    };
 
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', startMotionLayer, { once: true });

@@ -33,18 +33,20 @@ async function decodeImage(file) {
     }
 }
 
-export async function compressImageForStorage(file, { cropSquare = false, crop = null } = {}) {
+export async function compressImageForStorage(file, { cropSquare = false, crop = null, onProgress = null } = {}) {
     const extension = (file?.name || '').toLowerCase().match(/\.[^.]+$/)?.[0];
     const extensionAllowed = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.avif', '.image'].includes(extension);
     if (!file || (!SUPPORTED_TYPES.has((file.type || '').toLowerCase()) && !extensionAllowed)) {
         throw new Error('Định dạng ảnh chưa được hỗ trợ. Hãy dùng JPG, PNG, WebP, GIF, BMP hoặc AVIF.');
     }
+    if (typeof onProgress === 'function') onProgress(15);
     let image;
     try {
         image = await decodeImage(file);
     } catch (_) {
         throw new Error('File .image không chứa dữ liệu ảnh hợp lệ hoặc trình duyệt không đọc được.');
     }
+    if (typeof onProgress === 'function') onProgress(40);
     const sourceWidth = image.width || image.naturalWidth;
     const sourceHeight = image.height || image.naturalHeight;
     if (!sourceWidth || !sourceHeight) throw new Error('Ảnh không có kích thước hợp lệ.');

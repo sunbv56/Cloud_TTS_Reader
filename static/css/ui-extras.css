@@ -597,3 +597,86 @@ body.lite-mode [class*="bg-gradient"] {
     box-shadow: 0 0 30px rgba(0, 229, 255, 0.2) !important;
     transform: scale(1.02) !important;
 }
+
+/* Skeleton Loading & Shimmer (UI/UX Pro Max) */
+@keyframes shimmer-wave {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+.skeleton-shimmer {
+    position: relative;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.skeleton-shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(255, 255, 255, 0.08) 50%,
+        transparent 100%
+    );
+    animation: shimmer-wave 1.6s infinite ease-in-out;
+}
+.skeleton-line {
+    height: 1rem;
+    border-radius: 0.5rem;
+    margin-bottom: 0.75rem;
+}
+.skeleton-thumb {
+    width: 4rem;
+    height: 4rem;
+    border-radius: 0.75rem;
+    flex-shrink: 0;
+}
+.skeleton-card {
+    padding: 1rem;
+    border-radius: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+/* Glassmorphic Progress Bar */
+.glass-progress-track {
+    width: 100%;
+    height: 0.5rem;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 9999px;
+    overflow: hidden;
+    position: relative;
+}
+.glass-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--theme-primary, #675df9) 0%, #00E5FF 100%);
+    border-radius: 9999px;
+    box-shadow: 0 0 12px var(--theme-primary, #00E5FF);
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Button Loading State */
+.btn-loading {
+    position: relative;
+    pointer-events: none !important;
+    opacity: 0.85 !important;
+    cursor: wait !important;
+}
+.btn-loading .btn-text-content {
+    opacity: 0;
+}
+.btn-loading-spinner {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 700;
+}

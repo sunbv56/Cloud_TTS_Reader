@@ -1200,25 +1200,39 @@ Nội dung chương hai...</pre>
             </div>
         </div>
     </div>
-    <!-- Global Loading Spinner Overlay -->
+    <!-- Global Loading Spinner Overlay (UI/UX Pro Max) -->
     <div id="global-loading"
-        class="fixed inset-0 z-[200] bg-black/80 backdrop-blur-xl hidden opacity-0 flex flex-col items-center justify-center transition-all duration-500">
-        <div class="relative">
-            <!-- Outer spinning ring -->
-            <div class="w-24 h-24 border-4 border-primary/10 border-t-primary rounded-full animate-spin"></div>
-            <!-- Inner pulse ring -->
-            <div class="absolute inset-2 border-4 border-primary/5 border-b-primary/40 rounded-full animate-spin-slow">
+        class="fixed inset-0 z-[200] bg-black/80 backdrop-blur-xl hidden opacity-0 flex flex-col items-center justify-center p-4 transition-all duration-500">
+        <div class="glass flex flex-col items-center max-w-sm w-full p-8 rounded-3xl border border-white/10 shadow-2xl relative overflow-hidden">
+            <div class="relative mb-6">
+                <!-- Outer spinning ring -->
+                <div class="w-20 h-20 border-4 border-primary/10 border-t-primary rounded-full animate-spin"></div>
+                <!-- Inner pulse ring -->
+                <div class="absolute inset-2 border-4 border-primary/5 border-b-primary/40 rounded-full animate-spin-slow"></div>
+                <!-- Center icon -->
+                <div class="absolute inset-0 flex items-center justify-center">
+                    <img src="/static/icon.svg" class="w-8 h-8 animate-pulse" alt="Logo">
+                </div>
             </div>
-            <!-- Center icon -->
-            <div class="absolute inset-0 flex items-center justify-center">
-                <img src="/static/icon.svg" class="w-10 h-10 animate-pulse">
-            </div>
-        </div>
-        <div class="mt-8 flex flex-col items-center">
-            <p id="loading-text" class="text-primary font-black tracking-[0.3em] uppercase text-xs animate-pulse">
+            <p id="loading-text" class="text-white font-bold text-base tracking-wide text-center">
                 Processing Masterpiece
             </p>
-            <div class="flex gap-1 mt-3">
+            <p id="loading-subtext" class="text-primary/70 text-xs font-semibold tracking-wider mt-1 text-center truncate max-w-full">
+                Vui lòng đợi trong giây lát...
+            </p>
+            
+            <!-- Dynamic Progress Bar -->
+            <div id="loading-progress-container" class="w-full mt-5 hidden">
+                <div class="flex justify-between items-center text-xs font-bold mb-1.5 px-1">
+                    <span id="loading-progress-status" class="text-slate-400">Tiến trình</span>
+                    <span id="loading-percentage" class="text-primary">0%</span>
+                </div>
+                <div class="glass-progress-track">
+                    <div id="loading-progress-bar" class="glass-progress-fill" style="width: 0%;"></div>
+                </div>
+            </div>
+
+            <div id="loading-dots" class="flex gap-1.5 mt-5">
                 <span class="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]"></span>
                 <span class="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></span>
                 <span class="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></span>
