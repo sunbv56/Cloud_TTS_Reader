@@ -211,5 +211,34 @@ class ImportRuntimeTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(backend.transfer_config.max_concurrency, 1)
         self.assertFalse(backend.transfer_config.use_threads)
 
+    def test_b2_diagnostic_info(self):
+        settings = {
+            "B2_ENDPOINT_URL": "https://example.invalid",
+            "B2_BUCKET_NAME": "my-test-bucket",
+            "B2_KEY_ID": "00583c8ddd791a90000000002",
+            "B2_APPLICATION_KEY": "secret-key",
+        }
+        with patch.dict(os.environ, settings, clear=False), patch("boto3.client") as mock_boto:
+            mock_client = types.SimpleNamespace(head_bucket=lambda **kwargs: {})
+            mock_boto.return_value = mock_client
+            backend = B2StorageBackend()
+            info = backend.get_diagnostic_info()
+            self.assertEqual(info["provider"], "b2")
+            self.assertEqual(info["bucket"], "my-test-bucket")
+            self.assertTrue(info["configured"])
+            self.assertTrue(info["connected"])
+            self.assertIn("00583c", info["key_id"])
+
+    def test_firebase_diagnostic_info(self):
+        from storage_adapter import FirebaseStorageBackend
+        mock_fb = types.SimpleNamespace(bucket=lambda: types.SimpleNamespace(name="fb-bucket"))
+        backend = FirebaseStorageBackend(mock_fb)
+        info = backend.get_diagnostic_info()
+        self.assertEqual(info["provider"], "firebase")
+        self.assertTrue(info["configured"])
+        self.assertTrue(info["connected"])
+        self.assertEqual(info["bucket"], "fb-bucket")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1722,21 +1722,38 @@ initWebSocket();
 initMSE();
 
 async function loadImageManifest(bookId) {
-    if (!STATE.user || !bookId) return { version: 1, coverId: null, images: [] };
+    if (!STATE.user || !bookId) return { version: 1, coverId: null, images: [], _found: false };
     if (STATE.imageManifestCache.has(bookId)) return STATE.imageManifestCache.get(bookId);
-    const emptyManifest = { version: 1, coverId: null, images: [] };
+    const emptyManifest = { version: 1, coverId: null, images: [], _found: false };
     try {
         const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images/manifest`, { cache: 'no-store' });
-        if (!response.ok) throw new Error(`Manifest HTTP ${response.status}`);
+        const storageBackend = response.headers.get('X-Storage-Backend') || 'unknown';
+        const manifestFound = response.headers.get('X-Manifest-Found') === 'true';
+
+        if (!response.ok) {
+            console.warn(`[Images] Manifest HTTP ${response.status} for book "${bookId}" (storage backend: ${storageBackend})`);
+            if (response.status >= 500) {
+                // Do not permanently cache 5xx server errors so that the app can retry later
+                return { ...emptyManifest, _error: `HTTP ${response.status}`, _storageBackend: storageBackend, _retryable: true };
+            }
+            throw new Error(`Manifest HTTP ${response.status}`);
+        }
         const manifest = await response.json();
-        const normalized = { version: 1, coverId: null, images: [], ...manifest };
+        const normalized = {
+            version: 1,
+            coverId: null,
+            images: [],
+            _storageBackend: storageBackend || manifest._storage_backend || 'unknown',
+            _found: manifestFound || manifest._found !== false,
+            ...manifest
+        };
         if (!Array.isArray(normalized.images) || normalized.images.some(image => !image || typeof image.id !== 'string' || !image.id.trim())) {
             throw new Error('Image manifest has an invalid images list');
         }
         STATE.imageManifestCache.set(bookId, normalized);
         return normalized;
     } catch (err) {
-        console.debug('[Images] Manifest lookup skipped:', err.message);
+        console.warn('[Images] Manifest lookup warning for book', bookId, ':', err.message);
         STATE.imageManifestCache.set(bookId, emptyManifest);
         return emptyManifest;
     }
@@ -1796,39 +1813,64 @@ async function getImageURL(bookId, image) {
     if (STATE.imageURLCache.has(image.id)) return STATE.imageURLCache.get(image.id);
     try {
         const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images/${encodeURIComponent(image.id)}`);
-        if (!response.ok) throw new Error(`Image HTTP ${response.status}`);
+        if (!response.ok) {
+            const storageBackend = response.headers.get('X-Storage-Backend') || 'unknown';
+            throw new Error(`Image HTTP ${response.status} (backend: ${storageBackend})`);
+        }
         const url = URL.createObjectURL(await response.blob());
         STATE.imageURLCache.set(image.id, url);
         return url;
     } catch (err) {
-        console.warn('[Images] Cannot load image:', image.id, err);
+        console.warn('[Images] Cannot load image:', image.id, 'for book:', bookId, err.message);
         return null;
     }
 }
 
-async function hydrateBookCover(bookId, elements) {
+async function hydrateBookCover(bookId, elements, options = {}) {
     const manifest = await loadImageManifest(bookId);
     const cover = manifest.images.find(image => image.id === manifest.coverId) || manifest.images[0];
-    if (!cover) return manifest;
+    const elementsList = (Array.isArray(elements) ? elements : [elements]).filter(Boolean);
+
+    if (!cover) {
+        if (options.hasImagesKnown || manifest._retryable) {
+            console.warn(`[Images] Cover hydration: Book "${bookId}" has_images=true in Firestore, but manifest returned 0 images (backend: ${manifest._storageBackend || 'unknown'}, found in storage: ${manifest._found ? 'yes' : 'no'}).`);
+            elementsList.forEach(el => {
+                const parent = el.parentElement;
+                if (parent) parent.dataset.coverStatus = 'empty';
+            });
+        }
+        return manifest;
+    }
+
     const url = await getImageURL(bookId, cover);
-    if (!url) return manifest;
-    elements.forEach(el => {
-        if (el) {
-            el.src = url;
-            const crop = cover.coverCrop;
-            if (crop && Number.isFinite(crop.x) && Number.isFinite(crop.y) && Number.isFinite(crop.width) && Number.isFinite(crop.height)) {
-                el.style.position = 'absolute';
-                el.style.maxWidth = 'none';
-                el.style.width = `${100 / crop.width}%`;
-                el.style.height = 'auto';
-                el.style.left = `${-(crop.x / crop.width * 100)}%`;
-                el.style.top = `${-(crop.y / crop.height * 100)}%`;
-                el.style.objectFit = 'fill';
-            } else {
-                el.removeAttribute('style');
-            }
-            el.classList.remove('hidden');
-            const fallbackIcon = el.parentElement?.querySelector('i.fa-book, i.fa-volume-up');
+    if (!url) {
+        console.warn(`[Images] Cover hydration failed: Cannot load image blob for book "${bookId}" (coverId: ${cover.id})`);
+        elementsList.forEach(el => {
+            const parent = el.parentElement;
+            if (parent) parent.dataset.coverStatus = 'error';
+        });
+        return manifest;
+    }
+
+    elementsList.forEach(el => {
+        el.src = url;
+        const crop = cover.coverCrop;
+        if (crop && Number.isFinite(crop.x) && Number.isFinite(crop.y) && Number.isFinite(crop.width) && Number.isFinite(crop.height)) {
+            el.style.position = 'absolute';
+            el.style.maxWidth = 'none';
+            el.style.width = `${100 / crop.width}%`;
+            el.style.height = 'auto';
+            el.style.left = `${-(crop.x / crop.width * 100)}%`;
+            el.style.top = `${-(crop.y / crop.height * 100)}%`;
+            el.style.objectFit = 'fill';
+        } else {
+            el.removeAttribute('style');
+        }
+        el.classList.remove('hidden');
+        const parent = el.parentElement;
+        if (parent) {
+            parent.dataset.coverStatus = 'loaded';
+            const fallbackIcon = parent.querySelector('i.fa-book, i.fa-volume-up');
             if (fallbackIcon) fallbackIcon.remove();
         }
     });
@@ -1913,7 +1955,11 @@ async function renderImageManager() {
     if (title) title.textContent = `${imageManagerBookTitle || STATE.currentBook?.title || 'Truyện hiện tại'} · ${manifest.images.length} ảnh`;
     list.innerHTML = '';
     if (!manifest.images.length) {
-        list.innerHTML = '<div class="rounded-2xl border border-dashed border-white/10 p-8 text-center text-sm text-slate-500">Chưa có ảnh. Bấm “Thêm ảnh” để bắt đầu.</div>';
+        const backendNote = manifest._storageBackend && manifest._storageBackend !== 'unknown' ? ` (${manifest._storageBackend.toUpperCase()})` : '';
+        list.innerHTML = `<div class="rounded-2xl border border-dashed border-white/10 p-8 text-center text-sm text-slate-400">
+            <p class="font-medium text-slate-300">Chưa có ảnh trong kho lưu trữ${backendNote}.</p>
+            <p class="text-xs text-slate-500 mt-1">Bấm “Thêm ảnh” ở trên để tải lên ảnh bìa và tranh minh họa mới.</p>
+        </div>`;
         return;
     }
     for (const image of manifest.images) {
@@ -2446,7 +2492,8 @@ async function refreshLibrary() {
                 // manifest request. This prevents expected missing-manifest
                 // 404s for the rest of the legacy library.
                 if (data.has_images === true) {
-                    void hydrateBookCover(bookId, [discCard.querySelector(`[data-cover-image="${bookId}"]`)]).catch(err => console.debug('[Images] Cover hydration skipped:', err.message));
+                    void hydrateBookCover(bookId, [discCard.querySelector(`[data-cover-image="${bookId}"]`)], { hasImagesKnown: true })
+                        .catch(err => console.warn('[Images] Cover hydration warning:', bookId, err.message));
                 }
             }
         });

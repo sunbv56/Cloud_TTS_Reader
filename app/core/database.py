@@ -49,6 +49,9 @@ except Exception as e:
 # to be switched through STORAGE_BACKEND=b2 without changing Firestore paths.
 try:
     storage = get_storage_backend(firebase_storage)
+    backend_type = getattr(storage, "provider_name", "unknown")
+    bucket_name = getattr(storage, "bucket_name", None) or os.getenv("FIREBASE_STORAGE_BUCKET") or "(default)"
+    logger.info(f"Storage backend initialized: provider={backend_type} bucket={bucket_name}")
 except Exception as e:
     logger.error(f"Storage backend could not be initialized: {e}")
     storage = None

@@ -469,25 +469,56 @@ async def get_image_manifest(request: Request, userId: str, storyId: str):
     if auth_error:
         return auth_error
     if storage is None:
-        return JSONResponse({"error": "Storage backend is not configured"}, status_code=503)
-    blob = storage.bucket().blob(_image_manifest_path(userId, storyId))
+        return JSONResponse(
+            {"error": "Storage backend is not configured", "version": 1, "coverId": None, "images": []},
+            status_code=503,
+            headers={"X-Storage-Backend": "none", "X-Manifest-Found": "false"}
+        )
+    backend_name = getattr(storage, "provider_name", "unknown")
+    manifest_path = _image_manifest_path(userId, storyId)
+    blob = storage.bucket().blob(manifest_path)
+    req_id = _request_id(request)
+    headers = {"X-Storage-Backend": backend_name}
+
     try:
         exists = await _run_storage(
-            "storage.check_image_manifest", blob.exists, request_id=_request_id(request)
+            "storage.check_image_manifest", blob.exists, request_id=req_id
         )
         if not exists:
-            return JSONResponse({"version": 1, "coverId": None, "images": []})
+            logger.info("image_manifest_not_found story_id=%s user_id=%s path=%s backend=%s req_id=%s",
+                        storyId, userId, manifest_path, backend_name, req_id)
+            headers["X-Manifest-Found"] = "false"
+            return JSONResponse(
+                {"version": 1, "coverId": None, "images": [], "_storage_backend": backend_name, "_found": False},
+                headers=headers
+            )
         raw = await _run_storage(
-            "storage.download_image_manifest", blob.download_as_text, request_id=_request_id(request)
+            "storage.download_image_manifest", blob.download_as_text, request_id=req_id
         )
-        return JSONResponse(json.loads(raw))
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            data["_storage_backend"] = backend_name
+            data["_found"] = True
+        headers["X-Manifest-Found"] = "true"
+        return JSONResponse(data, headers=headers)
     except Exception as exc:
         if is_storage_not_found(exc):
-            return JSONResponse({"version": 1, "coverId": None, "images": []})
+            logger.info("image_manifest_storage_not_found story_id=%s path=%s backend=%s req_id=%s",
+                        storyId, manifest_path, backend_name, req_id)
+            headers["X-Manifest-Found"] = "false"
+            return JSONResponse(
+                {"version": 1, "coverId": None, "images": [], "_storage_backend": backend_name, "_found": False},
+                headers=headers
+            )
         if isinstance(exc, (ValueError, json.JSONDecodeError)):
-            return JSONResponse({"error": "Image manifest is invalid"}, status_code=502)
-        logger.exception("image_manifest_download_failed story_id=%s", storyId)
-        return JSONResponse({"error": "Image manifest unavailable", "retryable": True}, status_code=503)
+            logger.error("image_manifest_corrupted story_id=%s path=%s error=%s", storyId, manifest_path, exc)
+            return JSONResponse({"error": "Image manifest is invalid"}, status_code=502, headers=headers)
+        logger.exception("image_manifest_download_failed story_id=%s backend=%s", storyId, backend_name)
+        return JSONResponse(
+            {"error": f"Image storage unavailable ({backend_name})", "retryable": True},
+            status_code=503,
+            headers=headers
+        )
 
 
 @router.put("/api/stories/{userId}/{storyId}/images/manifest")
@@ -559,19 +590,30 @@ async def get_story_image(request: Request, userId: str, storyId: str, imageId: 
     auth_error = await _authorization_error_async(request, userId)
     if auth_error:
         return auth_error
+    backend_name = getattr(storage, "provider_name", "unknown") if storage else "none"
+    headers = {"X-Storage-Backend": backend_name}
     if storage is None or not _valid_image_id(imageId):
-        return JSONResponse({"error": "Image not found"}, status_code=404)
-    blob = storage.bucket().blob(_image_asset_path(userId, storyId, imageId))
+        return JSONResponse({"error": "Image not found"}, status_code=404, headers=headers)
+    asset_path = _image_asset_path(userId, storyId, imageId)
+    blob = storage.bucket().blob(asset_path)
+    req_id = _request_id(request)
     try:
         data = await _run_storage(
-            "storage.download_image", blob.download_as_bytes, request_id=_request_id(request)
+            "storage.download_image", blob.download_as_bytes, request_id=req_id
         )
     except Exception as exc:
         if is_storage_not_found(exc):
-            return JSONResponse({"error": "Image not found"}, status_code=404)
-        logger.exception("image_download_failed story_id=%s image_id=%s", storyId, imageId)
-        return JSONResponse({"error": "Image storage unavailable", "retryable": True}, status_code=503)
-    return Response(content=data, media_type="image/webp")
+            logger.info("story_image_not_found story_id=%s image_id=%s path=%s backend=%s req_id=%s",
+                        storyId, imageId, asset_path, backend_name, req_id)
+            return JSONResponse({"error": "Image not found"}, status_code=404, headers=headers)
+        logger.exception("image_download_failed story_id=%s image_id=%s backend=%s req_id=%s",
+                         storyId, imageId, backend_name, req_id)
+        return JSONResponse(
+            {"error": f"Image storage unavailable ({backend_name})", "retryable": True},
+            status_code=503,
+            headers=headers
+        )
+    return Response(content=data, media_type="image/webp", headers=headers)
 
 
 @router.delete("/api/stories/{userId}/{storyId}/images/{imageId}")

@@ -54,6 +54,8 @@ class _FirebaseBlob:
 
 
 class FirebaseStorageBackend:
+    provider_name = "firebase"
+
     def __init__(self, firebase_storage_module):
         self._firebase_storage = firebase_storage_module
 
@@ -69,6 +71,27 @@ class FirebaseStorageBackend:
     def delete_prefix(self, prefix):
         for key in self.list_keys(prefix):
             self.blob(key).delete()
+
+    def get_diagnostic_info(self) -> dict:
+        """Return diagnostic info for health check endpoints."""
+        bucket_name = os.getenv("FIREBASE_STORAGE_BUCKET", "").strip()
+        info = {
+            "provider": self.provider_name,
+            "bucket": bucket_name or "(default)",
+            "configured": bool(self._firebase_storage is not None),
+            "connected": False,
+            "error": None,
+        }
+        try:
+            if self._firebase_storage is not None:
+                # Test bucket accessibility
+                b = self._firebase_storage.bucket()
+                info["connected"] = True
+                if hasattr(b, "name") and b.name:
+                    info["bucket"] = b.name
+        except Exception as exc:
+            info["error"] = f"{type(exc).__name__}: {str(exc)}"
+        return info
 
 
 def _is_retryable_stream_error(exc: Exception) -> bool:
@@ -225,12 +248,45 @@ class _B2Blob:
 
 
 class B2StorageBackend:
+    provider_name = "b2"
+
     def __init__(self):
         self.bucket_name = os.getenv("B2_BUCKET_NAME", "").strip()
         self._client = None
         self._transfer_config = None
         self._client_error = None
         self._initialized = False
+
+    def get_diagnostic_info(self) -> dict:
+        """Return diagnostic info for health check endpoints."""
+        endpoint = os.getenv("B2_ENDPOINT_URL", "").strip()
+        key_id = os.getenv("B2_KEY_ID", "").strip()
+        app_key = os.getenv("B2_APPLICATION_KEY", "").strip()
+        masked_key = f"{key_id[:6]}...{key_id[-4:]}" if len(key_id) > 10 else ("(set)" if key_id else "(missing)")
+        is_configured = bool(endpoint and self.bucket_name and key_id and app_key)
+        info = {
+            "provider": self.provider_name,
+            "bucket": self.bucket_name or "(missing)",
+            "endpoint": endpoint or "(missing)",
+            "key_id": masked_key,
+            "configured": is_configured,
+            "connected": False,
+            "error": None,
+        }
+        if is_configured:
+            try:
+                self.client.head_bucket(Bucket=self.bucket_name)
+                info["connected"] = True
+            except Exception as exc:
+                info["error"] = f"{type(exc).__name__}: {str(exc)}"
+        else:
+            missing = []
+            if not endpoint: missing.append("B2_ENDPOINT_URL")
+            if not self.bucket_name: missing.append("B2_BUCKET_NAME")
+            if not key_id: missing.append("B2_KEY_ID")
+            if not app_key: missing.append("B2_APPLICATION_KEY")
+            info["error"] = f"Missing required environment variables: {', '.join(missing)}"
+        return info
 
     def _ensure_client(self):
         if self._initialized:

@@ -70,3 +70,13 @@ def test_append_chapters_json_validation():
     assert response.status_code in (400, 401)
 
 
+def test_storage_status_endpoint():
+    response = client.get("/api/system/storage-status")
+    assert response.status_code in (200, 503)
+    data = response.json()
+    assert "status" in data
+    assert "storage" in data
+    assert "provider" in data["storage"]
+    assert "timestamp" in data
+
+
