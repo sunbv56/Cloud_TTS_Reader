@@ -1,0 +1,72 @@
+import pytest
+from fastapi.testclient import TestClient
+from app.main import app
+
+client = TestClient(app)
+
+
+def test_ping_endpoint():
+    response = client.get("/api/ping")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+
+
+def test_firebase_config_endpoint():
+    response = client.get("/api/firebase-config")
+    assert response.status_code == 200
+    data = response.json()
+    assert "apiKey" in data
+    assert "projectId" in data
+
+
+def test_devtools_suppression():
+    response = client.get("/.well-known/appspecific/com.chrome.devtools.json")
+    assert response.status_code == 200
+    assert response.json() == {}
+
+
+def test_stream_audio_unauthenticated():
+    response = client.get("/stream/audio?text=Xin%20chao&voice=vi-VN-HoaiMyNeural")
+    assert response.status_code == 401
+
+
+def test_parse_book_invalid_extension():
+    files = {"file": ("test.exe", b"binarycontent", "application/octet-stream")}
+    response = client.post("/api/parse-book", files=files)
+    assert response.status_code == 415
+
+
+def test_index_page_serves_html():
+    response = client.get("/")
+    assert response.status_code == 200
+    assert "Cloud TTS" in response.text
+    assert "/static/css/main.css" in response.text
+    assert "/static/js/main.js" in response.text
+
+
+def test_static_modular_assets_served():
+    css_res = client.get("/static/css/main.css")
+    assert css_res.status_code == 200
+    assert "themes.css" in css_res.text
+
+    themes_res = client.get("/static/css/themes.css")
+    assert themes_res.status_code == 200
+    assert "--theme-primary" in themes_res.text
+
+    js_res = client.get("/static/js/main.js")
+    assert js_res.status_code == 200
+    assert "initUIInteractions" in js_res.text
+
+
+def test_append_chapters_json_validation():
+    # Calling without required auth/fields returns proper 400
+    response = client.post("/api/append-chapters", json={
+        "userId": "test-user",
+        "bookId": "test-book",
+        "filename": "test.txt",
+        "chapters": []
+    })
+    assert response.status_code in (400, 401)
+
+
