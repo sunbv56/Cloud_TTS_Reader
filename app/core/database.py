@@ -194,6 +194,18 @@ storage = _LazyStorageProxy() if (firebase_admin_initialized or os.getenv("STORA
 
 
 
+def _warmup_connections():
+    """Warm up Firestore, Auth and Storage connections at boot so users experience 0s delay."""
+    try:
+        if db_admin is not None and hasattr(db_admin, "_get_client"):
+            db_admin._get_client()
+        if storage is not None and hasattr(storage, "_get_backend"):
+            storage._get_backend()
+        logger.info("Database and Storage connections pre-warmed for instant user response.")
+    except Exception as e:
+        logger.warning(f"Connection warmup encountered error: {e}")
+
+
 def is_storage_not_found(exc: Exception) -> bool:
     """Normalize Firebase and B2 not-found exceptions for direct downloads."""
     if type(exc).__name__ in {"NotFound", "NoSuchKey", "ResourceNotFoundError"}:
@@ -208,4 +220,5 @@ def is_storage_not_found(exc: Exception) -> bool:
         if checker and checker(exc):
             return True
     return False
+
 

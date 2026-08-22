@@ -9,11 +9,18 @@ from app.routers import system, tts, books, ws_tts
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
-    # Startup memory reclaim: purge temporary import & AST caches
+    # Pre-warm database & storage connections during boot for 0s user latency
+    try:
+        from app.core.database import _warmup_connections
+        _warmup_connections()
+    except Exception:
+        pass
+    # Reclaim temporary import & compilation caches
     _reclaim_memory()
     yield
     # Shutdown memory reclaim
     _reclaim_memory()
+
 
 
 def create_app() -> FastAPI:
