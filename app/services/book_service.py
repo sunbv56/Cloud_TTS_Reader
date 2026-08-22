@@ -7,9 +7,8 @@ import tempfile
 import logging
 from typing import List, Optional, Tuple
 from fastapi.responses import JSONResponse
-from firebase_admin import firestore
 
-from app.core.database import db_admin, storage
+from app.core.database import db_admin, storage, firestore
 from app.core.config import (
     SEGMENT_CHAPTER_SIZE,
     SEGMENT_FORMAT_VERSION,

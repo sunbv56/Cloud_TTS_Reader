@@ -10,7 +10,6 @@ from urllib.parse import quote
 
 from fastapi import APIRouter, Request, Response, Form, UploadFile, File, BackgroundTasks, Query
 from fastapi.responses import StreamingResponse, JSONResponse
-from firebase_admin import firestore
 
 from app.core.config import (
     MAX_UPLOAD_BYTES,
@@ -21,7 +20,7 @@ from app.core.config import (
     SEGMENT_CHAPTER_SIZE,
     SEGMENT_FORMAT_VERSION,
 )
-from app.core.database import db_admin, storage, firebase_admin_initialized, is_storage_not_found
+from app.core.database import db_admin, storage, firebase_admin_initialized, is_storage_not_found, firestore
 from app.core.security import (
     _request_id,
     _authorization_error,

@@ -2,7 +2,7 @@ import os
 import json
 import logging
 import firebase_admin
-from firebase_admin import credentials, storage as firebase_storage, firestore, auth
+from firebase_admin import credentials, auth
 from storage_adapter import get_storage_backend
 
 logger = logging.getLogger("cloud_tts_reader")
@@ -45,11 +45,13 @@ class _LazyFirestoreProxy:
     def _get_client(self):
         if self._client is None and firebase_admin_initialized:
             try:
-                self._client = firestore.client()
+                from firebase_admin import firestore as _firestore
+                self._client = _firestore.client()
             except Exception as e:
                 logger.error(f"Firestore client could not be initialized: {e}")
                 self._client = None
         return self._client
+
 
     def collection(self, *args, **kwargs):
         client = self._get_client()
@@ -96,6 +98,10 @@ class _LazyStorageProxy:
     def _get_backend(self):
         if self._backend is None:
             try:
+                try:
+                    from firebase_admin import storage as firebase_storage
+                except Exception:
+                    firebase_storage = None
                 self._backend = get_storage_backend(firebase_storage)
                 backend_type = getattr(self._backend, "provider_name", "unknown")
                 bucket_name = getattr(self._backend, "bucket_name", None) or os.getenv("FIREBASE_STORAGE_BUCKET") or "(default)"
@@ -170,8 +176,22 @@ class _LazyStorageProxy:
         return f"<LazyStorageProxy initialized={bool(self._backend)}>"
 
 
+class _FirestoreProxy:
+    """Proxy providing firestore constants like SERVER_TIMESTAMP without eager import."""
+    @property
+    def SERVER_TIMESTAMP(self):
+        from firebase_admin import firestore as _fs
+        return _fs.SERVER_TIMESTAMP
+
+    def __getattr__(self, name):
+        from firebase_admin import firestore as _fs
+        return getattr(_fs, name)
+
+
+firestore = _FirestoreProxy()
 db_admin = _LazyFirestoreProxy() if firebase_admin_initialized else None
 storage = _LazyStorageProxy() if (firebase_admin_initialized or os.getenv("STORAGE_BACKEND", "").lower() == "b2") else None
+
 
 
 def is_storage_not_found(exc: Exception) -> bool:

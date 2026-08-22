@@ -15,6 +15,7 @@ ENV PYTHONUNBUFFERED=1
 ENV GRPC_ENABLE_FORK_SUPPORT=0
 ENV GRPC_POLL_STRATEGY=epoll1
 ENV GRPC_PYTHON_BUILD_SYSTEM_OPENSSL=1
+ENV UV_THREADPOOL_SIZE=1
 
 # Install Python dependencies
 COPY requirements.txt .
@@ -27,5 +28,6 @@ COPY . .
 EXPOSE 8008
 
 # Start command
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8008"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8008", "--no-access-log"]
+
 

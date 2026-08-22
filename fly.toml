@@ -13,6 +13,7 @@ primary_region = 'iad'
   GRPC_ENABLE_FORK_SUPPORT = "0"
   GRPC_POLL_STRATEGY = "epoll1"
   GRPC_PYTHON_BUILD_SYSTEM_OPENSSL = "1"
+  UV_THREADPOOL_SIZE = "1"
 
 [http_service]
   internal_port = 8008
