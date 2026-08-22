@@ -144,7 +144,7 @@
                 card.classList.remove('is-spotlit');
                 gsap.to(card, { scale: 1, y: 0, duration: 0.22, ease: 'power2.out', overwrite: 'auto' });
                 gsap.to(art, {
-                    y: 0, scale: 1, clipPath: 'inset(0 0 22% 0)',
+                    y: 0, scale: 1, clipPath: 'inset(0 0 15% 0)',
                     duration: 0.28, ease: 'power3.out', overwrite: 'auto'
                 });
                 gsap.to(image, { scale: 1, duration: 0.3, ease: 'power3.out', overwrite: 'auto' });

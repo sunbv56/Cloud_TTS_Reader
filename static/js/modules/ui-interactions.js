@@ -104,6 +104,7 @@ export function toggleSidebar(show) {
     const overlay = document.getElementById('sidebar-overlay');
     if (!sidebar || !overlay) return;
     if (show) {
+        sidebar.classList.remove('hidden');
         sidebar.classList.add('open');
         overlay.classList.remove('hidden');
         setTimeout(() => overlay.classList.add('opacity-100'), 10);

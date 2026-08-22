@@ -360,3 +360,39 @@ body.mpw-pip-body[data-theme="paper"] .mpw-play {
     color: #fff !important;
     box-shadow: 0 0 20px color-mix(in srgb, var(--theme-primary) 35%, transparent);
 }
+
+/* Mobile Responsiveness for Floating Mini Player Widget */
+@media (max-width: 640px) {
+    .mpw-card {
+        width: calc(100vw - 1.25rem);
+        max-width: 25rem;
+        padding: 0.4rem 0.5rem;
+        border-radius: 1rem;
+        gap: 0.35rem;
+    }
+    .mpw-art {
+        width: 2.15rem;
+        height: 2.15rem;
+        border-radius: 0.5rem;
+        font-size: 0.85rem;
+    }
+    .mpw-title {
+        font-size: 0.68rem;
+    }
+    .mpw-subtitle {
+        font-size: 0.55rem;
+    }
+    .mpw-btn {
+        width: 2rem;
+        height: 2rem;
+        font-size: 0.65rem;
+    }
+    .mpw-play {
+        width: 2.35rem;
+        height: 2.35rem;
+        font-size: 0.72rem;
+    }
+    .mpw-actions {
+        padding-left: 0.2rem;
+    }
+}

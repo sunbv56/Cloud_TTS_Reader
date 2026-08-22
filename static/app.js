@@ -50,7 +50,7 @@ let STATE = {
         pitch: "+0Hz",
         volume: "+0%",
         numWorkers: 2,
-        fontSize: (function() {
+        fontSize: (function () {
             const saved = localStorage.getItem('reader-font-size');
             if (saved) return parseInt(saved, 10);
             const isAndroid = /Android/i.test(navigator.userAgent);
@@ -369,7 +369,7 @@ const STATS_MANAGER = {
         // Keep an older asynchronous write from finishing after a newer one
         // with a stale full snapshot.
         const queuedWrite = this._saveChain.then(write, write);
-        this._saveChain = queuedWrite.catch(() => {});
+        this._saveChain = queuedWrite.catch(() => { });
         return queuedWrite;
     },
 
@@ -430,15 +430,15 @@ async function startFirebase() {
                 authInfo.innerHTML = `<span class="text-slate-500">Guest Mode</span>`;
                 authBtn.innerHTML = '<i class="fab fa-google"></i>';
                 authBtn.onclick = () => signInWithPopup(auth, provider);
-                
+
                 // --- Reset UI on Logout ---
                 document.getElementById('book-list').innerHTML = '<div class="text-center p-8 text-slate-500 italic text-sm">Login to see your library.</div>';
-                
+
                 const discoveryGrid = document.getElementById('discovery-grid');
                 if (discoveryGrid) {
                     discoveryGrid.innerHTML = '<div class="col-span-full text-center p-20 text-slate-500 italic">Login to discover your library.</div>';
                 }
-                
+
                 // Clear any search query
                 const discoverySearch = document.getElementById('discovery-search');
                 if (discoverySearch) discoverySearch.value = '';
@@ -674,6 +674,16 @@ function setDiscoveryView(view, persist = true) {
     gridButton.setAttribute('aria-pressed', String(!isList));
     listButton.setAttribute('aria-pressed', String(isList));
     if (persist) localStorage.setItem(DISCOVERY_VIEW_STORAGE_KEY, isList ? 'list' : 'grid');
+
+    if (window.gsap && persist) {
+        const cards = grid.querySelectorAll('.discovery-book-card');
+        if (cards.length > 0) {
+            window.gsap.fromTo(cards,
+                { opacity: 0, y: 12, scale: 0.98 },
+                { opacity: 1, y: 0, scale: 1, duration: 0.28, stagger: 0.03, ease: 'power2.out', clearProps: 'all' }
+            );
+        }
+    }
 }
 
 function updateDiscoveryContinueCard() {
@@ -705,7 +715,11 @@ document.getElementById('discovery-continue-btn')?.addEventListener('click', () 
     toggleDiscoveryMode(false);
     if (audio.paused) void togglePlayback();
 });
-setDiscoveryView(localStorage.getItem(DISCOVERY_VIEW_STORAGE_KEY) || 'grid', false);
+// Default: mobile (<768px) → list view, tablet/desktop → grid view
+// Respects any explicit user preference that was already saved.
+const _savedView = localStorage.getItem(DISCOVERY_VIEW_STORAGE_KEY);
+const _defaultView = _savedView || (window.innerWidth < 768 ? 'list' : 'grid');
+setDiscoveryView(_defaultView, false);
 
 function removeVietnameseTones(str) {
     str = str.normalize('NFD').replace(/[\u0300-\u036f]/g, "");
@@ -2257,7 +2271,7 @@ function enqueueProgressSnapshot(snapshot, version, retryAttempt = 0) {
     };
 
     const queuedWrite = STATE.progressSaveChain.then(write, write);
-    STATE.progressSaveChain = queuedWrite.catch(() => {});
+    STATE.progressSaveChain = queuedWrite.catch(() => { });
     return queuedWrite;
 }
 
@@ -2557,10 +2571,10 @@ async function refreshLibrary() {
 
                 // ── Kebab (⋮) button ──────────────────────────────────────────────
                 const kebabBtn = document.createElement('button');
-                kebabBtn.className = 'icon-btn absolute top-3 right-3 w-11 h-11 rounded-2xl flex items-center justify-center border border-white/20 bg-black/55 text-white shadow-lg shadow-black/30 backdrop-blur-md hover:scale-105 hover:border-primary/80 hover:bg-primary hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-all z-20';
+                kebabBtn.className = 'icon-btn absolute top-2 right-2 sm:top-3 sm:right-3 w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center border border-white/20 bg-black/55 text-white shadow-lg shadow-black/30 backdrop-blur-md hover:scale-105 hover:border-primary/80 hover:bg-primary hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-all z-20';
                 kebabBtn.title = 'Tùy chọn';
                 kebabBtn.setAttribute('aria-label', `Tùy chọn cho ${data.title}`);
-                kebabBtn.innerHTML = '<i class="fas fa-ellipsis-v text-sm"></i>';
+                kebabBtn.innerHTML = '<i class="fas fa-ellipsis-v text-xs sm:text-sm"></i>';
                 kebabBtn.onclick = (e) => {
                     e.stopPropagation();
                     toggleKebabMenu(bookId, true);
@@ -2569,7 +2583,7 @@ async function refreshLibrary() {
                 // ── Dropdown menu ─────────────────────────────────────────────────
                 const dropdown = document.createElement('div');
                 dropdown.id = `discovery-kebab-menu-${bookId}`;
-                dropdown.className = 'hidden absolute right-4 top-16 w-48 bg-surface-high/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden py-1';
+                dropdown.className = 'hidden absolute right-3 sm:right-4 top-12 sm:top-16 w-48 bg-surface-high/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden py-1';
                 dropdown.onclick = (e) => e.stopPropagation();
 
                 const mergeBtn = document.createElement('button');
@@ -2618,13 +2632,13 @@ async function refreshLibrary() {
                         <i class="fas ${isActive ? 'fa-volume-up' : 'fa-book'} relative z-10 text-3xl"></i>
                     </div>
                     <div class="discovery-book-content">
-                        <div class="min-w-0 pr-8">
+                        <div class="min-w-0 pr-11 sm:pr-14">
                             <h3 class="discovery-book-title ${isActive ? 'text-primary' : 'text-white'} font-bold truncate group-hover:text-primary transition-colors" title="${data.title}">${data.title}</h3>
                             <div class="discovery-book-meta text-xs ${isActive ? 'text-primary/70' : 'text-slate-300'} flex items-center gap-2 mt-1">
                                 <i class="fas ${isActive ? 'fa-play' : 'fa-bookmark'} text-[10px]"></i> ${isActive ? 'Currently Reading' : 'Continue Reading'}
                             </div>
                         </div>
-                        <div class="discovery-book-progress mt-5">
+                        <div class="discovery-book-progress mt-3 sm:mt-5">
                             <div class="flex justify-between items-center text-xs font-mono font-bold mb-2">
                                 <span class="text-slate-300">PROGRESS</span>
                                 <span class="text-primary">${progress}%</span>
