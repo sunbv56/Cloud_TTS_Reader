@@ -66,6 +66,14 @@ export const THEMES_DATA = {
         moodVi: 'Trang in tinh khôi',
         metaColor: '#F8FAFC',
         isLight: true
+    },
+    'e-ink': {
+        nameEn: 'E-Ink Monochrome',
+        nameVi: 'E-Ink Đơn Sắc',
+        moodEn: 'High Contrast & Anti-Glare',
+        moodVi: 'Tương phản cao · Chống lóa',
+        metaColor: '#0F1115',
+        isLight: false
     }
 };
 

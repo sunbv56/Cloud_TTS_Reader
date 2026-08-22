@@ -348,6 +348,73 @@
                 { autoAlpha: 0, y: 8 },
                 { autoAlpha: 1, y: 0, duration: 0.24, stagger: 0.04, ease: 'power2.out' }
             );
+        },
+        smoothScrollToSweetSpot(container, targetElement, ratio = 0.28, duration = 0.42) {
+            if (!container || !targetElement) return;
+            const gsap = window.gsap;
+            const containerHeight = container.offsetHeight;
+            const offsetTop = targetElement.offsetTop;
+            const targetScroll = Math.max(0, offsetTop - (containerHeight * ratio));
+            
+            if (!gsap) {
+                container.scrollTo({ top: targetScroll, behavior: 'smooth' });
+                return;
+            }
+            gsap.to(container, {
+                scrollTop: targetScroll,
+                duration: duration,
+                ease: 'power2.out',
+                overwrite: 'auto'
+            });
+        },
+        animateToastIn(toastEl) {
+            if (!toastEl) return;
+            const gsap = window.gsap;
+            if (!gsap) return;
+            gsap.fromTo(toastEl,
+                { y: -24, scale: 0.92, opacity: 0 },
+                { y: 0, scale: 1, opacity: 1, duration: 0.35, ease: 'back.out(1.4)' }
+            );
+            const fill = toastEl.querySelector('.toast-progress-fill');
+            if (fill) {
+                gsap.fromTo(fill,
+                    { scaleX: 1 },
+                    { scaleX: 0, duration: 4.8, ease: 'none' }
+                );
+            }
+        },
+        animateToastOut(toastEl, onComplete) {
+            if (!toastEl) {
+                if (onComplete) onComplete();
+                return;
+            }
+            const gsap = window.gsap;
+            if (!gsap) {
+                toastEl.remove();
+                if (onComplete) onComplete();
+                return;
+            }
+            gsap.to(toastEl, {
+                x: 40,
+                opacity: 0,
+                scale: 0.92,
+                duration: 0.25,
+                ease: 'power2.in',
+                onComplete: () => {
+                    toastEl.remove();
+                    if (onComplete) onComplete();
+                }
+            });
+        },
+        setAudioWaveState(isPlaying) {
+            const bars = document.querySelectorAll('.audio-wave-bars');
+            bars.forEach(el => {
+                if (isPlaying) {
+                    el.classList.add('is-playing');
+                } else {
+                    el.classList.remove('is-playing');
+                }
+            });
         }
     };
 

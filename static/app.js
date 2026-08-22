@@ -487,6 +487,50 @@ async function authFetch(url, options = {}) {
     }
 }
 
+const AudioHapticFX = {
+    audioCtx: null,
+    isMuted: false,
+    initCtx() {
+        if (!this.audioCtx) {
+            const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtxClass) {
+                this.audioCtx = new AudioCtxClass();
+            }
+        }
+        if (this.audioCtx && this.audioCtx.state === 'suspended') {
+            this.audioCtx.resume().catch(() => {});
+        }
+    },
+    haptic(ms = 12) {
+        if (typeof navigator !== 'undefined' && navigator.vibrate) {
+            try { navigator.vibrate(ms); } catch (e) {}
+        }
+    },
+    clickSound() {
+        if (this.isMuted) return;
+        try {
+            this.initCtx();
+            if (!this.audioCtx) return;
+            const osc = this.audioCtx.createOscillator();
+            const gain = this.audioCtx.createGain();
+            const now = this.audioCtx.currentTime;
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(1200, now);
+            osc.frequency.exponentialRampToValueAtTime(360, now + 0.015);
+            gain.gain.setValueAtTime(0.035, now);
+            gain.gain.exponentialRampToValueAtTime(0.0008, now + 0.015);
+            osc.connect(gain);
+            gain.connect(this.audioCtx.destination);
+            osc.start(now);
+            osc.stop(now + 0.016);
+        } catch (e) {}
+    },
+    trigger(ms = 12) {
+        this.haptic(ms);
+        this.clickSound();
+    }
+};
+
 const APP_STATUS = {
     set(text) {
         const indicator = document.getElementById('status-indicator');
@@ -495,12 +539,65 @@ const APP_STATUS = {
     toast(message, kind = 'error') {
         const region = document.getElementById('app-toast-region');
         if (!region) return;
-        const colors = kind === 'success' ? 'border-emerald-400/40 text-emerald-100' : kind === 'info' ? 'border-primary/40 text-slate-100' : 'border-red-400/40 text-red-100';
+
+        AudioHapticFX.haptic(14);
+
+        const icons = {
+            success: '<i class="fas fa-check-circle text-emerald-400 text-base"></i>',
+            error: '<i class="fas fa-exclamation-circle text-rose-400 text-base"></i>',
+            warning: '<i class="fas fa-triangle-exclamation text-amber-400 text-base"></i>',
+            info: '<i class="fas fa-info-circle text-primary text-base"></i>'
+        };
+        const titles = {
+            success: 'Thành công',
+            error: 'Thông báo lỗi',
+            warning: 'Cảnh báo',
+            info: 'Hệ thống'
+        };
+
+        const kindClass = `toast-kind-${kind || 'info'}`;
+        const iconHtml = icons[kind] || icons.info;
+        const titleText = titles[kind] || titles.info;
+
         const toast = document.createElement('div');
-        toast.className = `rounded-2xl border bg-slate-950/95 px-4 py-3 text-sm shadow-2xl ${colors}`;
-        toast.innerText = message;
+        toast.className = `toast-hud-glass p-3.5 text-sm flex items-start gap-3 ${kindClass} pointer-events-auto cursor-pointer select-none`;
+        toast.setAttribute('role', 'alert');
+        toast.innerHTML = `
+            <div class="flex-shrink-0 mt-0.5">${iconHtml}</div>
+            <div class="flex-1 min-w-0 pr-1">
+                <div class="font-bold text-[11px] uppercase tracking-wider opacity-80 mb-0.5 text-white">${titleText}</div>
+                <div class="text-slate-200 text-xs leading-relaxed break-words">${message}</div>
+            </div>
+            <button type="button" class="text-slate-400 hover:text-white p-1 -mr-1 -mt-1 text-xs opacity-70 hover:opacity-100 transition-opacity" aria-label="Đóng">
+                <i class="fas fa-times"></i>
+            </button>
+            <div class="toast-progress-track">
+                <div class="toast-progress-fill"></div>
+            </div>
+        `;
+
+        const closeBtn = toast.querySelector('button');
+        let removeTimer = null;
+        const dismiss = () => {
+            if (removeTimer) clearTimeout(removeTimer);
+            if (window.MotionLayer?.animateToastOut) {
+                window.MotionLayer.animateToastOut(toast);
+            } else {
+                toast.remove();
+            }
+        };
+
+        closeBtn?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            dismiss();
+        });
+        toast.addEventListener('click', dismiss);
+
         region.appendChild(toast);
-        setTimeout(() => toast.remove(), 5000);
+        if (window.MotionLayer?.animateToastIn) {
+            window.MotionLayer.animateToastIn(toast);
+        }
+        removeTimer = setTimeout(dismiss, 4800);
     },
     error(error, fallback = 'Đã xảy ra lỗi. Vui lòng thử lại.') {
         const message = error?.message || fallback;
@@ -4644,7 +4741,10 @@ function highlightSentence(index) {
     // --- OPTIMIZED: Use targeted removal instead of querySelectorAll ---
     if (STATE.lastHighlightedIndex !== -1 && STATE.lastHighlightedIndex !== index) {
         const prev = document.getElementById(`sentence-${STATE.lastHighlightedIndex}`);
-        if (prev) prev.classList.remove('chunk-active');
+        if (prev) {
+            prev.classList.remove('chunk-active');
+            prev.classList.remove('karaoke-flow');
+        }
 
         // Skip minimap DOM access in lite-mode (minimap is hidden/removed)
         if (!STATE.isLiteMode) {
@@ -4662,25 +4762,31 @@ function highlightSentence(index) {
     const cur = document.getElementById(`sentence-${index}`);
     if (cur) {
         cur.classList.add('chunk-active');
+        cur.classList.add('karaoke-flow');
         STATE.lastHighlightedIndex = index;
 
         const container = document.getElementById('text-container');
-        const containerHeight = container.offsetHeight;
-        const offsetTop = cur.offsetTop;
-        const currentScroll = container.scrollTop;
+        if (container) {
+            const containerHeight = container.offsetHeight;
+            const offsetTop = cur.offsetTop;
+            const currentScroll = container.scrollTop;
 
-        // Calculate relative position within the container viewport
-        const relativePos = offsetTop - currentScroll;
-        const relativePercent = relativePos / containerHeight;
+            // Calculate relative position within the container viewport
+            const relativePos = offsetTop - currentScroll;
+            const relativePercent = relativePos / containerHeight;
 
-        // Comfort Zone Logic: Only scroll if text is too high (<15%) or too low (>60%)
-        // This prevents the screen from jumping on every single sentence.
-        if (relativePercent < 0.15 || relativePercent > 0.6) {
-            const targetScroll = offsetTop - (containerHeight * 0.2); // Smoothly center around 20% from top
-            container.scrollTo({
-                top: targetScroll,
-                behavior: 'smooth'
-            });
+            // Comfort Zone Logic: Sweet-spot auto scroll when text is outside 18% - 58%
+            if (relativePercent < 0.18 || relativePercent > 0.58) {
+                if (window.MotionLayer?.smoothScrollToSweetSpot) {
+                    window.MotionLayer.smoothScrollToSweetSpot(container, cur, 0.28, 0.42);
+                } else {
+                    const targetScroll = Math.max(0, offsetTop - (containerHeight * 0.28));
+                    container.scrollTo({
+                        top: targetScroll,
+                        behavior: 'smooth'
+                    });
+                }
+            }
         }
     }
 
@@ -4693,6 +4799,7 @@ function highlightSentence(index) {
 }
 
 async function togglePlayback() {
+    AudioHapticFX.trigger(12);
     if (!STATE.currentBook) return;
 
     if (audio.paused) {
@@ -4718,6 +4825,10 @@ audio.onplay = async () => {
     STATE.isTransitioning = false;
     STATE.isPlaying = true;
     STATE.pauseTimeoutHandled = false;
+
+    // [Zen Mode & Audio Waves] Activate focus & wave motion
+    document.body.classList.add('zen-focus-mode');
+    window.MotionLayer?.setAudioWaveState(true);
 
     // [TASK 3] Reset stall recovery counters on successful play
     STATE._stallRecoveryCount = 0;
@@ -4751,6 +4862,11 @@ audio.onplay = async () => {
 audio.onpause = () => {
     STATE.isPlaying = false;
     STATE.pauseTimeoutHandled = false;
+
+    // [Zen Mode & Audio Waves] Deactivate on pause
+    document.body.classList.remove('zen-focus-mode');
+    window.MotionLayer?.setAudioWaveState(false);
+
     playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
     document.getElementById('status-indicator').innerText = "Paused";
     updatePipUI();
@@ -6247,6 +6363,18 @@ window.MPW_BRIDGE = {
     playNextChapter,
     playPrevChapter,
 };
+
+// --- Zen Mode Toggle Control ---
+const zenToggleBtn = document.getElementById('zen-mode-toggle-btn');
+if (zenToggleBtn) {
+    zenToggleBtn.addEventListener('click', () => {
+        AudioHapticFX.trigger(12);
+        const isZen = document.body.classList.toggle('zen-focus-mode');
+        zenToggleBtn.classList.toggle('text-primary', isZen);
+        zenToggleBtn.classList.toggle('bg-primary/20', isZen);
+        APP_STATUS.toast(isZen ? 'Đã bật chế độ tập trung (Zen Mode).' : 'Đã tắt chế độ tập trung (Zen Mode).', 'info');
+    });
+}
 
 // Apply initial settings to UI on startup
 applySettingsToUI();

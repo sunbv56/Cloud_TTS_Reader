@@ -536,6 +536,21 @@
                                 </div>
                                 <div class="theme-card-check" style="color: #fff;"><i class="fas fa-check"></i></div>
                             </button>
+
+                            <!-- 9. E-Ink Monochrome -->
+                            <button type="button" class="theme-card group" data-theme="e-ink" style="--card-accent: #94A3B8;" title="E-Ink Monochrome">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #0F1115 0%, #1E293B 60%, #94A3B8 120%);">
+                                    <span class="theme-card-icon" style="color: #94A3B8;"><i class="fas fa-feather-alt"></i></span>
+                                </div>
+                                <div class="theme-card-info">
+                                    <div class="flex items-center justify-between gap-1">
+                                        <span class="theme-card-title" data-i18n="theme-e-ink-name">E-Ink Monochrome</span>
+                                        <span class="theme-mode-badge" title="Đơn sắc">🖤</span>
+                                    </div>
+                                    <span class="theme-card-mood" data-i18n="theme-e-ink-mood">Tương phản cao · Chống lóa</span>
+                                </div>
+                                <div class="theme-card-check" style="color: #000;"><i class="fas fa-check"></i></div>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -564,6 +579,11 @@
                     </p>
                 </div>
                 <div class="flex items-center gap-1 sm:gap-2 lg:gap-3 shrink-0">
+                    <button id="zen-mode-toggle-btn"
+                        class="icon-btn w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center rounded-xl sm:rounded-2xl hover:bg-white/5 hover:text-primary transition-all"
+                        title="Chế độ tập trung Zen Mode" aria-label="Bật hoặc tắt Zen Mode">
+                        <i class="fas fa-bullseye text-sm sm:text-lg"></i>
+                    </button>
                     <button id="toc-btn"
                         class="icon-btn w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center rounded-xl sm:rounded-2xl hover:bg-white/5 hover:text-primary transition-all"
                         title="Mở danh sách chương" aria-label="Mở danh sách chương">
@@ -845,14 +865,19 @@
                     </div>
                     <!-- Utilities Layer -->
                     <div id="player-utils-layer" class="hidden lg:flex items-center justify-end gap-6 w-full">
-                        <div class="flex flex-col items-end gap-1.5">
-                            <div id="status-indicator"
-                                class="flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20">
-                                <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
-                                <span class="text-[9px] uppercase font-black text-primary tracking-widest">IDLE</span>
+                            <div class="flex items-center gap-2">
+                                <div id="status-indicator"
+                                    class="flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20">
+                                    <span class="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
+                                    <span class="text-[9px] uppercase font-black text-primary tracking-widest">IDLE</span>
+                                </div>
+                                <div class="audio-wave-bars" title="Audio Waveform">
+                                    <span class="audio-wave-bar"></span>
+                                    <span class="audio-wave-bar"></span>
+                                    <span class="audio-wave-bar"></span>
+                                    <span class="audio-wave-bar"></span>
+                                </div>
                             </div>
-
-                        </div>
                         <button id="speak-speed-chip"
                             class="px-3 py-1.5 rounded-lg bg-white/5 border border-white/10 text-[10px] font-black text-slate-400 hover:text-primary transition-colors">1.0X</button>
 

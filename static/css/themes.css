@@ -146,6 +146,22 @@
     --theme-is-light: 1;
 }
 
+/* 9. Theme: E-Ink Monochrome (High Contrast Reading) */
+[data-theme="e-ink"] {
+    --theme-primary: #64748B;
+    --theme-primary-dim: #475569;
+    --theme-bg: #0F1115;
+    --theme-surface: #181A20;
+    --theme-surface-high: #242731;
+    --theme-glass: rgba(24, 26, 32, 0.85);
+    --theme-glass-border: rgba(255, 255, 255, 0.12);
+    --theme-text: #F1F5F9;
+    --theme-text-reading: #CBD5E1;
+    --theme-text-muted: #64748B;
+    --theme-glow: rgba(255, 255, 255, 0.2);
+    --theme-is-light: 0;
+}
+
 /* ===== UNIVERSAL THEME OVERRIDES ===== */
 [data-theme] .text-white {
     color: var(--theme-text) !important;

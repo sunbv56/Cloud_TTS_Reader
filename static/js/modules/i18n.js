@@ -58,7 +58,9 @@ export const translations = {
         "theme-sepia-name": "Vintage Sepia",
         "theme-sepia-mood": "Vintage Parchment",
         "theme-paper-name": "Paper Minimalist",
-        "theme-paper-mood": "Crisp Daylight Print"
+        "theme-paper-mood": "Crisp Daylight Print",
+        "theme-e-ink-name": "E-Ink Monochrome",
+        "theme-e-ink-mood": "High Contrast & Anti-Glare"
     },
     vi: {
         "cloud-tts": "CLOUD TTS",
@@ -114,7 +116,9 @@ export const translations = {
         "theme-sepia-name": "Giấy Cổ Sepia",
         "theme-sepia-mood": "Giấy cổ hoài niệm",
         "theme-paper-name": "Trang Giấy Trắng",
-        "theme-paper-mood": "Trang in tinh khôi"
+        "theme-paper-mood": "Trang in tinh khôi",
+        "theme-e-ink-name": "E-Ink Đơn Sắc",
+        "theme-e-ink-mood": "Tương phản cao · Chống lóa"
     }
 };
 
