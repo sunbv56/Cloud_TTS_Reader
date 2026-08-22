@@ -443,6 +443,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     justify-content: center;
     padding-top: 1.25rem;
     will-change: clip-path, transform;
+    /* Match card's rounded-3xl (1.5rem) top corners so art doesn't overflow card border-radius */
+    border-top-left-radius: 1.5rem;
+    border-top-right-radius: 1.5rem;
 }
 .discovery-book-art::after {
     content: '';
