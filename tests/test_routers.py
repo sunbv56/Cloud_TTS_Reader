@@ -80,3 +80,18 @@ def test_storage_status_endpoint():
     assert "timestamp" in data
 
 
+def test_reclaim_memory_invocation():
+    from app.core.memory import _reclaim_memory
+    # Ensure _reclaim_memory runs cleanly without raising
+    _reclaim_memory()
+
+
+def test_lazy_proxies_representation():
+    from app.core.database import _LazyFirestoreProxy, _LazyStorageProxy
+    fs_proxy = _LazyFirestoreProxy()
+    assert "LazyFirestoreProxy" in repr(fs_proxy)
+    st_proxy = _LazyStorageProxy()
+    assert "LazyStorageProxy" in repr(st_proxy)
+
+
+

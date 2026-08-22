@@ -4,9 +4,15 @@ primary_region = 'iad'
 [build]
 
 [env]
+  MALLOC_CONF = "background_thread:false,dirty_decay_ms:0,muzzy_decay_ms:0,narenas:1"
   MALLOC_TRIM_THRESHOLD_ = "65536"
   LD_PRELOAD = "/usr/lib/x86_64-linux-gnu/libjemalloc.so.2"
+  PYTHONOPTIMIZE = "2"
+  PYTHONDONTWRITEBYTECODE = "1"
   PYTHONUNBUFFERED = "1"
+  GRPC_ENABLE_FORK_SUPPORT = "0"
+  GRPC_POLL_STRATEGY = "epoll1"
+  GRPC_PYTHON_BUILD_SYSTEM_OPENSSL = "1"
 
 [http_service]
   internal_port = 8008
