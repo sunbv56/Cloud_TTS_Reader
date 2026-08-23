@@ -4156,7 +4156,7 @@ function renderTOC() {
         editBtn.setAttribute('aria-label', `Sửa chương ${i + 1}`);
         editBtn.onclick = (e) => {
             e.stopPropagation();
-            openEditChapterModal(i);
+            openEditChapterModal(i, editBtn);
         };
 
         div.appendChild(checkbox);
@@ -6135,7 +6135,7 @@ if ('serviceWorker' in navigator) {
 // --- Edit Chapter Logic ---
 let editingChapterIndex = -1;
 
-async function openEditChapterModal(index) {
+async function openEditChapterModal(index, triggerBtn = null) {
     if (!STATE.user || !STATE.currentFilename) return;
 
     editingChapterIndex = index;
@@ -6143,7 +6143,18 @@ async function openEditChapterModal(index) {
     const textarea = document.getElementById('edit-chapter-textarea');
     const statusIndicator = document.getElementById('status-indicator');
 
-    statusIndicator.innerText = "Fetching raw content...";
+    const originalBtnHtml = triggerBtn ? triggerBtn.innerHTML : null;
+    if (triggerBtn) {
+        triggerBtn.disabled = true;
+        triggerBtn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs text-primary"></i>';
+    }
+
+    const chapTitle = STATE.currentBook?.chapters?.[index]?.title || `Chương ${index + 1}`;
+    showLoading("Đang tải nội dung chương...", {
+        subtext: `Chương ${index + 1}: ${chapTitle}`
+    });
+
+    if (statusIndicator) statusIndicator.innerText = "Fetching raw content...";
 
     try {
         const formData = new FormData();
@@ -6158,17 +6169,23 @@ async function openEditChapterModal(index) {
         });
 
         const data = await response.json();
-        if (data.content) {
+        if (data.content !== undefined) {
             textarea.value = data.content;
             modal.classList.remove('hidden');
-            statusIndicator.innerText = "Ready";
+            if (statusIndicator) statusIndicator.innerText = "Ready";
         } else {
             throw new Error(data.error || "Failed to fetch content");
         }
     } catch (err) {
         console.error("Edit fetch error:", err);
         alert(`Error: ${err.message}`);
-        statusIndicator.innerText = "Error";
+        if (statusIndicator) statusIndicator.innerText = "Error";
+    } finally {
+        hideLoading();
+        if (triggerBtn) {
+            triggerBtn.disabled = false;
+            triggerBtn.innerHTML = originalBtnHtml || '<i class="fas fa-pen text-xs"></i>';
+        }
     }
 }
 
@@ -6188,7 +6205,11 @@ async function saveChapterEdit() {
     const originalText = saveBtn.innerText;
     saveBtn.innerText = "Saving...";
     saveBtn.disabled = true;
-    statusIndicator.innerText = "Saving changes...";
+    if (statusIndicator) statusIndicator.innerText = "Saving changes...";
+
+    showLoading("Đang lưu thay đổi chương...", {
+        subtext: `Cập nhật chương ${editingChapterIndex + 1}...`
+    });
 
     try {
         const formData = new FormData();
@@ -6238,16 +6259,19 @@ async function saveChapterEdit() {
             saveProgress(true);
 
             closeEditModal();
-            statusIndicator.innerText = "Changes saved!";
-            setTimeout(() => statusIndicator.innerText = "Ready", 3000);
+            if (statusIndicator) {
+                statusIndicator.innerText = "Changes saved!";
+                setTimeout(() => statusIndicator.innerText = "Ready", 3000);
+            }
         } else {
             throw new Error(data.error || "Failed to save changes");
         }
     } catch (err) {
         console.error("Save edit error:", err);
         alert(`Error: ${err.message}`);
-        statusIndicator.innerText = "Error saving";
+        if (statusIndicator) statusIndicator.innerText = "Error saving";
     } finally {
+        hideLoading();
         saveBtn.innerText = originalText;
         saveBtn.disabled = false;
     }
