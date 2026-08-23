@@ -82,11 +82,7 @@ export function applyTheme(themeId) {
     const theme = THEMES_DATA[themeId] || THEMES_DATA['default'];
     const actualId = THEMES_DATA[themeId] ? themeId : 'default';
 
-    if (actualId === 'default') {
-        root.removeAttribute('data-theme');
-    } else {
-        root.setAttribute('data-theme', actualId);
-    }
+    root.setAttribute('data-theme', actualId);
 
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (metaThemeColor) {
@@ -123,57 +119,28 @@ export function toggleSidebar(show) {
     }
 }
 
-export function toggleVoiceSettings(expand) {
+export function toggleVoiceSettings(expand = true) {
     const voiceBody = document.getElementById('voice-settings-body');
-    const voiceChevron = document.getElementById('voice-settings-chevron');
     if (!voiceBody) return;
-    if (expand) {
-        voiceBody.style.maxHeight = voiceBody.scrollHeight + 'px';
-        voiceBody.style.opacity = '1';
-        voiceBody.style.marginTop = '0';
-        if (voiceChevron) voiceChevron.style.transform = 'rotate(0deg)';
-    } else {
-        voiceBody.style.maxHeight = '0';
-        voiceBody.style.opacity = '0';
-        voiceBody.style.marginTop = '0';
-        if (voiceChevron) voiceChevron.style.transform = 'rotate(-90deg)';
-    }
-    localStorage.setItem('voice-settings-open', expand);
+    voiceBody.style.maxHeight = '';
+    voiceBody.style.opacity = '1';
+    voiceBody.style.marginTop = '';
 }
 
-export function toggleVisualSettings(expand) {
+export function toggleVisualSettings(expand = true) {
     const visualBody = document.getElementById('visual-settings-body');
-    const visualChevron = document.getElementById('visual-settings-chevron');
     if (!visualBody) return;
-    if (expand) {
-        visualBody.style.maxHeight = visualBody.scrollHeight + 'px';
-        visualBody.style.opacity = '1';
-        visualBody.style.marginTop = '0';
-        if (visualChevron) visualChevron.style.transform = 'rotate(0deg)';
-    } else {
-        visualBody.style.maxHeight = '0';
-        visualBody.style.opacity = '0';
-        visualBody.style.marginTop = '0';
-        if (visualChevron) visualChevron.style.transform = 'rotate(-90deg)';
-    }
-    localStorage.setItem('visual-settings-open', expand);
+    visualBody.style.maxHeight = '';
+    visualBody.style.opacity = '1';
+    visualBody.style.marginTop = '';
 }
 
-export function toggleDictPanel(expand) {
+export function toggleDictPanel(expand = true) {
     const dictBody = document.getElementById('dict-settings-body');
-    const dictChevron = document.getElementById('dict-settings-chevron');
     if (!dictBody) return;
-    if (expand) {
-        dictBody.style.maxHeight = dictBody.scrollHeight + 200 + 'px';
-        dictBody.style.opacity = '1';
-        dictBody.style.marginTop = '1rem';
-        if (dictChevron) dictChevron.style.transform = 'rotate(0deg)';
-    } else {
-        dictBody.style.maxHeight = '0';
-        dictBody.style.opacity = '0';
-        dictBody.style.marginTop = '0';
-        if (dictChevron) dictChevron.style.transform = 'rotate(-90deg)';
-    }
+    dictBody.style.maxHeight = '';
+    dictBody.style.opacity = '1';
+    dictBody.style.marginTop = '';
 }
 
 export function showDictStatus(msg) {
@@ -233,38 +200,10 @@ export function initUIInteractions() {
         applyTheme(savedTheme);
     }
 
-    // Voice & Visual Collapses
-    const voiceToggle = document.getElementById('voice-settings-toggle');
-    const voiceBody = document.getElementById('voice-settings-body');
-
-    voiceToggle?.addEventListener('click', () => {
-        const isCollapsed = voiceBody?.style.maxHeight === '0px' || voiceBody?.style.maxHeight === '0';
-        toggleVoiceSettings(isCollapsed);
-    });
-
-    const visualToggle = document.getElementById('visual-settings-toggle');
-    const visualBody = document.getElementById('visual-settings-body');
-
-    visualToggle?.addEventListener('click', () => {
-        const isCollapsed = visualBody?.style.maxHeight === '0px' || visualBody?.style.maxHeight === '0';
-        toggleVisualSettings(isCollapsed);
-    });
-
-    if (localStorage.getItem('voice-settings-open') === 'true') toggleVoiceSettings(true);
-    if (localStorage.getItem('visual-settings-open') === 'true') toggleVisualSettings(true);
-
-    // Dictionary Panel
-    const dictToggle = document.getElementById('dict-settings-toggle');
-    const dictBody = document.getElementById('dict-settings-body');
+    // Dictionary Panel handlers
     const dictInput = document.getElementById('dict-input');
     const dictSaveBtn = document.getElementById('dict-save-btn');
     const dictClearBtn = document.getElementById('dict-clear-btn');
-
-    dictToggle?.addEventListener('click', () => {
-        if (!dictBody) return;
-        const isOpen = dictBody.style.opacity === '1';
-        toggleDictPanel(!isOpen);
-    });
 
     if (dictInput) {
         dictInput.value = localStorage.getItem('tts-skip-dictionary') || '';
@@ -307,32 +246,5 @@ export function initUIInteractions() {
 
     document.querySelectorAll(".ripple-btn").forEach(button => {
         button.addEventListener("click", createRipple);
-    });
-
-    // Master Settings Toggle
-    const masterSettingsToggle = document.getElementById('master-settings-toggle');
-    const masterSettingsContainer = document.getElementById('master-settings-container');
-    const masterSettingsChevron = document.getElementById('master-settings-chevron');
-
-    masterSettingsToggle?.addEventListener('click', () => {
-        if (!masterSettingsContainer) return;
-        const isOpen = masterSettingsContainer.style.opacity === '1';
-        if (isOpen) {
-            masterSettingsContainer.style.maxHeight = '0';
-            masterSettingsContainer.style.opacity = '0';
-            masterSettingsContainer.style.marginTop = '0';
-            if (masterSettingsChevron) masterSettingsChevron.style.transform = 'rotate(-90deg)';
-            masterSettingsContainer.style.overflow = 'hidden';
-        } else {
-            masterSettingsContainer.style.maxHeight = masterSettingsContainer.scrollHeight + 'px';
-            masterSettingsContainer.style.opacity = '1';
-            masterSettingsContainer.style.marginTop = '1rem';
-            if (masterSettingsChevron) masterSettingsChevron.style.transform = 'rotate(0deg)';
-            setTimeout(() => {
-                if (masterSettingsContainer.style.opacity === '1') {
-                    masterSettingsContainer.style.overflow = 'visible';
-                }
-            }, 500);
-        }
     });
 }

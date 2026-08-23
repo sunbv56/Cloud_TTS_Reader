@@ -1,7 +1,14 @@
 """Backward-compatible facade re-exporting modular app components."""
 import sys
+from pathlib import Path
+
+# Ensure project directory is in sys.path even when executed from parent directory
+_ROOT = Path(__file__).resolve().parent
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
 import uvicorn
-from app.main import app, create_app
+from app.server import app, create_app
 from app.core.config import (
     STATIC_DIR,
     NUM_WORKERS,

@@ -135,6 +135,21 @@ let STATE = {
 
 const DEFAULT_SETTINGS = JSON.parse(JSON.stringify(STATE.settings));
 
+// ── Local-only settings ─────────────────────────────────────────────────────
+// Giọng đọc / tốc độ / pitch / màu chữ... lưu trên máy này (localStorage),
+// áp dụng cho mọi truyện, KHÔNG đồng bộ theo từng sách qua Firestore nữa.
+const LOCAL_SETTINGS_KEY = 'reader-settings-v1';
+
+(function restoreLocalSettings() {
+    try {
+        const saved = JSON.parse(localStorage.getItem(LOCAL_SETTINGS_KEY) || 'null');
+        if (saved && typeof saved === 'object') {
+            delete saved.fontSize; // fontSize có khoá riêng 'reader-font-size'
+            STATE.settings = { ...STATE.settings, ...saved };
+        }
+    } catch (_) { /* JSON hỏng -> giữ mặc định */ }
+})();
+
 const NETWORK_DEFAULT_TIMEOUT_MS = 20_000;
 const NETWORK_DEFAULT_RETRIES = 2;
 
@@ -823,6 +838,75 @@ function removeVietnameseTones(str) {
     str = str.replace(/[đĐ]/g, m => m === 'đ' ? 'd' : 'D');
     return str;
 }
+
+// ── Sidebar Segmented Tabs (library | toc | voice) ──────────────────────────
+const SIDEBAR_TAB_KEY = 'sidebar-active-tab';
+const SIDEBAR_TABS = ['library', 'toc', 'voice'];
+
+function switchSidebarTab(tab) {
+    if (!SIDEBAR_TABS.includes(tab)) tab = 'library';
+    SIDEBAR_TABS.forEach(name => {
+        const btn = document.getElementById(`tab-${name}`);
+        const panel = document.getElementById(`panel-${name}`);
+        const isActive = name === tab;
+        if (btn) {
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-selected', String(isActive));
+        }
+        if (panel) {
+            panel.hidden = !isActive;
+            if (isActive && window.gsap) {
+                window.gsap.fromTo(panel,
+                    { opacity: 0, x: -8 },
+                    { opacity: 1, x: 0, duration: 0.22, ease: 'power2.out', clearProps: 'all' });
+            }
+        }
+    });
+    try { localStorage.setItem(SIDEBAR_TAB_KEY, tab); } catch (_) { /* private mode */ }
+    if (tab === 'toc' && STATE.currentBook) {
+        renderTOC();
+        setTimeout(scrollTOCCurrentChapter, 60);
+    }
+}
+
+SIDEBAR_TABS.forEach(name => {
+    document.getElementById(`tab-${name}`)?.addEventListener('click', () => switchSidebarTab(name));
+});
+switchSidebarTab(localStorage.getItem(SIDEBAR_TAB_KEY) || 'library');
+
+// ── Library quick search (accent-insensitive) ───────────────────────────────
+const librarySearchInput = document.getElementById('library-search');
+const libraryClearSearchBtn = document.getElementById('library-clear-search');
+
+function applyLibrarySearch() {
+    if (!librarySearchInput) return;
+    const query = removeVietnameseTones(librarySearchInput.value.trim().toLowerCase());
+    let visible = 0;
+    document.querySelectorAll('#book-list > [data-book-title]').forEach(card => {
+        const hit = !query || card.dataset.bookTitle.includes(query);
+        card.style.display = hit ? '' : 'none';
+        if (hit) visible += 1;
+    });
+    if (libraryClearSearchBtn) libraryClearSearchBtn.hidden = !librarySearchInput.value;
+    if (!bookList) return;
+    let emptyEl = bookList.querySelector('[data-library-empty]');
+    if (!emptyEl && query) {
+        emptyEl = document.createElement('div');
+        emptyEl.dataset.libraryEmpty = '';
+        emptyEl.className = 'text-center p-8 text-slate-500 italic text-sm';
+        emptyEl.textContent = 'Không tìm thấy truyện phù hợp.';
+        bookList.appendChild(emptyEl);
+    }
+    if (emptyEl) emptyEl.classList.toggle('hidden', visible > 0 || !query);
+}
+
+librarySearchInput?.addEventListener('input', applyLibrarySearch);
+libraryClearSearchBtn?.addEventListener('click', () => {
+    if (!librarySearchInput) return;
+    librarySearchInput.value = '';
+    applyLibrarySearch();
+    librarySearchInput.focus();
+});
 
 // --- Dictionary (Skip & Replace) ---
 const DICT_STORAGE_KEY = 'tts-skip-dictionary';
@@ -2336,7 +2420,7 @@ function enqueueProgressSnapshot(snapshot, version, retryAttempt = 0) {
                 filename: snapshot.filename,
                 last_read_chunk: snapshot.currentGlobalIndex,
                 total_chunks: snapshot.totalChunks,
-                settings: snapshot.persistedSettings,
+                last_listened_at: serverTimestamp(),
                 updated_at: serverTimestamp()
             }, { merge: true });
 
@@ -2397,15 +2481,13 @@ async function saveProgress(force = false) {
         return true;
     }
 
-    const { theme, fontSize, ...persistedSettings } = STATE.settings;
     const snapshot = {
         userId: STATE.user.uid,
         bookId: STATE.currentBookId,
         title: STATE.currentBook?.title || '',
         filename: STATE.currentFilename,
         currentGlobalIndex,
-        totalChunks: getTotalChunks(),
-        persistedSettings
+        totalChunks: getTotalChunks()
     };
     const version = ++STATE.progressSaveVersion;
     // A newer snapshot supersedes a queued retry for this document.
@@ -2548,6 +2630,7 @@ async function refreshLibrary() {
 
         if (!STATE.currentBookId) toggleDiscoveryMode(true);
 
+        const libraryEntries = [];
         querySnapshot.forEach((docSnap) => {
             const data = docSnap.data();
             const bookId = docSnap.id;
@@ -2563,12 +2646,37 @@ async function refreshLibrary() {
             data.title = typeof data.title === 'string' && data.title.trim()
                 ? data.title.trim()
                 : filename;
+            libraryEntries.push({ bookId, data });
+        });
+
+        // Sắp xếp: truyện nghe gần nhất lên đầu. Truyện chưa có mốc
+        // last_listened_at (dữ liệu cũ) xếp cuối theo thứ tự bảng chữ cái.
+        const listenedTime = (value) => {
+            if (typeof value === 'number') return value;
+            if (typeof value?.toMillis === 'function') return value.toMillis();
+            const parsed = Date.parse(value);
+            return Number.isFinite(parsed) ? parsed : 0;
+        };
+        libraryEntries.sort((a, b) => {
+            const diff = listenedTime(b.data.last_listened_at) - listenedTime(a.data.last_listened_at);
+            if (diff !== 0) return diff;
+            return a.data.title.localeCompare(b.data.title, 'vi');
+        });
+
+        for (const { bookId, data } of libraryEntries) {
             const progress = getProgressPercent(data).toFixed(1);
-            discoveryLibrary.push({ id: bookId, title: data.title || filename, progress });
+            discoveryLibrary.push({
+                id: bookId,
+                title: data.title || data.filename,
+                progress,
+                lastListenedAt: listenedTime(data.last_listened_at)
+            });
 
             // ── Sidebar Book List Card ───────────────────────────────────────
             const wrapper = document.createElement('div');
             wrapper.className = 'relative group/item';
+            wrapper.dataset.bookId = bookId;
+            wrapper.dataset.bookTitle = removeVietnameseTones(data.title.toLowerCase()) + ' ' + data.title.toLowerCase();
 
             const div = document.createElement('div');
             const isActive = bookId === STATE.currentBookId;
@@ -2610,7 +2718,7 @@ async function refreshLibrary() {
             // ── Dropdown menu ─────────────────────────────────────────────────
             const dropdown = document.createElement('div');
             dropdown.id = `kebab-menu-${bookId}`;
-            dropdown.className = 'hidden absolute right-0 top-full mt-1 w-44 bg-surface-high/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden py-1';
+            dropdown.className = 'hidden absolute right-0 top-full mt-1 w-44 bg-surface-high/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden py-1';
             dropdown.onclick = (e) => e.stopPropagation();
 
             const mergeBtn = document.createElement('button');
@@ -2761,9 +2869,10 @@ async function refreshLibrary() {
                         .catch(err => console.warn('[Images] Cover hydration warning:', bookId, err.message));
                 }
             }
-        });
+        }
         updateDiscoveryContinueCard();
         applyDiscoverySearch();
+        applyLibrarySearch();
     } catch (err) {
         console.error("Library Refresh Error:", err);
         bookList.innerHTML = '<div class="text-center p-8 text-red-400 italic text-sm">Error updating library.</div>';
@@ -2846,16 +2955,19 @@ function toggleKebabMenu(bookId, isDiscovery = false) {
     document.querySelectorAll('[id*="kebab-menu-"]').forEach(menu => {
         if (menu.id !== targetId) {
             menu.classList.add('hidden');
-            const owner = menu.closest('[data-book-id]');
+            const owner = menu.closest('[data-book-id], .group\\/item, .discovery-book-card');
             if (owner) owner.style.zIndex = '';
         }
     });
 
     const menu = document.getElementById(targetId);
     if (menu) {
-        menu.classList.toggle('hidden');
-        const owner = menu.closest('[data-book-id]');
-        if (owner) owner.style.zIndex = menu.classList.contains('hidden') ? '' : '60';
+        const isHidden = menu.classList.contains('hidden');
+        menu.classList.toggle('hidden', !isHidden);
+        const owner = menu.closest('[data-book-id], .group\\/item, .discovery-book-card');
+        if (owner) {
+            owner.style.zIndex = isHidden ? '100' : '';
+        }
     }
 }
 
@@ -2863,7 +2975,7 @@ function toggleKebabMenu(bookId, isDiscovery = false) {
 document.addEventListener('click', () => {
     document.querySelectorAll('[id*="kebab-menu-"]').forEach(menu => {
         menu.classList.add('hidden');
-        const owner = menu.closest('[data-book-id]');
+        const owner = menu.closest('[data-book-id], .group\\/item, .discovery-book-card');
         if (owner) owner.style.zIndex = '';
     });
 });
@@ -3526,12 +3638,7 @@ async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
     // Offline audio is disposable. Do not block first-paint on IndexedDB cleanup.
     void OFFLINE_MANAGER.clearCache().catch(err => console.debug('[Offline] Cache cleanup skipped:', err.message));
 
-    const currentUI = {
-        fontSize: STATE.settings.fontSize,
-        textColor: STATE.settings.textColor
-    };
-
-    STATE.settings = { ...JSON.parse(JSON.stringify(DEFAULT_SETTINGS)), ...currentUI };
+    // Settings là local-only: KHÔNG reset về default khi đổi sách nữa.
 
     // Segmentation Logic
     STATE.isSegmented = bookData.isSegmented || false;
@@ -3624,9 +3731,13 @@ async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
         STATE.currentSentenceIndex = indices.sentenceIndex;
         STATE.lastSavedChunkIndex = progress.last_read_chunk;
 
-        if (progress.settings) {
+        // Migration một lần: nếu máy chưa có cài đặt local, hạt giống từ
+        // cài đặt cũ của sách đầu tiên được mở sau bản cập nhật này.
+        if (!localStorage.getItem(LOCAL_SETTINGS_KEY) && progress.settings) {
             const { theme, fontSize, ...bookSettings } = progress.settings;
             STATE.settings = { ...STATE.settings, ...bookSettings };
+            persistLocalSettings();
+            console.info('[Settings] Seeded local settings from legacy per-book record');
         }
         // Older progress records may contain 5/10/20 workers. Normalize them
         // before the first request so the UI cannot recreate the old RAM burst.
@@ -4000,8 +4111,21 @@ document.getElementById('text-container').addEventListener('scroll', () => {
 
 function renderTOC() {
     const tocList = document.getElementById('toc-list');
+    if (!tocList) return;
     tocList.innerHTML = '';
+
+    const labelEl = document.getElementById('toc-book-label');
+    if (labelEl) labelEl.textContent = STATE.currentBook?.title || 'Chưa mở truyện';
+
     const isSelectMode = document.getElementById('toc-select-mode-btn')?.classList.contains('active');
+
+    if (!STATE.currentBook || !Array.isArray(STATE.currentBook.chapters)) {
+        const empty = document.createElement('div');
+        empty.className = 'text-center p-8 text-slate-500 italic text-sm';
+        empty.innerHTML = '<i class="fas fa-list-ul text-2xl mb-3 opacity-40 block"></i>Mở một truyện từ Thư viện để xem mục lục.';
+        tocList.appendChild(empty);
+        return;
+    }
 
     STATE.currentBook.chapters.forEach((chap, i) => {
         const div = document.createElement('div');
@@ -4065,10 +4189,11 @@ function scrollTOCCurrentChapter() {
 }
 
 /**
- * Closes the TOC overlay and restores the media player state if it was auto-minimized.
+ * Leaves the TOC view: resets select mode, restores the media player if it
+ * was auto-minimized, and hides the sidebar drawer on small screens.
  */
 function closeTOC() {
-    // Reset select mode when closing TOC
+    // Reset select mode when leaving TOC
     const selectBtn = document.getElementById('toc-select-mode-btn');
     if (selectBtn?.classList.contains('active')) {
         toggleSelectMode();
@@ -4080,7 +4205,10 @@ function closeTOC() {
         STATE.tocAutoMinimized = false;
     }
 
-    document.getElementById('toc-overlay').classList.add('translate-x-full');
+    // TOC giờ là tab trong sidebar: trên mobile (<lg) hãy thu drawer lại
+    if (window.innerWidth < 1024) {
+        toggleSidebar(false);
+    }
 }
 
 // --- Offline Download Logic ---
@@ -4973,9 +5101,8 @@ audio.ontimeupdate = async () => {
                 console.log(`Transitioning to Chapter ${currentChunk.chapterIndex}`);
                 await renderChapter(currentChunk.chapterIndex);
 
-                // [FIX]: Chỉ cập nhật Mục lục nếu nó đang mở, tránh lỗi tự động trượt ra trên di động do hàm scrollIntoView
-                const tocOverlay = document.getElementById('toc-overlay');
-                if (tocOverlay && !tocOverlay.classList.contains('translate-x-full')) {
+                // [FIX]: Chỉ cập nhật Mục lục nếu tab Mục lục đang mở, tránh lỗi tự động trượt ra trên di động do hàm scrollIntoView
+                if (document.getElementById('tab-toc')?.classList.contains('active')) {
                     renderTOC();
                     scrollTOCCurrentChapter();
                 }
@@ -5067,10 +5194,18 @@ audio.ontimeupdate = async () => {
 };
 
 // --- Settings ---
-const scheduleBookSettingsSave = debounce(() => {
-    if (!STATE.currentBook || !STATE.currentBookId) return;
-    void saveProgress(true).catch(err => console.debug('[Settings] Deferred save skipped:', err.message));
-}, 400);
+// Cài đặt chỉ lưu local: đổi giọng/tốc độ/pitch/workers/màu chữ không còn
+// ghi vào Firestore tiến độ của từng truyện nữa.
+function persistLocalSettings() {
+    try {
+        const { fontSize, ...core } = STATE.settings;
+        localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(core));
+    } catch (err) {
+        console.debug('[Settings] Local persist skipped:', err.message);
+    }
+}
+
+const scheduleBookSettingsSave = debounce(persistLocalSettings, 300);
 
 document.getElementById('voice-select').onchange = (e) => {
     STATE.settings.voice = e.target.value;
@@ -5152,12 +5287,21 @@ function applyTypographySettings() {
     // Apply Text Color
     if (s.textColor === "default") {
         root.style.setProperty('--reader-text-color', 'var(--theme-text-reading)');
-        document.getElementById('font-color-picker').value = "#bac9cc"; // Default looking
+        const defaultColor = getComputedStyle(root).getPropertyValue('--theme-text-reading').trim() || "#CBD5E1";
+        const colorPicker = document.getElementById('font-color-picker');
+        if (colorPicker && defaultColor.startsWith('#')) {
+            colorPicker.value = defaultColor;
+        }
     } else {
         root.style.setProperty('--reader-text-color', s.textColor);
-        document.getElementById('font-color-picker').value = s.textColor;
+        const colorPicker = document.getElementById('font-color-picker');
+        if (colorPicker) colorPicker.value = s.textColor;
     }
 }
+
+window.addEventListener('themechange', () => {
+    applyTypographySettings();
+});
 
 // --- UI Interactions ---
 document.getElementById('prev-btn').onclick = () => playPrevChapter();
@@ -5165,21 +5309,6 @@ document.getElementById('next-btn').onclick = () => playNextChapter();
 document.getElementById('prev-chunk-btn').onclick = () => playPrevChunk();
 document.getElementById('next-chunk-btn').onclick = () => playNextChunk();
 
-document.getElementById('toc-btn').onclick = () => {
-    // Tự động thu gọn trình phát nếu đang mở
-    const mediaPlayer = document.getElementById('media-player');
-    if (!mediaPlayer.classList.contains('minimized-player')) {
-        STATE.tocAutoMinimized = true;
-        toggleMinimize(true);
-    } else {
-        STATE.tocAutoMinimized = false;
-    }
-
-    document.getElementById('toc-overlay').classList.remove('translate-x-full');
-    renderTOC(); // Re-render to ensure active state is correct
-    setTimeout(scrollTOCCurrentChapter, 300);
-};
-document.getElementById('close-toc').onclick = () => closeTOC();
 document.getElementById('sync-btn').onclick = () => refreshLibrary();
 document.getElementById('edit-title-btn').onclick = () => editTitle();
 document.getElementById('toc-download-txt-btn').onclick = () => {

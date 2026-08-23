@@ -1,4 +1,12 @@
 """FastAPI application factory and instance."""
+import sys
+from pathlib import Path
+
+# Allow direct script execution if needed
+_PKG_ROOT = Path(__file__).resolve().parent.parent
+if str(_PKG_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PKG_ROOT))
+
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -22,7 +30,6 @@ async def lifespan(application: FastAPI):
     _reclaim_memory()
 
 
-
 def create_app() -> FastAPI:
     application = FastAPI(lifespan=lifespan)
     application.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -38,4 +45,3 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8008)
-

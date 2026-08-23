@@ -1048,3 +1048,35 @@ body.lite-mode [class*="bg-gradient"] {
     border-color: color-mix(in srgb, var(--theme-primary, #00E5FF) 40%, transparent);
 }
 
+
+/* ── Sidebar Segmented Tabs (Template C) ─────────────────────────────── */
+.sidebar-tab {
+    border: 1px solid transparent;
+}
+.sidebar-tab:hover {
+    color: var(--theme-text, #dae2fd);
+    background: rgba(255, 255, 255, 0.05);
+}
+.sidebar-tab.active {
+    background: var(--theme-primary, #00E5FF);
+    color: #000;
+    box-shadow: 0 0 18px var(--theme-glow, rgba(0, 229, 255, 0.28));
+}
+.sidebar-tab.active i,
+.sidebar-tab.active span {
+    color: inherit;
+}
+.sidebar-tab:focus-visible {
+    outline: 2px solid var(--theme-primary, #00E5FF);
+    outline-offset: 2px;
+}
+
+/* Panel chuyển tab mượt mà, tôn trọng reduced-motion */
+#panel-library, #panel-toc, #panel-voice {
+    transition: opacity 0.2s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+    #panel-library, #panel-toc, #panel-voice {
+        transition: none !important;
+    }
+}
