@@ -60,6 +60,7 @@ let STATE = {
     },
     theme: localStorage.getItem('reader-theme') || 'default',
     isTransitioning: false,
+    isSwitchingChapter: false,
     // MSE State
     mediaSource: null,
     sourceBuffer: null,
@@ -78,6 +79,7 @@ let STATE = {
     },
     wakeLockEnabled: localStorage.getItem('wakeLockEnabled') === 'true',
     wakeLockSentinel: null,
+    zenModeEnabled: localStorage.getItem('zen-mode-enabled') === 'true',
     // Sleep Timer & Stall Detection
     sleepTimer: null,
     sleepTimerEnd: 0,
@@ -4164,17 +4166,15 @@ function renderTOC() {
         div.appendChild(titleSpan);
         div.appendChild(editBtn);
 
-        div.onclick = () => {
+        div.onclick = async () => {
             const selectMode = document.getElementById('toc-select-mode-btn')?.classList.contains('active');
             if (selectMode) {
                 checkbox.checked = !checkbox.checked;
                 updateDownloadBar();
                 return;
             }
-            renderChapter(i).then(() => {
-                playFromSentence(0);
-                closeTOC();
-            });
+            closeTOC();
+            await switchChapter(i, 0, true);
         };
         tocList.appendChild(div);
     });
@@ -4954,8 +4954,7 @@ audio.onplay = async () => {
     STATE.isPlaying = true;
     STATE.pauseTimeoutHandled = false;
 
-    // [Zen Mode & Audio Waves] Activate focus & wave motion
-    document.body.classList.add('zen-focus-mode');
+    // [Audio Waves] Activate wave motion
     window.MotionLayer?.setAudioWaveState(true);
 
     // [TASK 3] Reset stall recovery counters on successful play
@@ -4991,8 +4990,7 @@ audio.onpause = () => {
     STATE.isPlaying = false;
     STATE.pauseTimeoutHandled = false;
 
-    // [Zen Mode & Audio Waves] Deactivate on pause
-    document.body.classList.remove('zen-focus-mode');
+    // [Audio Waves] Deactivate wave motion
     window.MotionLayer?.setAudioWaveState(false);
 
     playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
@@ -5075,6 +5073,7 @@ audio.onwaiting = () => {
 };
 
 audio.ontimeupdate = async () => {
+    if (STATE.isTransitioning || STATE.isSwitchingChapter) return;
     const curTime = audio.currentTime || 0;
 
     // --- OPTIMIZATION: Throttle execution frequency ---
@@ -5535,6 +5534,10 @@ function applySettingsToUI() {
         applyTheme(STATE.theme);
     }
 
+    if (typeof setZenMode === 'function') {
+        setZenMode(STATE.zenModeEnabled, false);
+    }
+
     applyTypographySettings();
 }
 
@@ -5581,13 +5584,74 @@ async function playPrevChunk() {
     }
 }
 
+/**
+ * Chuyển chương tập trung an toàn, ngăn chặn xung đột Race Condition
+ * khi truyện đang phát audio hoặc người dùng click liên tiếp.
+ * @param {number} targetChapterIndex
+ * @param {number} startSentenceIndex
+ * @param {boolean} autoPlay
+ */
+async function switchChapter(targetChapterIndex, startSentenceIndex = 0, autoPlay = true) {
+    if (!STATE.currentBook || !Array.isArray(STATE.currentBook.chapters)) return false;
+    const chapters = STATE.currentBook.chapters;
+    if (targetChapterIndex < 0 || targetChapterIndex >= chapters.length) return false;
+
+    // Chặn click lặp khi đang trong tiến trình chuyển đổi
+    if (STATE.isSwitchingChapter) {
+        console.warn(`[SwitchChapter] Chapter transition already in progress. Ignoring switch to ${targetChapterIndex}`);
+        return false;
+    }
+
+    STATE.isSwitchingChapter = true;
+    STATE.isTransitioning = true;
+
+    try {
+        // 1. Tạm dừng ngay audio cũ từ mili-giây đầu tiên để triệt tiêu mọi ontimeupdate can thiệp
+        if (audio && !audio.paused) {
+            try { audio.pause(); } catch (_) { }
+        }
+        if (STATE.prefetchTimeout) {
+            clearTimeout(STATE.prefetchTimeout);
+            STATE.prefetchTimeout = null;
+        }
+
+        // 2. Render nội dung chương mới
+        const renderOk = await renderChapter(targetChapterIndex);
+        if (!renderOk) {
+            return false;
+        }
+
+        // 3. Cập nhật TOC UI nếu đang mở
+        if (document.getElementById('tab-toc')?.classList.contains('active')) {
+            renderTOC();
+            scrollTOCCurrentChapter();
+        }
+
+        // 4. Phát audio chương mới nếu autoPlay được bật
+        if (autoPlay) {
+            await playFromSentence(startSentenceIndex);
+        } else {
+            STATE.currentSentenceIndex = startSentenceIndex;
+            highlightSentence(startSentenceIndex);
+            updateUI();
+        }
+
+        return true;
+    } catch (err) {
+        console.error('[SwitchChapter] Failed to switch chapter:', err);
+        return false;
+    } finally {
+        STATE.isSwitchingChapter = false;
+        STATE.isTransitioning = false;
+    }
+}
+
 async function playNextChapter() {
     if (!STATE.currentBook) return;
     const curChap = STATE.currentChapterIndex;
     const chapters = STATE.currentBook.chapters;
     if (curChap < chapters.length - 1) {
-        await renderChapter(curChap + 1);
-        await playFromSentence(0);
+        await switchChapter(curChap + 1, 0, true);
     }
 }
 
@@ -5595,8 +5659,7 @@ async function playPrevChapter() {
     if (!STATE.currentBook) return;
     const curChap = STATE.currentChapterIndex;
     if (curChap > 0) {
-        await renderChapter(curChap - 1);
-        await playFromSentence(0);
+        await switchChapter(curChap - 1, 0, true);
     }
 }
 
@@ -6515,17 +6578,34 @@ window.MPW_BRIDGE = {
     playPrevChunk,
     playNextChapter,
     playPrevChapter,
+    switchChapter,
 };
 
-// --- Zen Mode Toggle Control ---
+// --- Zen Mode Control & Persistence ---
+function setZenMode(enabled, persist = true) {
+    STATE.zenModeEnabled = !!enabled;
+    document.body.classList.toggle('zen-focus-mode', STATE.zenModeEnabled);
+    const btn = document.getElementById('zen-mode-toggle-btn');
+    if (btn) {
+        btn.classList.toggle('text-primary', STATE.zenModeEnabled);
+        btn.classList.toggle('bg-primary/20', STATE.zenModeEnabled);
+        btn.setAttribute('aria-pressed', STATE.zenModeEnabled ? 'true' : 'false');
+    }
+    if (persist) {
+        try {
+            localStorage.setItem('zen-mode-enabled', STATE.zenModeEnabled ? 'true' : 'false');
+        } catch (_) { /* private browsing mode fallback */ }
+    }
+}
+window.setZenMode = setZenMode;
+
 const zenToggleBtn = document.getElementById('zen-mode-toggle-btn');
 if (zenToggleBtn) {
     zenToggleBtn.addEventListener('click', () => {
         AudioHapticFX.trigger(12);
-        const isZen = document.body.classList.toggle('zen-focus-mode');
-        zenToggleBtn.classList.toggle('text-primary', isZen);
-        zenToggleBtn.classList.toggle('bg-primary/20', isZen);
-        APP_STATUS.toast(isZen ? 'Đã bật chế độ tập trung (Zen Mode).' : 'Đã tắt chế độ tập trung (Zen Mode).', 'info');
+        const nextState = !STATE.zenModeEnabled;
+        setZenMode(nextState, true);
+        APP_STATUS.toast(nextState ? 'Đã bật chế độ tập trung (Zen Mode).' : 'Đã tắt chế độ tập trung (Zen Mode).', 'info');
     });
 }
 
