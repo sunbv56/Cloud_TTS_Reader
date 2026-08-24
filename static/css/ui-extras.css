@@ -527,11 +527,23 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 #discovery-continue-card[hidden],
 #discovery-search-empty[hidden] { display: none; }
-#discovery-continue-card .discovery-book-art { position: relative; inset: auto; height: 7rem; clip-path: none; padding-top: 0; align-items: center; }
+#discovery-continue-card .discovery-book-art {
+    position: relative;
+    inset: auto;
+    clip-path: none;
+    padding-top: 0;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--theme-primary, #00E5FF) 25%, transparent), rgba(0,0,0,0.5));
+}
 #discovery-continue-card {
     width: min(100%, 68rem);
-    border: 1px solid color-mix(in srgb, var(--theme-primary, #00E5FF) 42%, transparent);
-    background: linear-gradient(125deg, color-mix(in srgb, var(--theme-primary, #00E5FF) 16%, var(--theme-surface, #131b2e)), var(--theme-surface, #131b2e));
+    border: 1px solid color-mix(in srgb, var(--theme-primary, #00E5FF) 40%, transparent);
+    background: linear-gradient(135deg, color-mix(in srgb, var(--theme-primary, #00E5FF) 14%, var(--theme-surface, #131b2e)), var(--theme-surface, #131b2e) 85%);
+    box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5), 0 0 15px -3px color-mix(in srgb, var(--theme-primary, #00E5FF) 15%, transparent);
+}
+#discovery-continue-card:hover {
+    border-color: color-mix(in srgb, var(--theme-primary, #00E5FF) 60%, transparent);
 }
 
 /* Mobile Discovery Grid Refinements */

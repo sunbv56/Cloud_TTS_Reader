@@ -824,11 +824,14 @@ document.getElementById('discovery-clear-search')?.addEventListener('click', () 
 });
 document.getElementById('discovery-grid-view')?.addEventListener('click', () => setDiscoveryView('grid'));
 document.getElementById('discovery-list-view')?.addEventListener('click', () => setDiscoveryView('list'));
-document.getElementById('discovery-continue-btn')?.addEventListener('click', () => {
+const handleContinueListening = (e) => {
+    e?.stopPropagation?.();
     if (!STATE.currentBook) return;
     toggleDiscoveryMode(false);
     if (audio.paused) void togglePlayback();
-});
+};
+document.getElementById('discovery-continue-btn')?.addEventListener('click', handleContinueListening);
+document.getElementById('discovery-continue-card')?.addEventListener('click', handleContinueListening);
 // Default: mobile (<768px) → list view, tablet/desktop → grid view
 // Respects any explicit user preference that was already saved.
 const _savedView = localStorage.getItem(DISCOVERY_VIEW_STORAGE_KEY);
