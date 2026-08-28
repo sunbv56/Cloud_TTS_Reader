@@ -2185,6 +2185,8 @@ async function hydrateBookCover(bookId, elements, options = {}) {
         const parent = el.parentElement;
         if (parent) {
             parent.dataset.coverStatus = 'loaded';
+            const badge = parent.querySelector('.discovery-art-badge');
+            if (badge) badge.classList.add('hidden');
             const fallbackIcon = parent.querySelector('i.fa-book, i.fa-volume-up');
             if (fallbackIcon) fallbackIcon.remove();
         }
@@ -3892,9 +3894,15 @@ function updateLibraryHighlight() {
                 titleH3.classList.remove('text-white');
             }
             if (iconDiv) {
+                const isCoverLoaded = iconDiv.dataset.coverStatus === 'loaded' || !iconDiv.querySelector('img')?.classList.contains('hidden');
                 iconDiv.className = `discovery-book-art text-black flex items-center justify-center`;
                 const fallbackIcon = iconDiv.querySelector('i');
                 if (fallbackIcon) fallbackIcon.className = 'fas fa-volume-up text-2xl sm:text-3xl';
+                const badge = iconDiv.querySelector('.discovery-art-badge');
+                if (badge) {
+                    if (isCoverLoaded) badge.classList.add('hidden');
+                    else badge.classList.remove('hidden');
+                }
             }
             if (statusDiv) {
                 statusDiv.className = `text-xs text-primary/70 flex items-center gap-2 mt-1`;
@@ -3907,9 +3915,15 @@ function updateLibraryHighlight() {
                 titleH3.classList.add('text-white');
             }
             if (iconDiv) {
+                const isCoverLoaded = iconDiv.dataset.coverStatus === 'loaded' || !iconDiv.querySelector('img')?.classList.contains('hidden');
                 iconDiv.className = `discovery-book-art text-primary flex items-center justify-center`;
                 const fallbackIcon = iconDiv.querySelector('i');
                 if (fallbackIcon) fallbackIcon.className = 'fas fa-book text-2xl sm:text-3xl';
+                const badge = iconDiv.querySelector('.discovery-art-badge');
+                if (badge) {
+                    if (isCoverLoaded) badge.classList.add('hidden');
+                    else badge.classList.remove('hidden');
+                }
             }
             if (statusDiv) {
                 statusDiv.className = `text-xs text-slate-400 flex items-center gap-2 mt-1`;

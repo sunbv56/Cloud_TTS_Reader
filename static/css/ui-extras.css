@@ -468,6 +468,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     border-color: var(--theme-primary, #00E5FF);
     box-shadow: 0 10px 28px -4px rgba(0, 0, 0, 0.6), 0 0 22px color-mix(in srgb, var(--theme-primary, #00E5FF) 35%, transparent);
 }
+.discovery-book-art[data-cover-status="loaded"] .discovery-art-badge,
+.discovery-book-art:has(img:not(.hidden)) .discovery-art-badge,
+.discovery-book-art img:not(.hidden) ~ .discovery-art-badge {
+    display: none !important;
+}
 .discovery-book-art::after {
     content: '';
     position: absolute;
