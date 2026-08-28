@@ -133,7 +133,10 @@ export function applyLanguage(lang) {
     const langBtn = document.getElementById('lang-btn');
     if (langBtn) langBtn.textContent = lang === 'en' ? 'VI' : 'EN';
 
-    const activeThemeId = localStorage.getItem('reader-theme') || 'default';
+    let activeThemeId = 'default';
+    try {
+        activeThemeId = localStorage.getItem('reader-theme') || 'default';
+    } catch (_) {}
     if (THEMES_DATA[activeThemeId]) {
         const t = THEMES_DATA[activeThemeId];
         const nameEl = document.getElementById('current-theme-name');
@@ -150,11 +153,16 @@ if (typeof window !== 'undefined') {
 
 export function initI18n() {
     const langBtn = document.getElementById('lang-btn');
-    let currentLang = localStorage.getItem('ui-lang') || 'en';
+    let currentLang = 'en';
+    try {
+        currentLang = localStorage.getItem('ui-lang') || 'en';
+    } catch (_) {}
 
     langBtn?.addEventListener('click', () => {
         currentLang = currentLang === 'en' ? 'vi' : 'en';
-        localStorage.setItem('ui-lang', currentLang);
+        try {
+            localStorage.setItem('ui-lang', currentLang);
+        } catch (_) {}
         applyLanguage(currentLang);
     });
 

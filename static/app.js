@@ -58,7 +58,13 @@ let STATE = {
         })(),
         textColor: "default"
     },
-    theme: localStorage.getItem('reader-theme') || 'default',
+    theme: (function () {
+        try {
+            return localStorage.getItem('reader-theme') || 'default';
+        } catch (_) {
+            return 'default';
+        }
+    })(),
     isTransitioning: false,
     isSwitchingChapter: false,
     // MSE State
@@ -6446,6 +6452,14 @@ const THEMES_METADATA = {
         moodVi: 'Trang in tinh khôi',
         metaColor: '#F8FAFC',
         isLight: true
+    },
+    'e-ink': {
+        nameEn: 'E-Ink Monochrome',
+        nameVi: 'E-Ink Đơn Sắc',
+        moodEn: 'High Contrast & Anti-Glare',
+        moodVi: 'Tương phản cao · Chống lóa',
+        metaColor: '#0F1115',
+        isLight: false
     }
 };
 
@@ -6455,13 +6469,11 @@ function applyTheme(themeId) {
     const curThemeAttr = document.documentElement.getAttribute('data-theme') || 'default';
 
     const updateDomTheme = () => {
-        if (actualId === 'default') {
-            document.documentElement.removeAttribute('data-theme');
-        } else {
-            document.documentElement.setAttribute('data-theme', actualId);
-        }
+        document.documentElement.setAttribute('data-theme', actualId);
         STATE.theme = actualId;
-        localStorage.setItem('reader-theme', actualId);
+        try {
+            localStorage.setItem('reader-theme', actualId);
+        } catch (_) {}
 
         // Update meta theme-color
         const metaThemeColor = document.querySelector('meta[name="theme-color"]');
@@ -6475,7 +6487,10 @@ function applyTheme(themeId) {
         });
 
         // Update displayed name & mood
-        const lang = localStorage.getItem('ui-lang') || 'en';
+        let lang = 'en';
+        try {
+            lang = localStorage.getItem('ui-lang') || 'en';
+        } catch (_) {}
         const nameEl = document.getElementById('current-theme-name');
         if (nameEl) nameEl.textContent = lang === 'vi' ? theme.nameVi : theme.nameEn;
         const moodEl = document.getElementById('current-theme-mood');
@@ -6490,7 +6505,11 @@ function applyTheme(themeId) {
         return;
     }
 
-    safeViewTransition(updateDomTheme);
+    if (typeof safeViewTransition === 'function') {
+        safeViewTransition(updateDomTheme);
+    } else {
+        updateDomTheme();
+    }
 }
 
 window.addEventListener('themechange', (e) => {

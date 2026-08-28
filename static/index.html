@@ -5,6 +5,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Cloud TTS | Pro Reader Edition</title>
+    <!-- Early Theme Loader to prevent FOUC -->
+    <script>
+        (function () {
+            try {
+                var savedTheme = localStorage.getItem('reader-theme');
+                if (savedTheme) {
+                    document.documentElement.setAttribute('data-theme', savedTheme);
+                }
+            } catch (_) {}
+        })();
+    </script>
     <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
 
     <!-- PWA Config -->

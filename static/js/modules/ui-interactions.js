@@ -93,13 +93,25 @@ export function applyTheme(themeId) {
         el.classList.toggle('active', el.dataset.theme === actualId);
     });
 
-    const lang = localStorage.getItem('ui-lang') || 'en';
+    let lang = 'en';
+    try {
+        lang = localStorage.getItem('ui-lang') || 'en';
+    } catch (_) {}
     const nameEl = document.getElementById('current-theme-name');
     if (nameEl) nameEl.textContent = lang === 'vi' ? theme.nameVi : theme.nameEn;
     const moodEl = document.getElementById('current-theme-mood');
     if (moodEl) moodEl.textContent = lang === 'vi' ? theme.moodVi : theme.moodEn;
 
-    localStorage.setItem('reader-theme', actualId);
+    try {
+        localStorage.setItem('reader-theme', actualId);
+    } catch (e) {
+        console.warn('[Theme] Failed to persist theme to localStorage:', e);
+    }
+
+    if (typeof window !== 'undefined' && window.STATE) {
+        window.STATE.theme = actualId;
+    }
+
     window.dispatchEvent(new CustomEvent('themechange', { detail: { themeId: actualId, theme } }));
 }
 
@@ -195,9 +207,15 @@ export function initUIInteractions() {
         });
     });
 
-    const savedTheme = localStorage.getItem('reader-theme');
-    if (savedTheme && THEMES_DATA[savedTheme]) {
-        applyTheme(savedTheme);
+    try {
+        const savedTheme = localStorage.getItem('reader-theme');
+        if (savedTheme && THEMES_DATA[savedTheme]) {
+            applyTheme(savedTheme);
+        } else {
+            applyTheme('default');
+        }
+    } catch (_) {
+        applyTheme('default');
     }
 
     // Dictionary Panel handlers
