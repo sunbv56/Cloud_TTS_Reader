@@ -439,13 +439,34 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     clip-path: inset(0 0 15% 0);
     background: color-mix(in srgb, var(--theme-primary, #00E5FF) 18%, #101827);
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     justify-content: center;
-    padding-top: 1.25rem;
+    padding-top: 0;
+    padding-bottom: 1.25rem;
     will-change: clip-path, transform;
     /* Match card's rounded-3xl (1.5rem) top corners so art doesn't overflow card border-radius */
     border-top-left-radius: 1.5rem;
     border-top-right-radius: 1.5rem;
+}
+.discovery-art-badge {
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 1.15rem;
+    background: color-mix(in srgb, var(--theme-surface-high, #18243e) 70%, rgba(255, 255, 255, 0.08));
+    border: 1px solid color-mix(in srgb, var(--theme-primary, #00E5FF) 30%, rgba(255, 255, 255, 0.15));
+    box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.5), 0 0 16px -2px color-mix(in srgb, var(--theme-primary, #00E5FF) 22%, transparent);
+    backdrop-filter: blur(12px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+    position: relative;
+    z-index: 10;
+}
+.discovery-book-card:hover .discovery-art-badge {
+    transform: scale(1.08);
+    border-color: var(--theme-primary, #00E5FF);
+    box-shadow: 0 10px 28px -4px rgba(0, 0, 0, 0.6), 0 0 22px color-mix(in srgb, var(--theme-primary, #00E5FF) 35%, transparent);
 }
 .discovery-book-art::after {
     content: '';
@@ -553,10 +574,18 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     }
     .discovery-book-art {
         height: 65% !important;
-        padding-top: 0.75rem !important;
+        padding-top: 0 !important;
+        padding-bottom: 0.75rem !important;
+        align-items: center !important;
+        justify-content: center !important;
     }
-    .discovery-book-art i {
-        font-size: 1.5rem !important;
+    .discovery-art-badge {
+        width: 2.75rem !important;
+        height: 2.75rem !important;
+        border-radius: 0.85rem !important;
+    }
+    .discovery-art-badge i {
+        font-size: 1.25rem !important;
     }
     .discovery-book-content {
         padding: 0.65rem 0.75rem 0.75rem !important;
@@ -609,9 +638,18 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     margin: 0 !important;
     clip-path: none !important;
     padding-top: 0 !important;
+    padding-bottom: 0 !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
+}
+.discovery-list-view .discovery-art-badge {
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 0.85rem !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    border: none !important;
 }
 .discovery-list-view .discovery-book-art i {
     font-size: 1.5rem !important;

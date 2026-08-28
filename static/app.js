@@ -2845,7 +2845,9 @@ async function refreshLibrary() {
                 discCard.innerHTML = `
                     <div class="discovery-book-art ${isActive ? 'text-black' : 'text-primary'} flex items-center justify-center">
                         <img data-cover-image="${bookId}" class="hidden" alt="Bìa truyện ${data.title}">
-                        <i class="fas ${isActive ? 'fa-volume-up' : 'fa-book'} relative z-10 text-3xl"></i>
+                        <div class="discovery-art-badge">
+                            <i class="fas ${isActive ? 'fa-volume-up' : 'fa-book'} text-2xl sm:text-3xl"></i>
+                        </div>
                     </div>
                     <div class="discovery-book-content">
                         <div class="min-w-0 pr-11 sm:pr-14">
@@ -3892,7 +3894,7 @@ function updateLibraryHighlight() {
             if (iconDiv) {
                 iconDiv.className = `discovery-book-art text-black flex items-center justify-center`;
                 const fallbackIcon = iconDiv.querySelector('i');
-                if (fallbackIcon) fallbackIcon.className = 'fas fa-volume-up relative z-10 text-3xl';
+                if (fallbackIcon) fallbackIcon.className = 'fas fa-volume-up text-2xl sm:text-3xl';
             }
             if (statusDiv) {
                 statusDiv.className = `text-xs text-primary/70 flex items-center gap-2 mt-1`;
@@ -3907,7 +3909,7 @@ function updateLibraryHighlight() {
             if (iconDiv) {
                 iconDiv.className = `discovery-book-art text-primary flex items-center justify-center`;
                 const fallbackIcon = iconDiv.querySelector('i');
-                if (fallbackIcon) fallbackIcon.className = 'fas fa-book relative z-10 text-3xl';
+                if (fallbackIcon) fallbackIcon.className = 'fas fa-book text-2xl sm:text-3xl';
             }
             if (statusDiv) {
                 statusDiv.className = `text-xs text-slate-400 flex items-center gap-2 mt-1`;
