@@ -64,8 +64,19 @@
                     <button class="mpw-btn" id="mpw-next-btn" title="Chương kế" aria-label="Chương kế"><i class="fas fa-fast-forward"></i></button>
                 </div>
                 <div class="mpw-actions" aria-label="Tùy chọn trình phát">
-                    <button class="mpw-btn" id="mpw-collapse-btn" title="Thu gọn thành nút tròn" aria-label="Thu gọn trình phát"><i class="fas fa-compress-alt"></i></button>
-                    <button class="mpw-btn" id="mpw-pip-btn" title="Mở cửa sổ PiP" aria-label="Mở cửa sổ PiP" hidden><i class="fas fa-external-link-alt"></i></button>
+                    <button class="mpw-btn" id="mpw-collapse-btn" title="Thu gọn thành nút tròn" aria-label="Thu gọn trình phát">
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="3.5" y="6.5" width="17" height="11" rx="5.5" stroke="currentColor" stroke-width="2.2" />
+                            <circle cx="8" cy="12" r="2.2" fill="currentColor" />
+                            <line x1="12" y1="12" x2="16.5" y2="12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+                        </svg>
+                    </button>
+                    <button class="mpw-btn" id="mpw-pip-btn" title="Mở cửa sổ PiP" aria-label="Mở cửa sổ PiP" hidden>
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <rect x="2.5" y="4.5" width="19" height="15" rx="3" stroke="currentColor" stroke-width="2" stroke-opacity="0.8" />
+                            <rect x="11.5" y="10.5" width="8" height="7" rx="1.8" fill="currentColor" fill-opacity="0.3" stroke="currentColor" stroke-width="1.8" />
+                        </svg>
+                    </button>
                     <button class="mpw-btn" id="mpw-close-btn" title="Dừng và đóng" aria-label="Dừng và đóng"><i class="fas fa-times"></i></button>
                 </div>
                 <div class="mpw-progress-track"><div class="mpw-progress" id="mpw-progress"></div></div>
@@ -142,7 +153,11 @@
             const pipBtn = document.createElement('button');
             pipBtn.id = 'mpw-player-pip-btn';
             pipBtn.title = 'Picture-in-Picture (floating window)';
-            pipBtn.innerHTML = '<i class="fas fa-window-restore"></i>';
+            pipBtn.innerHTML = `
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="2.5" y="4.5" width="19" height="15" rx="3" stroke="currentColor" stroke-width="2" stroke-opacity="0.8" />
+                    <rect x="11.5" y="10.5" width="8" height="7" rx="1.8" fill="currentColor" fill-opacity="0.3" stroke="currentColor" stroke-width="1.8" />
+                </svg>`;
             pipBtn.addEventListener('click', () => {
                 openBestPiP().catch(err => console.error('[MPW] PiP failed:', err));
             });
