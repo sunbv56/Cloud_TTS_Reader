@@ -919,6 +919,47 @@ libraryClearSearchBtn?.addEventListener('click', () => {
     librarySearchInput.focus();
 });
 
+// ── TOC quick search (accent-insensitive) ───────────────────────────────────
+const tocSearchInput = document.getElementById('toc-search');
+const tocClearSearchBtn = document.getElementById('toc-clear-search');
+
+function applyTOCSearch() {
+    if (!tocSearchInput) return;
+    const rawVal = tocSearchInput.value.trim();
+    const query = removeVietnameseTones(rawVal.toLowerCase());
+    const tocList = document.getElementById('toc-list');
+    let visible = 0;
+
+    document.querySelectorAll('#toc-list > [data-chapter-title]').forEach(card => {
+        const titleData = card.dataset.chapterTitle || '';
+        const chapIdxStr = `${parseInt(card.dataset.chapterIndex, 10) + 1}`;
+        const hit = !query || titleData.includes(query) || chapIdxStr === query || chapIdxStr.includes(query);
+        card.style.display = hit ? '' : 'none';
+        if (hit) visible += 1;
+    });
+
+    if (tocClearSearchBtn) tocClearSearchBtn.hidden = !rawVal;
+    if (!tocList) return;
+
+    let emptyEl = tocList.querySelector('[data-toc-empty]');
+    if (!emptyEl && query) {
+        emptyEl = document.createElement('div');
+        emptyEl.dataset.tocEmpty = '';
+        emptyEl.className = 'text-center p-8 text-slate-500 italic text-sm';
+        emptyEl.textContent = 'Không tìm thấy chương phù hợp.';
+        tocList.appendChild(emptyEl);
+    }
+    if (emptyEl) emptyEl.classList.toggle('hidden', visible > 0 || !query);
+}
+
+tocSearchInput?.addEventListener('input', applyTOCSearch);
+tocClearSearchBtn?.addEventListener('click', () => {
+    if (!tocSearchInput) return;
+    tocSearchInput.value = '';
+    applyTOCSearch();
+    tocSearchInput.focus();
+});
+
 // --- Dictionary (Skip & Replace) ---
 const DICT_STORAGE_KEY = 'tts-skip-dictionary';
 
@@ -4146,7 +4187,7 @@ function renderTOC() {
 
     const isSelectMode = document.getElementById('toc-select-mode-btn')?.classList.contains('active');
 
-    if (!STATE.currentBook || !Array.isArray(STATE.currentBook.chapters)) {
+    if (!STATE.currentBook || !Array.isArray(STATE.currentBook.chapters) || STATE.currentBook.chapters.length === 0) {
         const empty = document.createElement('div');
         empty.className = 'text-center p-8 text-slate-500 italic text-sm';
         empty.innerHTML = '<i class="fas fa-list-ul text-2xl mb-3 opacity-40 block"></i>Mở một truyện từ Thư viện để xem mục lục.';
@@ -4158,7 +4199,16 @@ function renderTOC() {
         const div = document.createElement('div');
         const isActive = i === STATE.currentChapterIndex;
         div.id = `toc-item-${i}`;
-        div.className = `p-4 glass hover:bg-primary/10 cursor-pointer transition-colors flex items-center gap-3 ${isActive ? 'toc-active' : ''}`;
+        div.dataset.chapterIndex = i;
+        div.dataset.chapterTitle = removeVietnameseTones((chap.title || '').toLowerCase()) + ' ' + (chap.title || '').toLowerCase();
+        div.className = `toc-card p-3 glass cursor-pointer transition-all flex flex-col gap-1.5 ${isActive ? 'toc-active' : ''}`;
+
+        // Top Row: Checkbox / Index Badge / Status / Edit Button
+        const headerRow = document.createElement('div');
+        headerRow.className = 'flex items-center justify-between gap-2 min-w-0 pointer-events-none';
+
+        const leftGroup = document.createElement('div');
+        leftGroup.className = 'flex items-center gap-2 min-w-0 pointer-events-auto';
 
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
@@ -4167,18 +4217,27 @@ function renderTOC() {
         checkbox.onclick = (e) => e.stopPropagation();
         checkbox.onchange = () => updateDownloadBar();
 
-        const numSpan = document.createElement('span');
-        numSpan.className = 'text-primary font-bold shrink-0';
-        numSpan.innerText = i + 1;
+        const badge = document.createElement('span');
+        badge.className = `text-[11px] font-bold px-2 py-0.5 rounded-md shrink-0 transition-colors ${
+            isActive 
+                ? 'bg-primary text-black font-black shadow-sm' 
+                : 'bg-white/5 text-primary border border-primary/20'
+        }`;
+        badge.innerText = `#${i + 1}`;
 
-        const titleSpan = document.createElement('span');
-        titleSpan.className = 'truncate';
-        titleSpan.innerText = chap.title;
-        titleSpan.title = chap.title;
+        leftGroup.appendChild(checkbox);
+        leftGroup.appendChild(badge);
+
+        if (isActive) {
+            const activeBadge = document.createElement('span');
+            activeBadge.className = 'text-[10px] font-semibold text-emerald-400 flex items-center gap-1 shrink-0';
+            activeBadge.innerHTML = '<i class="fas fa-headphones text-[9px] animate-pulse"></i><span>Đang đọc</span>';
+            leftGroup.appendChild(activeBadge);
+        }
 
         const editBtn = document.createElement('button');
-        editBtn.className = `icon-btn ml-auto w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-primary hover:bg-white/10 transition-all ${isSelectMode ? 'hidden' : ''}`;
-        editBtn.innerHTML = '<i class="fas fa-pen text-xs"></i>';
+        editBtn.className = `icon-btn w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-primary hover:bg-white/10 transition-all pointer-events-auto shrink-0 ${isSelectMode ? 'hidden' : ''}`;
+        editBtn.innerHTML = '<i class="fas fa-pen text-[11px]"></i>';
         editBtn.title = 'Edit Chapter';
         editBtn.setAttribute('aria-label', `Sửa chương ${i + 1}`);
         editBtn.onclick = (e) => {
@@ -4186,10 +4245,19 @@ function renderTOC() {
             openEditChapterModal(i, editBtn);
         };
 
-        div.appendChild(checkbox);
-        div.appendChild(numSpan);
-        div.appendChild(titleSpan);
-        div.appendChild(editBtn);
+        headerRow.appendChild(leftGroup);
+        headerRow.appendChild(editBtn);
+
+        // Bottom Row: Full Width Multi-line Chapter Title
+        const titleDiv = document.createElement('div');
+        titleDiv.className = `toc-title-multiline text-xs sm:text-sm font-medium transition-colors ${
+            isActive ? 'text-white font-bold' : 'text-slate-200'
+        }`;
+        titleDiv.innerText = chap.title || `Chương ${i + 1}`;
+        titleDiv.title = chap.title || '';
+
+        div.appendChild(headerRow);
+        div.appendChild(titleDiv);
 
         div.onclick = async () => {
             const selectMode = document.getElementById('toc-select-mode-btn')?.classList.contains('active');
@@ -4203,6 +4271,9 @@ function renderTOC() {
         };
         tocList.appendChild(div);
     });
+
+    // Re-apply TOC search if query exists
+    applyTOCSearch();
 }
 
 function scrollTOCCurrentChapter() {
@@ -6403,78 +6474,78 @@ clearCacheBtn?.addEventListener('click', async () => {
     }
 });
 
-// --- Theme Management (UI/UX Pro Max) ---
+// --- Theme Management (Luxury Sovereign Edition) ---
 const THEMES_METADATA = {
     'default': {
-        nameEn: 'Cyber Obsidian',
-        nameVi: 'Cyber Obsidian',
-        moodEn: 'High Focus & Cyber',
-        moodVi: 'Tập trung cao độ',
-        metaColor: '#080d1a',
+        nameEn: 'Sovereign Obsidian',
+        nameVi: 'Sovereign Obsidian',
+        moodEn: 'Champagne Gold & High Focus',
+        moodVi: 'Vàng Champagne · Tập trung',
+        metaColor: '#080A0F',
         isLight: false
     },
     'warm-night': {
-        nameEn: 'Warm Amber Night',
-        nameVi: 'Đêm Hổ Phách',
-        moodEn: 'Blue-Light Filter & Bedtime',
-        moodVi: 'Chống mỏi mắt đêm',
-        metaColor: '#14100c',
+        nameEn: 'Cognac Amber Night',
+        nameVi: 'Đêm Hổ Phách Cognac',
+        moodEn: 'Amber Gold & Aged Leather',
+        moodVi: 'Hổ phách · Da thuộc trầm',
+        metaColor: '#0E0B08',
         isLight: false
     },
     'forest': {
-        nameEn: 'Emerald Zen',
-        nameVi: 'Ngọc Lục Bảo Zen',
-        moodEn: 'Visual Relaxation & Zen',
-        moodVi: 'Thư giãn thị giác',
-        metaColor: '#071510',
+        nameEn: 'Imperial Emerald Zen',
+        nameVi: 'Ngọc Lục Bảo Đế Vương',
+        moodEn: 'Imperial Jade & Deep Zen',
+        moodVi: 'Ngọc lục bảo đế vương',
+        metaColor: '#050F0C',
         isLight: false
     },
     'rose': {
-        nameEn: 'Sunset Velvet',
-        nameVi: 'Hoàng Hôn Velvet',
-        moodEn: 'Poetic & Atmospheric',
-        moodVi: 'Cảm xúc & Thơ mộng',
-        metaColor: '#150a14',
+        nameEn: 'Bordeaux Rose Gold',
+        nameVi: 'Vàng Hồng Bordeaux',
+        moodEn: 'Haute Rose & Vintage Velvet',
+        moodVi: 'Vàng hồng · Vang Bordeaux',
+        metaColor: '#0F070C',
         isLight: false
     },
     'ocean': {
-        nameEn: 'Nordic Ocean',
-        nameVi: 'Bắc Băng Dương',
-        moodEn: 'Mental Clarity & Serenity',
-        moodVi: 'Tĩnh tâm & Sáng suốt',
-        metaColor: '#07131e',
+        nameEn: 'Monaco Sapphire',
+        nameVi: 'Lam Ngọc Monaco',
+        moodEn: 'Royal Azure & Deep Serenity',
+        moodVi: 'Lam ngọc quý tộc',
+        metaColor: '#050C16',
         isLight: false
     },
     'mocha': {
-        nameEn: 'Royal Mocha',
-        nameVi: 'Cà Phê Mocha',
-        moodEn: 'Cozy & Warm Classic',
-        moodVi: 'Ấm cúng & Lắng đọng',
-        metaColor: '#16110e',
+        nameEn: 'Espresso Cashmere',
+        nameVi: 'Espresso Cashmere',
+        moodEn: 'Toffee Cashmere & Rich Roast',
+        moodVi: 'Lụa Cashmere · Cà phê đậm',
+        metaColor: '#0E0B09',
         isLight: false
     },
     'sepia': {
-        nameEn: 'Vintage Sepia',
-        nameVi: 'Giấy Cổ Sepia',
-        moodEn: 'Vintage Parchment',
-        moodVi: 'Giấy cổ hoài niệm',
-        metaColor: '#F7F2E7',
+        nameEn: 'Florentine Parchment',
+        nameVi: 'Giấy Cổ Florence',
+        moodEn: 'Florentine Bronze & Aged Vellum',
+        moodVi: 'Giấy ngà vellum Florence',
+        metaColor: '#F6F0E4',
         isLight: true
     },
     'paper': {
-        nameEn: 'Paper Minimalist',
-        nameVi: 'Trang Giấy Trắng',
-        moodEn: 'Crisp Daylight Print',
-        moodVi: 'Trang in tinh khôi',
+        nameEn: 'Swiss Haute Print',
+        nameVi: 'Ấn Phẩm Thụy Sĩ',
+        moodEn: 'Geneva Navy & Alabaster Silk',
+        moodVi: 'Ấn phẩm Thụy Sĩ · Men lam',
         metaColor: '#F8FAFC',
         isLight: true
     },
     'e-ink': {
-        nameEn: 'E-Ink Monochrome',
-        nameVi: 'E-Ink Đơn Sắc',
-        moodEn: 'High Contrast & Anti-Glare',
-        moodVi: 'Tương phản cao · Chống lóa',
-        metaColor: '#0F1115',
+        nameEn: 'Platinum Monolith',
+        nameVi: 'Bạch Kim Monolith',
+        moodEn: 'Frosted Platinum & Anti-Glare',
+        moodVi: 'Bạch kim chải xước · Chống lóa',
+        metaColor: '#07080A',
         isLight: false
     }
 };

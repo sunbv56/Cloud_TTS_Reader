@@ -1,164 +1,165 @@
-/* ===== THEME SYSTEM (UI/UX PRO MAX) ===== */
+/* ===== THEME SYSTEM (QUIET LUXURY & HAUTE MINIMALISM EDITION) ===== */
 :root {
-    --theme-primary: #00E5FF;
-    --theme-primary-dim: #0099b8;
-    --theme-bg: #080d1a;
-    --theme-surface: #0e172a;
-    --theme-surface-high: #18243e;
-    --theme-glass: rgba(14, 23, 42, 0.72);
-    --theme-glass-border: rgba(0, 229, 255, 0.16);
-    --theme-text: #F1F5F9;
-    --theme-text-reading: #CBD5E1;
-    --theme-text-muted: #64748B;
-    --theme-glow: rgba(0, 229, 255, 0.28);
+    --theme-primary: #C5A880;
+    --theme-primary-dim: #9E825C;
+    --theme-bg: #090B0E;
+    --theme-surface: #12151C;
+    --theme-surface-high: #1A1E28;
+    --theme-glass: rgba(18, 21, 28, 0.82);
+    --theme-glass-border: rgba(197, 168, 128, 0.16);
+    --theme-text: #F1F4F9;
+    --theme-text-reading: #D6DCE5;
+    --theme-text-muted: #8E9BAE;
+    --theme-glow: rgba(197, 168, 128, 0.15);
     --theme-is-light: 0;
-    
+
     /* Custom Typography Defaults */
     --reader-font-size: 1.25rem;
     --reader-text-color: var(--theme-text-reading);
 }
 
-/* 1. Theme: Cyber Obsidian (Default Dark) */
-[data-theme="default"], :root:not([data-theme]) {
-    --theme-primary: #00E5FF;
-    --theme-primary-dim: #0099b8;
-    --theme-bg: #080d1a;
-    --theme-surface: #0e172a;
-    --theme-surface-high: #18243e;
-    --theme-glass: rgba(14, 23, 42, 0.72);
-    --theme-glass-border: rgba(0, 229, 255, 0.16);
-    --theme-text: #F1F5F9;
-    --theme-text-reading: #CBD5E1;
-    --theme-text-muted: #64748B;
-    --theme-glow: rgba(0, 229, 255, 0.28);
+/* 1. Theme: Obsidian Champagne (Brut Champagne Gold & Deep Noir Obsidian) */
+[data-theme="default"],
+:root:not([data-theme]) {
+    --theme-primary: #C5A880;
+    --theme-primary-dim: #9E825C;
+    --theme-bg: #090B0E;
+    --theme-surface: #12151C;
+    --theme-surface-high: #1A1E28;
+    --theme-glass: rgba(18, 21, 28, 0.82);
+    --theme-glass-border: rgba(197, 168, 128, 0.16);
+    --theme-text: #F1F4F9;
+    --theme-text-reading: #D6DCE5;
+    --theme-text-muted: #8E9BAE;
+    --theme-glow: rgba(197, 168, 128, 0.15);
     --theme-is-light: 0;
 }
 
-/* 2. Theme: Warm Amber Night (Warm Tone Dark - Blue-light Filter) */
+/* 2. Theme: Warm Espresso & Cashmere (Dark Roasted Espresso & Soft Cashmere) */
 [data-theme="warm-night"] {
-    --theme-primary: #F59E0B;
-    --theme-primary-dim: #c27800;
-    --theme-bg: #14100c;
-    --theme-surface: #1f1812;
-    --theme-surface-high: #2d231a;
-    --theme-glass: rgba(31, 24, 18, 0.78);
-    --theme-glass-border: rgba(245, 158, 11, 0.2);
-    --theme-text: #FEF3C7;
-    --theme-text-reading: #FDE68A;
-    --theme-text-muted: #BFA086;
-    --theme-glow: rgba(245, 158, 11, 0.28);
+    --theme-primary: #BFA58E;
+    --theme-primary-dim: #9C7F67;
+    --theme-bg: #0F0D0C;
+    --theme-surface: #1A1715;
+    --theme-surface-high: #26221F;
+    --theme-glass: rgba(26, 23, 21, 0.84);
+    --theme-glass-border: rgba(191, 165, 142, 0.16);
+    --theme-text: #F7F3EE;
+    --theme-text-reading: #E6DDD5;
+    --theme-text-muted: #A89B91;
+    --theme-glow: rgba(191, 165, 142, 0.15);
     --theme-is-light: 0;
 }
 
-/* 3. Theme: Emerald Zen (Forest Dark - Eye Relief) */
+/* 3. Theme: Muted Pine & Sage (Deep Nordic Pine & Muted Sage Celadon) */
 [data-theme="forest"] {
-    --theme-primary: #10B981;
-    --theme-primary-dim: #059669;
-    --theme-bg: #071510;
-    --theme-surface: #0d2018;
-    --theme-surface-high: #152e23;
-    --theme-glass: rgba(13, 32, 24, 0.75);
-    --theme-glass-border: rgba(16, 185, 129, 0.2);
-    --theme-text: #ECFDF5;
-    --theme-text-reading: #D1FAE5;
-    --theme-text-muted: #6EE7B7;
-    --theme-glow: rgba(16, 185, 129, 0.28);
+    --theme-primary: #7FA99B;
+    --theme-primary-dim: #5C8577;
+    --theme-bg: #070B09;
+    --theme-surface: #101814;
+    --theme-surface-high: #192520;
+    --theme-glass: rgba(16, 24, 20, 0.82);
+    --theme-glass-border: rgba(127, 169, 155, 0.16);
+    --theme-text: #F0F5F2;
+    --theme-text-reading: #D5E2DC;
+    --theme-text-muted: #8AA398;
+    --theme-glow: rgba(127, 169, 155, 0.15);
     --theme-is-light: 0;
 }
 
-/* 4. Theme: Sunset Velvet (Rose Dark - Atmospheric & Poetic) */
+/* 4. Theme: Velvet Rosé & Noir (Vintage Muted Rosé & Deep Bordeaux Velvet) */
 [data-theme="rose"] {
-    --theme-primary: #EC4899;
-    --theme-primary-dim: #db2777;
-    --theme-bg: #150a14;
-    --theme-surface: #221020;
-    --theme-surface-high: #321830;
-    --theme-glass: rgba(34, 16, 32, 0.75);
-    --theme-glass-border: rgba(236, 72, 153, 0.2);
-    --theme-text: #FDF2F8;
-    --theme-text-reading: #FCE7F3;
-    --theme-text-muted: #F472B6;
-    --theme-glow: rgba(236, 72, 153, 0.28);
+    --theme-primary: #C48B9F;
+    --theme-primary-dim: #A0677C;
+    --theme-bg: #0F0A0D;
+    --theme-surface: #1A1217;
+    --theme-surface-high: #271C23;
+    --theme-glass: rgba(26, 18, 23, 0.82);
+    --theme-glass-border: rgba(196, 139, 159, 0.16);
+    --theme-text: #F8F2F5;
+    --theme-text-reading: #EADDE2;
+    --theme-text-muted: #A8909A;
+    --theme-glow: rgba(196, 139, 159, 0.15);
     --theme-is-light: 0;
 }
 
-/* 5. Theme: Nordic Ocean (Deep Sea Dark - Serenity & Focus) */
+/* 5. Theme: Midnight Navy Mist (Arctic Midnight Abyss & Steel Blue Mist) */
 [data-theme="ocean"] {
-    --theme-primary: #38BDF8;
-    --theme-primary-dim: #0284c7;
-    --theme-bg: #07131e;
-    --theme-surface: #0c1d2e;
-    --theme-surface-high: #142c43;
-    --theme-glass: rgba(12, 29, 46, 0.75);
-    --theme-glass-border: rgba(56, 189, 248, 0.2);
-    --theme-text: #F0F9FF;
-    --theme-text-reading: #BAE6FD;
-    --theme-text-muted: #7DD3FC;
-    --theme-glow: rgba(56, 189, 248, 0.28);
+    --theme-primary: #7EA0C4;
+    --theme-primary-dim: #597D9F;
+    --theme-bg: #060A10;
+    --theme-surface: #0F1622;
+    --theme-surface-high: #172233;
+    --theme-glass: rgba(15, 22, 34, 0.82);
+    --theme-glass-border: rgba(126, 160, 196, 0.16);
+    --theme-text: #F0F4F9;
+    --theme-text-reading: #D3DEEB;
+    --theme-text-muted: #8CA0B8;
+    --theme-glow: rgba(126, 160, 196, 0.15);
     --theme-is-light: 0;
 }
 
-/* 6. Theme: Royal Mocha (Warm Cozy Classic - Coffee Aroma) */
+/* 6. Theme: Smoked Slate & Titanium (Muted Brushed Titanium & Charcoal Slate) */
 [data-theme="mocha"] {
-    --theme-primary: #D4A574;
-    --theme-primary-dim: #b8895a;
-    --theme-bg: #16110e;
-    --theme-surface: #221a15;
-    --theme-surface-high: #30251f;
-    --theme-glass: rgba(34, 26, 21, 0.78);
-    --theme-glass-border: rgba(212, 165, 116, 0.2);
-    --theme-text: #FAF0CA;
-    --theme-text-reading: #EDE0D4;
-    --theme-text-muted: #B59984;
-    --theme-glow: rgba(212, 165, 116, 0.28);
-    --theme-is-light: 0;
-}
-
-/* 7. Theme: Vintage Sepia (Warm Light Mode - Vintage Parchment) */
-[data-theme="sepia"] {
-    --theme-primary: #92400E;
-    --theme-primary-dim: #78350F;
-    --theme-bg: #F7F2E7;
-    --theme-surface: #EDE5D3;
-    --theme-surface-high: #DFD4BE;
-    --theme-glass: rgba(247, 242, 231, 0.9);
-    --theme-glass-border: rgba(146, 64, 14, 0.22);
-    --theme-text: #1C130B;
-    --theme-text-reading: #2E1E0F;
-    --theme-text-muted: #6B533E;
-    --theme-glow: rgba(146, 64, 14, 0.25);
-    --theme-is-light: 1;
-}
-
-/* 8. Theme: Paper Minimalist (Crisp Daylight Light Mode - High Print Contrast) */
-[data-theme="paper"] {
-    --theme-primary: #2563EB;
-    --theme-primary-dim: #1D4ED8;
-    --theme-bg: #F8FAFC;
-    --theme-surface: #F1F5F9;
-    --theme-surface-high: #E2E8F0;
-    --theme-glass: rgba(248, 250, 252, 0.94);
-    --theme-glass-border: rgba(37, 99, 235, 0.2);
-    --theme-text: #020617;
-    --theme-text-reading: #0F172A;
-    --theme-text-muted: #475569;
-    --theme-glow: rgba(37, 99, 235, 0.25);
-    --theme-is-light: 1;
-}
-
-/* 9. Theme: E-Ink Monochrome (High Contrast Reading - Kindle Style) */
-[data-theme="e-ink"] {
     --theme-primary: #94A3B8;
     --theme-primary-dim: #64748B;
     --theme-bg: #0B0D11;
-    --theme-surface: #14171E;
-    --theme-surface-high: #20242E;
-    --theme-glass: rgba(20, 23, 30, 0.88);
-    --theme-glass-border: rgba(255, 255, 255, 0.16);
-    --theme-text: #FFFFFF;
-    --theme-text-reading: #E2E8F0;
-    --theme-text-muted: #64748B;
-    --theme-glow: rgba(255, 255, 255, 0.22);
+    --theme-surface: #14171F;
+    --theme-surface-high: #1E232E;
+    --theme-glass: rgba(20, 23, 31, 0.84);
+    --theme-glass-border: rgba(148, 163, 184, 0.16);
+    --theme-text: #F8FAFC;
+    --theme-text-reading: #CBD5E1;
+    --theme-text-muted: #94A3B8;
+    --theme-glow: rgba(148, 163, 184, 0.15);
+    --theme-is-light: 0;
+}
+
+/* 7. Theme: Editorial Ivory (Fine Art Vellum Ivory & Soft Charcoal Ink - Light) */
+[data-theme="sepia"] {
+    --theme-primary: #786D5F;
+    --theme-primary-dim: #574E43;
+    --theme-bg: #F7F5F0;
+    --theme-surface: #EDE9E1;
+    --theme-surface-high: #E2DDD3;
+    --theme-glass: rgba(247, 245, 240, 0.94);
+    --theme-glass-border: rgba(120, 109, 95, 0.18);
+    --theme-text: #1C1A17;
+    --theme-text-reading: #23211E;
+    --theme-text-muted: #696259;
+    --theme-glow: rgba(120, 109, 95, 0.12);
+    --theme-is-light: 1;
+}
+
+/* 8. Theme: Swiss Studio Minimal (Alabaster Ceramic & Deep Slate Studio - Light) */
+[data-theme="paper"] {
+    --theme-primary: #334155;
+    --theme-primary-dim: #1E293B;
+    --theme-bg: #F9FAFB;
+    --theme-surface: #F0F3F6;
+    --theme-surface-high: #E4E9EF;
+    --theme-glass: rgba(249, 250, 251, 0.95);
+    --theme-glass-border: rgba(51, 65, 85, 0.15);
+    --theme-text: #090D16;
+    --theme-text-reading: #0F172A;
+    --theme-text-muted: #475569;
+    --theme-glow: rgba(51, 65, 85, 0.12);
+    --theme-is-light: 1;
+}
+
+/* 9. Theme: Monolith Matte (Anti-Glare Dark Carbon & Muted Platinum) */
+[data-theme="e-ink"] {
+    --theme-primary: #D1D5DB;
+    --theme-primary-dim: #9CA3AF;
+    --theme-bg: #080808;
+    --theme-surface: #121212;
+    --theme-surface-high: #1C1C1C;
+    --theme-glass: rgba(18, 18, 18, 0.90);
+    --theme-glass-border: rgba(209, 213, 219, 0.15);
+    --theme-text: #F3F4F6;
+    --theme-text-reading: #E5E7EB;
+    --theme-text-muted: #9CA3AF;
+    --theme-glow: rgba(209, 213, 219, 0.12);
     --theme-is-light: 0;
 }
 
@@ -281,14 +282,14 @@
 }
 
 [data-theme] .chunk-active {
-    background-color: color-mix(in srgb, var(--theme-primary) 14%, transparent) !important;
+    background-color: color-mix(in srgb, var(--theme-primary) 11%, transparent) !important;
     background-image: none !important;
-    border-left-color: var(--theme-primary) !important;
+    border-left: 3px solid var(--theme-primary) !important;
     color: var(--theme-text) !important;
-    box-shadow: 0 0 25px color-mix(in srgb, var(--theme-primary) 16%, transparent) !important;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18) !important;
     transform: none !important;
-    filter: brightness(1.06);
-    text-shadow: 0 0 1px color-mix(in srgb, var(--theme-text), transparent 50%);
+    filter: none;
+    text-shadow: none;
 }
 
 /* Glass Panels, Cards & Borders */
@@ -482,8 +483,20 @@
 }
 
 /* Theme transition */
-.glass, .btn-primary, .chunk-text, .chunk-active, .sidebar-item,
-nav, header, footer, section, aside, select, input[type="range"], input[type="text"], textarea {
+.glass,
+.btn-primary,
+.chunk-text,
+.chunk-active,
+.sidebar-item,
+nav,
+header,
+footer,
+section,
+aside,
+select,
+input[type="range"],
+input[type="text"],
+textarea {
     transition: background-color 0.4s ease, border-color 0.4s ease, color 0.4s ease, box-shadow 0.4s ease;
 }
 
@@ -496,6 +509,7 @@ nav, header, footer, section, aside, select, input[type="range"], input[type="te
     padding-top: 0;
     padding-bottom: 0;
 }
+
 #theme-picker-panel.open,
 #theme-picker-panel.active {
     max-height: 620px;
@@ -520,15 +534,18 @@ nav, header, footer, section, aside, select, input[type="range"], input[type="te
     transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     overflow: hidden;
 }
+
 .theme-card:hover {
     background: rgba(255, 255, 255, 0.07);
     border-color: color-mix(in srgb, var(--card-accent, #00E5FF) 45%, rgba(255, 255, 255, 0.2));
     transform: translateY(-2px);
     box-shadow: 0 6px 20px -4px rgba(0, 0, 0, 0.35), 0 0 14px -2px color-mix(in srgb, var(--card-accent, #00E5FF) 25%, transparent);
 }
+
 .theme-card:active {
     transform: translateY(0) scale(0.98);
 }
+
 .theme-card.active {
     background: color-mix(in srgb, var(--card-accent, #00E5FF) 10%, rgba(255, 255, 255, 0.05));
     border-color: var(--card-accent, #00E5FF);
@@ -547,11 +564,13 @@ nav, header, footer, section, aside, select, input[type="range"], input[type="te
     border: 1px solid rgba(255, 255, 255, 0.12);
     box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.15), 0 2px 8px rgba(0, 0, 0, 0.25);
 }
+
 .theme-card-icon {
     font-size: 0.95rem;
     filter: drop-shadow(0 0 6px currentColor);
     transition: transform 0.25s ease;
 }
+
 .theme-card:hover .theme-card-icon {
     transform: scale(1.15) rotate(5deg);
 }
@@ -563,6 +582,7 @@ nav, header, footer, section, aside, select, input[type="range"], input[type="te
     flex: 1;
     gap: 0.1rem;
 }
+
 .theme-card-title {
     font-size: 0.76rem;
     font-weight: 700;
@@ -573,9 +593,11 @@ nav, header, footer, section, aside, select, input[type="range"], input[type="te
     letter-spacing: -0.01em;
     transition: color 0.2s ease;
 }
+
 .theme-card.active .theme-card-title {
     color: var(--card-accent, #00E5FF);
 }
+
 .theme-card-mood {
     font-size: 0.62rem;
     line-height: 1.2;
@@ -594,6 +616,7 @@ nav, header, footer, section, aside, select, input[type="range"], input[type="te
     border: 1px solid rgba(255, 255, 255, 0.06);
     flex-shrink: 0;
 }
+
 .theme-card-check {
     position: absolute;
     top: 0.35rem;
@@ -613,6 +636,7 @@ nav, header, footer, section, aside, select, input[type="range"], input[type="te
     transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     box-shadow: 0 0 8px var(--card-accent, #00E5FF);
 }
+
 .theme-card.active .theme-card-check {
     opacity: 1;
     transform: scale(1);
@@ -623,10 +647,12 @@ nav, header, footer, section, aside, select, input[type="range"], input[type="te
     background: rgba(0, 0, 0, 0.03);
     border-color: rgba(0, 0, 0, 0.08);
 }
+
 [data-theme="sepia"] .theme-card:hover,
 [data-theme="paper"] .theme-card:hover {
     background: rgba(0, 0, 0, 0.06);
 }
+
 [data-theme="sepia"] .theme-mode-badge,
 [data-theme="paper"] .theme-mode-badge {
     background: rgba(0, 0, 0, 0.06);
