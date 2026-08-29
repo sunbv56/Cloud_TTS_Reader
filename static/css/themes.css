@@ -1,16 +1,16 @@
-/* ===== THEME SYSTEM (QUIET LUXURY & HAUTE MINIMALISM EDITION) ===== */
+/* ===== THEME SYSTEM (AUREUM CODEX - NOBLE WOODS & IMPERIAL GOLD EDITION) ===== */
 :root {
-    --theme-primary: #C5A880;
-    --theme-primary-dim: #9E825C;
-    --theme-bg: #090B0E;
-    --theme-surface: #12151C;
-    --theme-surface-high: #1A1E28;
-    --theme-glass: rgba(18, 21, 28, 0.82);
-    --theme-glass-border: rgba(197, 168, 128, 0.16);
-    --theme-text: #F1F4F9;
-    --theme-text-reading: #D6DCE5;
-    --theme-text-muted: #8E9BAE;
-    --theme-glow: rgba(197, 168, 128, 0.15);
+    --theme-primary: #D4AF37;
+    --theme-primary-dim: #AA8728;
+    --theme-bg: #0C0A09;
+    --theme-surface: #17130F;
+    --theme-surface-high: #241D17;
+    --theme-glass: rgba(23, 19, 15, 0.85);
+    --theme-glass-border: rgba(212, 175, 55, 0.20);
+    --theme-text: #F5EFEB;
+    --theme-text-reading: #EADBCE;
+    --theme-text-muted: #A89A88;
+    --theme-glow: rgba(212, 175, 55, 0.18);
     --theme-is-light: 0;
 
     /* Custom Typography Defaults */
@@ -18,148 +18,148 @@
     --reader-text-color: var(--theme-text-reading);
 }
 
-/* 1. Theme: Obsidian Champagne (Brut Champagne Gold & Deep Noir Obsidian) */
+/* 1. Theme: Imperial Sovereign Gold (Obsidian Ebony & 24K Sovereign Gold) */
 [data-theme="default"],
 :root:not([data-theme]) {
-    --theme-primary: #C5A880;
-    --theme-primary-dim: #9E825C;
-    --theme-bg: #090B0E;
-    --theme-surface: #12151C;
-    --theme-surface-high: #1A1E28;
-    --theme-glass: rgba(18, 21, 28, 0.82);
-    --theme-glass-border: rgba(197, 168, 128, 0.16);
-    --theme-text: #F1F4F9;
-    --theme-text-reading: #D6DCE5;
-    --theme-text-muted: #8E9BAE;
-    --theme-glow: rgba(197, 168, 128, 0.15);
+    --theme-primary: #D4AF37;
+    --theme-primary-dim: #AA8728;
+    --theme-bg: #0C0A09;
+    --theme-surface: #17130F;
+    --theme-surface-high: #241D17;
+    --theme-glass: rgba(23, 19, 15, 0.85);
+    --theme-glass-border: rgba(212, 175, 55, 0.20);
+    --theme-text: #F5EFEB;
+    --theme-text-reading: #EADBCE;
+    --theme-text-muted: #A89A88;
+    --theme-glow: rgba(212, 175, 55, 0.18);
     --theme-is-light: 0;
 }
 
-/* 2. Theme: Warm Espresso & Cashmere (Dark Roasted Espresso & Soft Cashmere) */
+/* 2. Theme: Espresso & Warm Cashmere (Dark Roasted Espresso & Toffee Cashmere) */
 [data-theme="warm-night"] {
-    --theme-primary: #BFA58E;
-    --theme-primary-dim: #9C7F67;
-    --theme-bg: #0F0D0C;
-    --theme-surface: #1A1715;
-    --theme-surface-high: #26221F;
-    --theme-glass: rgba(26, 23, 21, 0.84);
-    --theme-glass-border: rgba(191, 165, 142, 0.16);
-    --theme-text: #F7F3EE;
-    --theme-text-reading: #E6DDD5;
-    --theme-text-muted: #A89B91;
-    --theme-glow: rgba(191, 165, 142, 0.15);
+    --theme-primary: #C8A27A;
+    --theme-primary-dim: #9E7953;
+    --theme-bg: #0F0C0A;
+    --theme-surface: #1A1512;
+    --theme-surface-high: #27201C;
+    --theme-glass: rgba(26, 21, 18, 0.85);
+    --theme-glass-border: rgba(200, 162, 122, 0.18);
+    --theme-text: #F7F2EC;
+    --theme-text-reading: #EAE0D5;
+    --theme-text-muted: #AC9E91;
+    --theme-glow: rgba(200, 162, 122, 0.15);
     --theme-is-light: 0;
 }
 
-/* 3. Theme: Muted Pine & Sage (Deep Nordic Pine & Muted Sage Celadon) */
+/* 3. Theme: Aged Bourbon & Smoked Oak (Aged Oak Cask & Amber Bourbon) */
 [data-theme="forest"] {
-    --theme-primary: #7FA99B;
-    --theme-primary-dim: #5C8577;
-    --theme-bg: #070B09;
-    --theme-surface: #101814;
-    --theme-surface-high: #192520;
-    --theme-glass: rgba(16, 24, 20, 0.82);
-    --theme-glass-border: rgba(127, 169, 155, 0.16);
-    --theme-text: #F0F5F2;
-    --theme-text-reading: #D5E2DC;
-    --theme-text-muted: #8AA398;
-    --theme-glow: rgba(127, 169, 155, 0.15);
+    --theme-primary: #D97706;
+    --theme-primary-dim: #B45309;
+    --theme-bg: #0D0907;
+    --theme-surface: #19120D;
+    --theme-surface-high: #281C14;
+    --theme-glass: rgba(25, 18, 13, 0.86);
+    --theme-glass-border: rgba(217, 119, 6, 0.20);
+    --theme-text: #FEF3C7;
+    --theme-text-reading: #FDE68A;
+    --theme-text-muted: #B88746;
+    --theme-glow: rgba(217, 119, 6, 0.18);
     --theme-is-light: 0;
 }
 
-/* 4. Theme: Velvet Rosé & Noir (Vintage Muted Rosé & Deep Bordeaux Velvet) */
+/* 4. Theme: Royal Dark Walnut & Bronze (Noble Walnut Wood & Antique Bronze) */
 [data-theme="rose"] {
-    --theme-primary: #C48B9F;
-    --theme-primary-dim: #A0677C;
-    --theme-bg: #0F0A0D;
-    --theme-surface: #1A1217;
-    --theme-surface-high: #271C23;
-    --theme-glass: rgba(26, 18, 23, 0.82);
-    --theme-glass-border: rgba(196, 139, 159, 0.16);
-    --theme-text: #F8F2F5;
-    --theme-text-reading: #EADDE2;
-    --theme-text-muted: #A8909A;
-    --theme-glow: rgba(196, 139, 159, 0.15);
+    --theme-primary: #CD7F32;
+    --theme-primary-dim: #A66324;
+    --theme-bg: #0C0A09;
+    --theme-surface: #171412;
+    --theme-surface-high: #261F1A;
+    --theme-glass: rgba(23, 20, 18, 0.86);
+    --theme-glass-border: rgba(205, 127, 50, 0.20);
+    --theme-text: #F8F3ED;
+    --theme-text-reading: #E8DDD2;
+    --theme-text-muted: #A89584;
+    --theme-glow: rgba(205, 127, 50, 0.16);
     --theme-is-light: 0;
 }
 
-/* 5. Theme: Midnight Navy Mist (Arctic Midnight Abyss & Steel Blue Mist) */
+/* 5. Theme: Cognac Amber & Havana Leather (Aged Havana Leather & Honey Cognac) */
 [data-theme="ocean"] {
-    --theme-primary: #7EA0C4;
-    --theme-primary-dim: #597D9F;
-    --theme-bg: #060A10;
-    --theme-surface: #0F1622;
-    --theme-surface-high: #172233;
-    --theme-glass: rgba(15, 22, 34, 0.82);
-    --theme-glass-border: rgba(126, 160, 196, 0.16);
-    --theme-text: #F0F4F9;
-    --theme-text-reading: #D3DEEB;
-    --theme-text-muted: #8CA0B8;
-    --theme-glow: rgba(126, 160, 196, 0.15);
+    --theme-primary: #E59838;
+    --theme-primary-dim: #BF7519;
+    --theme-bg: #100B08;
+    --theme-surface: #1C130E;
+    --theme-surface-high: #2A1D15;
+    --theme-glass: rgba(28, 19, 14, 0.85);
+    --theme-glass-border: rgba(229, 152, 56, 0.20);
+    --theme-text: #FFF7ED;
+    --theme-text-reading: #F7DFC1;
+    --theme-text-muted: #BA9675;
+    --theme-glow: rgba(229, 152, 56, 0.18);
     --theme-is-light: 0;
 }
 
-/* 6. Theme: Smoked Slate & Titanium (Muted Brushed Titanium & Charcoal Slate) */
+/* 6. Theme: Sahara Sand Gold & Dunes (Desert Midnight & Warm Sahara Dunes) */
 [data-theme="mocha"] {
-    --theme-primary: #94A3B8;
-    --theme-primary-dim: #64748B;
-    --theme-bg: #0B0D11;
-    --theme-surface: #14171F;
-    --theme-surface-high: #1E232E;
-    --theme-glass: rgba(20, 23, 31, 0.84);
-    --theme-glass-border: rgba(148, 163, 184, 0.16);
-    --theme-text: #F8FAFC;
-    --theme-text-reading: #CBD5E1;
-    --theme-text-muted: #94A3B8;
-    --theme-glow: rgba(148, 163, 184, 0.15);
+    --theme-primary: #D1A766;
+    --theme-primary-dim: #A88144;
+    --theme-bg: #0E0C0A;
+    --theme-surface: #181512;
+    --theme-surface-high: #26211C;
+    --theme-glass: rgba(24, 21, 18, 0.85);
+    --theme-glass-border: rgba(209, 167, 102, 0.18);
+    --theme-text: #FBF6EF;
+    --theme-text-reading: #EFE5D5;
+    --theme-text-muted: #B0A08B;
+    --theme-glow: rgba(209, 167, 102, 0.15);
     --theme-is-light: 0;
 }
 
-/* 7. Theme: Editorial Ivory (Fine Art Vellum Ivory & Soft Charcoal Ink - Light) */
+/* 7. Theme: Florentine Antique Sepia (Dark Renaissance Leather & Terracotta Bronze) */
 [data-theme="sepia"] {
-    --theme-primary: #786D5F;
-    --theme-primary-dim: #574E43;
-    --theme-bg: #F7F5F0;
-    --theme-surface: #EDE9E1;
-    --theme-surface-high: #E2DDD3;
-    --theme-glass: rgba(247, 245, 240, 0.94);
-    --theme-glass-border: rgba(120, 109, 95, 0.18);
-    --theme-text: #1C1A17;
-    --theme-text-reading: #23211E;
-    --theme-text-muted: #696259;
-    --theme-glow: rgba(120, 109, 95, 0.12);
-    --theme-is-light: 1;
+    --theme-primary: #B47E43;
+    --theme-primary-dim: #8E5D2A;
+    --theme-bg: #14100C;
+    --theme-surface: #201A14;
+    --theme-surface-high: #2F261E;
+    --theme-glass: rgba(32, 26, 20, 0.88);
+    --theme-glass-border: rgba(180, 126, 67, 0.22);
+    --theme-text: #F8F1E7;
+    --theme-text-reading: #EADBCE;
+    --theme-text-muted: #A8937E;
+    --theme-glow: rgba(180, 126, 67, 0.18);
+    --theme-is-light: 0;
 }
 
-/* 8. Theme: Swiss Studio Minimal (Alabaster Ceramic & Deep Slate Studio - Light) */
+/* 8. Theme: Antique Honey & Sandalwood (Deep Sandalwood & Imperial Honey Gold) */
 [data-theme="paper"] {
-    --theme-primary: #334155;
-    --theme-primary-dim: #1E293B;
-    --theme-bg: #F9FAFB;
-    --theme-surface: #F0F3F6;
-    --theme-surface-high: #E4E9EF;
-    --theme-glass: rgba(249, 250, 251, 0.95);
-    --theme-glass-border: rgba(51, 65, 85, 0.15);
-    --theme-text: #090D16;
-    --theme-text-reading: #0F172A;
-    --theme-text-muted: #475569;
-    --theme-glow: rgba(51, 65, 85, 0.12);
-    --theme-is-light: 1;
+    --theme-primary: #E0A946;
+    --theme-primary-dim: #B88325;
+    --theme-bg: #0B0806;
+    --theme-surface: #17110C;
+    --theme-surface-high: #251B14;
+    --theme-glass: rgba(23, 17, 12, 0.86);
+    --theme-glass-border: rgba(224, 169, 70, 0.20);
+    --theme-text: #FAF3E6;
+    --theme-text-reading: #F3E7D3;
+    --theme-text-muted: #B39B7C;
+    --theme-glow: rgba(224, 169, 70, 0.18);
+    --theme-is-light: 0;
 }
 
-/* 9. Theme: Monolith Matte (Anti-Glare Dark Carbon & Muted Platinum) */
+/* 9. Theme: Champagne Brut & Onyx Noir (Noir Onyx & Polished Champagne Brut) */
 [data-theme="e-ink"] {
-    --theme-primary: #D1D5DB;
-    --theme-primary-dim: #9CA3AF;
-    --theme-bg: #080808;
-    --theme-surface: #121212;
-    --theme-surface-high: #1C1C1C;
-    --theme-glass: rgba(18, 18, 18, 0.90);
-    --theme-glass-border: rgba(209, 213, 219, 0.15);
-    --theme-text: #F3F4F6;
-    --theme-text-reading: #E5E7EB;
-    --theme-text-muted: #9CA3AF;
-    --theme-glow: rgba(209, 213, 219, 0.12);
+    --theme-primary: #E5C378;
+    --theme-primary-dim: #BA984E;
+    --theme-bg: #0A0B0E;
+    --theme-surface: #141720;
+    --theme-surface-high: #1E2230;
+    --theme-glass: rgba(20, 23, 32, 0.88);
+    --theme-glass-border: rgba(229, 195, 120, 0.20);
+    --theme-text: #F8F5EE;
+    --theme-text-reading: #EDE4D0;
+    --theme-text-muted: #A39B8B;
+    --theme-glow: rgba(229, 195, 120, 0.16);
     --theme-is-light: 0;
 }
 

@@ -4,75 +4,75 @@
 
 export const THEMES_DATA = {
     'default': {
-        nameEn: 'Obsidian Champagne',
-        nameVi: 'Obsidian Champagne',
-        moodEn: 'Brut Champagne & Noir Obsidian',
-        moodVi: 'Vàng Champagne mờ · Đen tuyền',
-        metaColor: '#090B0E',
+        nameEn: 'Imperial Sovereign Gold',
+        nameVi: 'Vàng Hoàng Gia Đế Vương',
+        moodEn: 'Obsidian Ebony & 24K Gold',
+        moodVi: 'Gỗ mun đen · Vàng 24K hoàng gia',
+        metaColor: '#0C0A09',
         isLight: false
     },
     'warm-night': {
-        nameEn: 'Espresso & Cashmere',
-        nameVi: 'Espresso & Cashmere',
-        moodEn: 'Dark Espresso & Soft Cashmere',
-        moodVi: 'Cà phê đậm · Gỗ óc chó trầm',
-        metaColor: '#0F0D0C',
+        nameEn: 'Espresso & Warm Cashmere',
+        nameVi: 'Espresso & Lụa Cashmere',
+        moodEn: 'Dark Roast & Toffee Cashmere',
+        moodVi: 'Cà phê rang sẫm · Lụa hạt dẻ',
+        metaColor: '#0F0C0A',
         isLight: false
     },
     'forest': {
-        nameEn: 'Muted Pine & Sage',
-        nameVi: 'Thông Rừng & Xô Thơm',
-        moodEn: 'Nordic Pine & Muted Sage',
-        moodVi: 'Lá xô thơm · Rừng thông rêu',
-        metaColor: '#070B09',
+        nameEn: 'Aged Bourbon & Smoked Oak',
+        nameVi: 'Bourbon & Gỗ Sồi Khói',
+        moodEn: 'Aged Oak Cask & Amber Bourbon',
+        moodVi: 'Gỗ sồi ủ rượu · Hổ phách hun khói',
+        metaColor: '#0D0907',
         isLight: false
     },
     'rose': {
-        nameEn: 'Velvet Rosé & Noir',
-        nameVi: 'Hoa Hồng & Nhung Đen',
-        moodEn: 'Vintage Rosé & Noir Velvet',
-        moodVi: 'Hoa hồng cổ điển · Nhung bordeaux',
-        metaColor: '#0F0A0D',
+        nameEn: 'Royal Dark Walnut & Bronze',
+        nameVi: 'Gỗ Óc Chó & Đồng Cổ',
+        moodEn: 'Noble Walnut & Antique Bronze',
+        moodVi: 'Gỗ óc chó quý tộc · Đồng thau cổ',
+        metaColor: '#0C0A09',
         isLight: false
     },
     'ocean': {
-        nameEn: 'Midnight Navy Mist',
-        nameVi: 'Hải Quân Biển Đêm',
-        moodEn: 'Midnight Abyss & Steel Mist',
-        moodVi: 'Xanh thép mist · Biển đêm sâu',
-        metaColor: '#060A10',
+        nameEn: 'Cognac Amber & Havana Leather',
+        nameVi: 'Hổ Phách Cognac & Da Havana',
+        moodEn: 'Aged Havana & Honey Cognac',
+        moodVi: 'Da thuộc Havana · Rượu Cognac mật ong',
+        metaColor: '#100B08',
         isLight: false
     },
     'mocha': {
-        nameEn: 'Smoked Slate & Titanium',
-        nameVi: 'Titan & Tro Khói Bắc Âu',
-        moodEn: 'Brushed Titanium & Dark Slate',
-        moodVi: 'Titanium mờ · Khói tro tối giản',
-        metaColor: '#0B0D11',
+        nameEn: 'Sahara Sand Gold & Dunes',
+        nameVi: 'Vàng Cát Sa Mạc Sahara',
+        moodEn: 'Desert Midnight & Dune Gold',
+        moodVi: 'Cát vàng sa mạc · Đêm huyền bí',
+        metaColor: '#0E0C0A',
         isLight: false
     },
     'sepia': {
-        nameEn: 'Editorial Ivory',
-        nameVi: 'Giấy Ngà Mỹ Thuật',
-        moodEn: 'Fine Art Vellum & Charcoal Ink',
-        moodVi: 'Giấy ngà vellum · Mực than mềm',
-        metaColor: '#F7F5F0',
-        isLight: true
+        nameEn: 'Florentine Antique Sepia',
+        nameVi: 'Sepia Phục Hưng Florence',
+        moodEn: 'Renaissance Leather & Terracotta',
+        moodVi: 'Bản thảo Phục Hưng · Nâu đất nung',
+        metaColor: '#14100C',
+        isLight: false
     },
     'paper': {
-        nameEn: 'Swiss Studio Minimal',
-        nameVi: 'Studio Thụy Sĩ',
-        moodEn: 'Alabaster Ceramic & Deep Slate',
-        moodVi: 'Men sứ trắng · Xanh thép đồ họa',
-        metaColor: '#F9FAFB',
-        isLight: true
+        nameEn: 'Antique Honey & Sandalwood',
+        nameVi: 'Vàng Mật Ong & Đàn Hương',
+        moodEn: 'Deep Sandalwood & Honey Gold',
+        moodVi: 'Gỗ đàn hương tuyền · Mật ong hổ phách',
+        metaColor: '#0B0806',
+        isLight: false
     },
     'e-ink': {
-        nameEn: 'Monolith Matte',
-        nameVi: 'Bạch Kim Monolith',
-        moodEn: 'Anti-Glare Carbon & Muted Platinum',
-        moodVi: 'Bạch kim chải mờ · Chống lóa',
-        metaColor: '#080808',
+        nameEn: 'Champagne Brut & Onyx Noir',
+        nameVi: 'Champagne Brut & Đá Onyx',
+        moodEn: 'Noir Onyx & Polished Champagne',
+        moodVi: 'Đá Onyx đen bóng · Rượu Champagne Brut',
+        metaColor: '#0A0B0E',
         isLight: false
     }
 };
