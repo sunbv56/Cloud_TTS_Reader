@@ -2896,7 +2896,7 @@ async function refreshLibrary() {
                     </div>
                     <div class="discovery-book-content">
                         <div class="min-w-0 pr-11 sm:pr-14">
-                            <h3 class="discovery-book-title font-cinzel ${isActive ? 'text-[#D4AF37]' : 'text-[#F5EFEB]'} font-bold truncate group-hover:text-[#D4AF37] transition-colors" title="${data.title}">${data.title}</h3>
+                            <h3 class="discovery-book-title font-cinzel ${isActive ? 'text-[#D4AF37]' : 'text-[#F5EFEB]'} font-bold group-hover:text-[#D4AF37] transition-colors" title="${data.title}">${data.title}</h3>
                             <div class="discovery-book-meta text-xs ${isActive ? 'text-[#D4AF37]' : 'text-[#EADBCE]/80'} flex items-center gap-2 mt-1 font-serif-royal">
                                 <i class="fas ${isActive ? 'fa-play' : 'fa-bookmark'} text-[10px] text-[#D4AF37]"></i> ${isActive ? 'Currently Reading' : 'Continue Reading'}
                             </div>

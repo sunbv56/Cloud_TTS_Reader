@@ -479,36 +479,60 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     padding-bottom: 5.5rem;
 }
 
-/* ── Royal Embossed Leather Book Card ────────────────────────────── */
+/* ── Royal Embossed Leather Book Card (Imperial Aureum Codex) ──────── */
 .discovery-book-card {
-    aspect-ratio: 1;
-    overflow: visible;
+    aspect-ratio: 0.78;
+    min-height: 20rem;
+    overflow: hidden !important;
     isolation: isolate;
     transform-origin: center center;
     will-change: transform, filter;
     border-radius: 1.5rem !important;
     background: linear-gradient(
-        155deg,
+        160deg,
         #1E1610 0%,
-        #140E0A 45%,
-        #0C0806 100%
+        #130D09 45%,
+        #0A0604 100%
     ) !important;
-    border: 1px solid rgba(212, 175, 55, 0.22) !important;
-    box-shadow: 0 14px 36px -8px rgba(0, 0, 0, 0.8),
-                0 0 0 1px rgba(205, 127, 50, 0.15),
-                inset 0 1px 0 rgba(212, 175, 55, 0.25) !important;
-    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    border: 1.5px solid rgba(212, 175, 55, 0.4) !important;
+    box-shadow: 0 16px 42px -10px rgba(0, 0, 0, 0.9),
+                0 0 0 1px rgba(212, 175, 55, 0.18),
+                inset 0 0 24px rgba(212, 175, 55, 0.08),
+                inset 0 1px 0 rgba(255, 235, 170, 0.35) !important;
+    transition: all 0.38s cubic-bezier(0.16, 1, 0.3, 1) !important;
+    position: relative;
 }
 .discovery-book-card:hover {
-    transform: translateY(-5px) scale(1.015) !important;
-    border-color: rgba(212, 175, 55, 0.55) !important;
-    box-shadow: 0 22px 48px -10px rgba(0, 0, 0, 0.9),
-                0 0 30px -2px rgba(212, 175, 55, 0.35),
-                inset 0 1px 0 rgba(212, 175, 55, 0.5) !important;
+    transform: translateY(-6px) scale(1.02) !important;
+    border-color: rgba(212, 175, 55, 0.85) !important;
+    box-shadow: 0 24px 54px -10px rgba(0, 0, 0, 0.95),
+                0 0 35px -2px rgba(212, 175, 55, 0.45),
+                inset 0 0 28px rgba(212, 175, 55, 0.16),
+                inset 0 1px 0 rgba(255, 245, 200, 0.6) !important;
 }
 
-/* Book Spine Accent Line */
-.book-spine-accent {
+/* 3D Book Hinge & Left Spine Crease (Realistic Leather Hardcover Feel) */
+.discovery-book-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 14px;
+    background: linear-gradient(90deg, rgba(212, 175, 55, 0.22) 0%, rgba(0, 0, 0, 0.5) 40%, transparent 100%);
+    border-right: 1px solid rgba(212, 175, 55, 0.2);
+    pointer-events: none;
+    z-index: 12;
+    border-top-left-radius: 1.5rem;
+    border-bottom-left-radius: 1.5rem;
+}
+
+/* Book Spine Accent Line - Hidden in Grid to avoid lopsided border, active in List */
+.discovery-book-card .book-spine-accent {
+    display: none !important;
+}
+.discovery-list-view .discovery-book-card .book-spine-accent {
+    display: block !important;
     position: absolute;
     left: 0;
     top: 0;
@@ -516,43 +540,45 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     width: 6px;
     background: linear-gradient(180deg, #D4AF37 0%, #CD7F32 50%, #8E5D2A 100%);
     box-shadow: 2px 0 6px rgba(0,0,0,0.6);
-    border-top-left-radius: 1.5rem;
-    border-bottom-left-radius: 1.5rem;
+    border-top-left-radius: 1.25rem;
+    border-bottom-left-radius: 1.25rem;
     z-index: 15;
+}
+.discovery-list-view .discovery-book-card::before {
+    display: none !important;
 }
 
 /* Book Silk Ribbon Bookmark */
 .book-ribbon {
     position: absolute;
     top: 0;
-    right: 3.5rem;
-    width: 14px;
-    height: 32px;
-    background: linear-gradient(180deg, #D4AF37 0%, #B88325 80%, #7A5515 100%);
-    clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 78%, 0 100%);
-    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-    z-index: 15;
-    transition: transform 0.25s ease;
+    right: 3.25rem;
+    width: 13px;
+    height: 34px;
+    background: linear-gradient(180deg, #F0D37B 0%, #D4AF37 40%, #8E5D2A 100%);
+    clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.6), 0 0 8px rgba(212, 175, 55, 0.3);
+    z-index: 18;
+    transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .discovery-book-card:hover .book-ribbon {
-    transform: translateY(4px);
+    transform: translateY(5px);
 }
 
 .discovery-book-art {
     position: absolute;
     inset: 0 0 auto;
-    height: 68%;
+    height: 72%;
     overflow: hidden;
-    clip-path: inset(0 0 15% 0);
-    background: radial-gradient(circle at 40% 30%, #2A1D15 0%, #150E0A 70%, #0A0604 100%);
+    background: radial-gradient(circle at 50% 30%, #2E2117 0%, #150E0A 70%, #0A0604 100%);
     display: flex;
     align-items: center;
     justify-content: center;
     padding-top: 0;
-    padding-bottom: 1.25rem;
-    will-change: clip-path, transform;
+    padding-bottom: 0;
     border-top-left-radius: 1.5rem;
     border-top-right-radius: 1.5rem;
+    z-index: 1;
 }
 .discovery-art-badge {
     width: 3.8rem;
@@ -589,9 +615,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     inset: 0;
     background: linear-gradient(
         180deg,
-        transparent 15%,
-        rgba(212, 175, 55, 0.12) 55%,
-        #0C0806 100%
+        rgba(0, 0, 0, 0.05) 0%,
+        transparent 25%,
+        rgba(10, 6, 4, 0.4) 60%,
+        rgba(10, 6, 4, 0.85) 85%,
+        #0A0604 100%
     );
     pointer-events: none;
 }
@@ -599,23 +627,28 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     height: 100%;
     width: 100%;
     object-fit: cover;
-    object-position: top;
+    object-position: top center;
+    transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
+.discovery-book-card:hover .discovery-book-art img {
+    transform: scale(1.05);
+}
+
 .discovery-book-content {
     position: absolute;
     inset: 0;
-    z-index: 1;
+    z-index: 15;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
-    padding: 1.25rem;
-    padding-left: 1.5rem;
+    padding: 1.15rem 1.25rem 1.15rem 1.4rem;
     background: linear-gradient(
         180deg,
-        transparent 10%,
-        rgba(12, 8, 6, 0.4) 35%,
-        rgba(12, 8, 6, 0.9) 65%,
-        #0C0806 100%
+        transparent 0%,
+        transparent 35%,
+        rgba(10, 6, 4, 0.6) 55%,
+        rgba(10, 6, 4, 0.95) 75%,
+        #0A0604 100%
     );
     pointer-events: none;
 }
@@ -629,22 +662,33 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 .discovery-book-card .discovery-book-title {
     font-family: "Cinzel", "Playfair Display", Georgia, serif !important;
-    color: #F5EFEB !important;
-    font-size: 1.05rem !important;
+    color: #F8F4F0 !important;
+    font-size: 1.02rem !important;
     font-weight: 700 !important;
     letter-spacing: 0.02em !important;
-    line-height: 1.35;
-    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.95);
+    line-height: 1.35 !important;
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: normal !important;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.95);
+}
+.discovery-book-card:hover .discovery-book-title {
+    color: #F3D079 !important;
+    text-shadow: 0 0 14px rgba(212, 175, 55, 0.5);
 }
 .discovery-book-card .discovery-book-meta {
     font-family: "Literata", Georgia, serif !important;
     color: #D4AF37 !important;
     text-shadow: 0 1px 8px rgba(0, 0, 0, 0.85);
     font-size: 0.75rem !important;
+    margin-top: 0.25rem;
 }
 .discovery-book-card .discovery-book-progress {
-    padding-top: 0.65rem;
-    border-top: 1px solid rgba(212, 175, 55, 0.18);
+    padding-top: 0.55rem;
+    border-top: 1px solid rgba(212, 175, 55, 0.2);
 }
 .discovery-book-card.is-spotlit .discovery-book-title {
     white-space: normal;
@@ -668,6 +712,32 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     outline: 2px solid #D4AF37;
     outline-offset: 3px;
 }
+
+/* Kebab (⋮) Button in Grid View - Premium Glassmorphism */
+.discovery-book-card .icon-btn {
+    position: absolute !important;
+    top: 0.65rem !important;
+    right: 0.65rem !important;
+    width: 2.25rem !important;
+    height: 2.25rem !important;
+    background: rgba(14, 10, 8, 0.65) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border: 1px solid rgba(212, 175, 55, 0.35) !important;
+    color: #F5EFEB !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6) !important;
+    border-radius: 0.85rem !important;
+    z-index: 20 !important;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+.discovery-book-card .icon-btn:hover {
+    background: #D4AF37 !important;
+    color: #000000 !important;
+    border-color: #F5EFEB !important;
+    box-shadow: 0 0 16px rgba(212, 175, 55, 0.6) !important;
+    transform: scale(1.08) !important;
+}
+
 #discovery-continue-card[hidden],
 #discovery-search-empty[hidden] { display: none; }
 #discovery-continue-card .discovery-book-art {
@@ -692,12 +762,14 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 /* Mobile Discovery Grid Refinements */
 @media (max-width: 640px) {
     .discovery-book-card {
+        aspect-ratio: 0.72 !important;
+        min-height: 16.5rem !important;
         border-radius: 1.25rem !important;
     }
     .discovery-book-art {
-        height: 65% !important;
+        height: 68% !important;
         padding-top: 0 !important;
-        padding-bottom: 0.75rem !important;
+        padding-bottom: 0 !important;
         align-items: center !important;
         justify-content: center !important;
     }
@@ -710,10 +782,10 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
         font-size: 1.25rem !important;
     }
     .discovery-book-content {
-        padding: 0.65rem 0.75rem 0.75rem !important;
+        padding: 0.65rem 0.75rem 0.75rem 0.85rem !important;
     }
     .discovery-book-card .discovery-book-title {
-        font-size: 0.82rem !important;
+        font-size: 0.85rem !important;
         line-height: 1.25 !important;
     }
     .discovery-book-card .discovery-book-meta {
@@ -721,8 +793,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
         margin-top: 0.15rem !important;
     }
     .discovery-book-card .discovery-book-progress {
-        margin-top: 0.4rem !important;
-        padding-top: 0.35rem !important;
+        margin-top: 0.35rem !important;
+        padding-top: 0.3rem !important;
     }
     .discovery-book-card .icon-btn {
         top: 0.45rem !important;
