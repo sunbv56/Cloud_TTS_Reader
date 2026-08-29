@@ -2886,26 +2886,28 @@ async function refreshLibrary() {
                 dropdown.appendChild(deleteBtn);
 
                 discCard.innerHTML = `
+                    <div class="book-spine-accent"></div>
+                    <div class="book-ribbon"></div>
                     <div class="discovery-book-art ${isActive ? 'text-black' : 'text-primary'} flex items-center justify-center">
                         <img data-cover-image="${bookId}" class="hidden" alt="Bìa truyện ${data.title}">
                         <div class="discovery-art-badge">
-                            <i class="fas ${isActive ? 'fa-volume-up' : 'fa-book'} text-2xl sm:text-3xl"></i>
+                            <i class="fas ${isActive ? 'fa-crown' : 'fa-book-open'} text-2xl sm:text-3xl text-[#D4AF37]"></i>
                         </div>
                     </div>
                     <div class="discovery-book-content">
                         <div class="min-w-0 pr-11 sm:pr-14">
-                            <h3 class="discovery-book-title ${isActive ? 'text-primary' : 'text-white'} font-bold truncate group-hover:text-primary transition-colors" title="${data.title}">${data.title}</h3>
-                            <div class="discovery-book-meta text-xs ${isActive ? 'text-primary/70' : 'text-slate-300'} flex items-center gap-2 mt-1">
-                                <i class="fas ${isActive ? 'fa-play' : 'fa-bookmark'} text-[10px]"></i> ${isActive ? 'Currently Reading' : 'Continue Reading'}
+                            <h3 class="discovery-book-title font-cinzel ${isActive ? 'text-[#D4AF37]' : 'text-[#F5EFEB]'} font-bold truncate group-hover:text-[#D4AF37] transition-colors" title="${data.title}">${data.title}</h3>
+                            <div class="discovery-book-meta text-xs ${isActive ? 'text-[#D4AF37]' : 'text-[#EADBCE]/80'} flex items-center gap-2 mt-1 font-serif-royal">
+                                <i class="fas ${isActive ? 'fa-play' : 'fa-bookmark'} text-[10px] text-[#D4AF37]"></i> ${isActive ? 'Currently Reading' : 'Continue Reading'}
                             </div>
                         </div>
                         <div class="discovery-book-progress mt-3 sm:mt-5">
                             <div class="flex justify-between items-center text-xs font-mono font-bold mb-2">
-                                <span class="text-slate-300">PROGRESS</span>
-                                <span class="text-primary">${progress}%</span>
+                                <span class="text-[#EADBCE]/70 text-[10px] font-serif-royal">TIẾN ĐỘ ĐỌC</span>
+                                <span class="text-[#D4AF37] font-mono">${progress}%</span>
                             </div>
-                            <div class="w-full bg-black/25 h-1.5 rounded-full overflow-hidden">
-                                <div class="bg-gradient-to-r from-primary/50 to-primary h-full transition-all duration-500" style="width: ${progress}%"></div>
+                            <div class="w-full bg-black/40 border border-[#D4AF37]/15 h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-gradient-to-r from-[#D4AF37]/60 via-[#E5C378] to-[#CD7F32] h-full transition-all duration-500 shadow-[0_0_8px_rgba(212,175,55,0.4)]" style="width: ${progress}%"></div>
                             </div>
                         </div>
                     </div>

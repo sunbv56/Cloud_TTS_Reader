@@ -602,7 +602,7 @@
     function drawPipFrame() {
         const ctx = pipCanvas.getContext('2d');
         const primary = (getComputedStyle(document.documentElement)
-            .getPropertyValue('--theme-primary') || '#00E5FF').trim() || '#00E5FF';
+            .getPropertyValue('--theme-primary') || '#D4AF37').trim() || '#D4AF37';
         const rawProgress = parseFloat(
             ((document.getElementById('progress-bar') || {}).style || {}).width) || 0;
         const progress = Math.min(100, Math.max(0, rawProgress));

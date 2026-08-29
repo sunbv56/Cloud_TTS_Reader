@@ -537,9 +537,9 @@ textarea {
 
 .theme-card:hover {
     background: rgba(255, 255, 255, 0.07);
-    border-color: color-mix(in srgb, var(--card-accent, #00E5FF) 45%, rgba(255, 255, 255, 0.2));
+    border-color: color-mix(in srgb, var(--card-accent, #D4AF37) 45%, rgba(255, 255, 255, 0.2));
     transform: translateY(-2px);
-    box-shadow: 0 6px 20px -4px rgba(0, 0, 0, 0.35), 0 0 14px -2px color-mix(in srgb, var(--card-accent, #00E5FF) 25%, transparent);
+    box-shadow: 0 6px 20px -4px rgba(0, 0, 0, 0.35), 0 0 14px -2px color-mix(in srgb, var(--card-accent, #D4AF37) 25%, transparent);
 }
 
 .theme-card:active {
@@ -547,9 +547,9 @@ textarea {
 }
 
 .theme-card.active {
-    background: color-mix(in srgb, var(--card-accent, #00E5FF) 10%, rgba(255, 255, 255, 0.05));
-    border-color: var(--card-accent, #00E5FF);
-    box-shadow: 0 0 0 1px var(--card-accent, #00E5FF), 0 8px 24px -4px color-mix(in srgb, var(--card-accent, #00E5FF) 35%, transparent);
+    background: color-mix(in srgb, var(--card-accent, #D4AF37) 10%, rgba(255, 255, 255, 0.05));
+    border-color: var(--card-accent, #D4AF37);
+    box-shadow: 0 0 0 1px var(--card-accent, #D4AF37), 0 8px 24px -4px color-mix(in srgb, var(--card-accent, #D4AF37) 35%, transparent);
 }
 
 .theme-card-preview {
@@ -595,7 +595,7 @@ textarea {
 }
 
 .theme-card.active .theme-card-title {
-    color: var(--card-accent, #00E5FF);
+    color: var(--card-accent, #D4AF37);
 }
 
 .theme-card-mood {
@@ -624,7 +624,7 @@ textarea {
     width: 1rem;
     height: 1rem;
     border-radius: 50%;
-    background: var(--card-accent, #00E5FF);
+    background: var(--card-accent, #D4AF37);
     color: #000;
     font-size: 0.55rem;
     font-weight: 900;
@@ -634,7 +634,7 @@ textarea {
     opacity: 0;
     transform: scale(0.5);
     transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-    box-shadow: 0 0 8px var(--card-accent, #00E5FF);
+    box-shadow: 0 0 8px var(--card-accent, #D4AF37);
 }
 
 .theme-card.active .theme-card-check {
