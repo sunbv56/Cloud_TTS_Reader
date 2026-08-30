@@ -141,6 +141,8 @@ let STATE = {
     }
 };
 
+window.STATE = STATE;
+
 const DEFAULT_SETTINGS = JSON.parse(JSON.stringify(STATE.settings));
 
 // ── Local-only settings ─────────────────────────────────────────────────────
@@ -5412,89 +5414,11 @@ if (quickFontSelect) {
     };
 }
 
-// Quick Appearance & Theme Settings Modal Handlers
+// Quick Appearance & Theme Settings Controller Bridge
 const quickSettingsBtn = document.getElementById('quick-settings-btn');
-const quickSettingsModal = document.getElementById('quick-settings-modal');
-const quickSettingsOverlay = document.getElementById('quick-settings-overlay');
-const closeQuickSettingsBtn = document.getElementById('close-quick-settings-btn');
-const quickSettingsDoneBtn = document.getElementById('quick-settings-done-btn');
-
-function openQuickSettings() {
-    if (!quickSettingsModal) return;
-    quickSettingsModal.classList.remove('hidden');
-    quickSettingsModal.classList.add('flex');
-    
-    // Sync active theme
-    const currentTheme = localStorage.getItem('reader-theme') || 'default';
-    document.querySelectorAll('.quick-theme-btn').forEach(btn => {
-        const isActive = btn.dataset.theme === currentTheme;
-        btn.classList.toggle('border-primary/50', isActive);
-        btn.classList.toggle('bg-primary/15', isActive);
-    });
-    const themeNameEl = document.getElementById('quick-theme-current-name');
-    if (themeNameEl && window.THEMES_DATA && window.THEMES_DATA[currentTheme]) {
-        themeNameEl.innerText = window.THEMES_DATA[currentTheme].nameVi || currentTheme;
-    }
-    
-    // Sync current font
-    const currentFont = localStorage.getItem('reader-font-family') || 'Be Vietnam Pro';
-    applyFontFamily(currentFont, true);
-    
-    // Sync font size
-    const currentSize = parseInt(localStorage.getItem('reader-font-size') || '20');
-    const sizeRange = document.getElementById('quick-font-size-range');
-    const sizeVal = document.getElementById('quick-font-size-val');
-    if (sizeRange) sizeRange.value = currentSize;
-    if (sizeVal) sizeVal.innerText = `${currentSize}px`;
-}
-
-function closeQuickSettings() {
-    if (!quickSettingsModal) return;
-    quickSettingsModal.classList.add('hidden');
-    quickSettingsModal.classList.remove('flex');
-}
-
-quickSettingsBtn?.addEventListener('click', openQuickSettings);
-quickSettingsOverlay?.addEventListener('click', closeQuickSettings);
-closeQuickSettingsBtn?.addEventListener('click', closeQuickSettings);
-quickSettingsDoneBtn?.addEventListener('click', closeQuickSettings);
-
-// Quick Theme Buttons Click Handlers
-document.querySelectorAll('.quick-theme-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-        const themeId = btn.dataset.theme;
-        if (typeof window.applyTheme === 'function') {
-            window.applyTheme(themeId);
-        }
-        document.querySelectorAll('.quick-theme-btn').forEach(b => {
-            const isSelected = b.dataset.theme === themeId;
-            b.classList.toggle('border-primary/50', isSelected);
-            b.classList.toggle('bg-primary/15', isSelected);
-        });
-        const themeNameEl = document.getElementById('quick-theme-current-name');
-        if (themeNameEl && window.THEMES_DATA && window.THEMES_DATA[themeId]) {
-            themeNameEl.innerText = window.THEMES_DATA[themeId].nameVi || themeId;
-        }
-    });
+quickSettingsBtn?.addEventListener('click', () => {
+    window.QuickSettingsController?.open();
 });
-
-// Quick Font Size Slider
-const quickSizeRange = document.getElementById('quick-font-size-range');
-if (quickSizeRange) {
-    quickSizeRange.oninput = (e) => {
-        const val = parseInt(e.target.value);
-        STATE.settings.fontSize = val;
-        localStorage.setItem('reader-font-size', val);
-        const valEl = document.getElementById('quick-font-size-val');
-        if (valEl) valEl.innerText = `${val}px`;
-        const sidebarVal = document.getElementById('font-size-val');
-        if (sidebarVal) sidebarVal.innerText = `${val}px`;
-        const sidebarRange = document.getElementById('font-size-range');
-        if (sidebarRange) sidebarRange.value = val;
-        document.documentElement.style.setProperty('--reader-font-size', `${val}px`);
-        debouncedApplyTypography();
-    };
-}
 
 function applyTypographySettings() {
     const s = STATE.settings;

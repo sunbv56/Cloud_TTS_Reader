@@ -139,7 +139,7 @@
         <div class="flex items-center gap-2 sm:gap-4 lg:gap-8">
             <!-- Quick Appearance & Theme Settings Button (Discovery & Reader) -->
             <button id="quick-settings-btn"
-                onclick="const m = document.getElementById('quick-settings-modal'); if(m){m.classList.remove('hidden'); m.classList.add('flex');}"
+                onclick="window.QuickSettingsController ? window.QuickSettingsController.open() : (function(){const m=document.getElementById('quick-settings-modal');if(m){m.classList.remove('hidden');m.classList.add('flex');}})();"
                 class="icon-btn w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-gradient-to-br from-[#241D17] to-[#0C0A09] border border-[#D4AF37]/35 hover:border-primary hover:shadow-[0_0_16px_rgba(212,175,55,0.4)] hover:scale-105 active:scale-95 transition-all relative group cursor-pointer shadow-md"
                 aria-label="Cài đặt Theme & Font chữ" title="Cài đặt Theme & Font chữ">
                 <i class="fas fa-sliders text-sm sm:text-base text-primary"></i>
@@ -1345,102 +1345,251 @@ Nội dung chương hai...</pre>
                 </div>
             </div>
 
-    <!-- Quick Appearance & Theme Settings Modal (Accessible from Discovery & Reader) -->
-    <div id="quick-settings-modal" class="fixed inset-0 z-[195] hidden items-center justify-center p-3 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="quick-settings-title">
-        <div class="absolute inset-0 bg-black/75 backdrop-blur-md cursor-pointer" id="quick-settings-overlay" onclick="const m = document.getElementById('quick-settings-modal'); if(m){m.classList.add('hidden'); m.classList.remove('flex');}"></div>
-        <div class="glass relative flex w-full max-w-lg flex-col rounded-[2rem] p-5 sm:p-6 border border-[#D4AF37]/35 shadow-[0_20px_50px_rgba(0,0,0,0.85)] max-h-[90vh] overflow-y-auto hide-scrollbar animate-in fade-in zoom-in duration-200">
+    <!-- Quick Settings Master Hub Modal (Full LocalStorage Control Hub) -->
+    <div id="quick-settings-modal" class="fixed inset-0 z-[250] hidden items-center justify-center p-3 sm:p-5" role="dialog" aria-modal="true" aria-labelledby="quick-settings-title">
+        <div class="absolute inset-0 bg-black/80 backdrop-blur-xl cursor-pointer" id="quick-settings-overlay" onclick="window.QuickSettingsController?.close();"></div>
+        <div class="glass relative flex w-full max-w-xl flex-col rounded-[2.25rem] p-5 sm:p-7 border border-[#D4AF37]/40 shadow-[0_25px_60px_rgba(0,0,0,0.9)] max-h-[92vh] overflow-hidden animate-in fade-in zoom-in duration-200">
+            
             <!-- Modal Header -->
-            <div class="flex items-center justify-between pb-4 mb-4 border-b border-white/10">
+            <div class="flex items-center justify-between pb-4 mb-3 border-b border-white/10 shrink-0">
                 <div class="flex items-center gap-3">
-                    <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary shadow-[0_0_15px_rgba(212,175,55,0.25)]">
-                        <i class="fas fa-sliders text-sm sm:text-base"></i>
+                    <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#241D17] to-[#0C0A09] border border-[#D4AF37]/40 flex items-center justify-center text-primary shadow-[0_0_20px_rgba(212,175,55,0.25)]">
+                        <i class="fas fa-sliders text-base text-primary"></i>
                     </div>
                     <div>
-                        <h2 id="quick-settings-title" class="text-base sm:text-lg font-black text-white font-serif-royal">Cài đặt Giao diện & Font chữ</h2>
-                        <span class="text-[10px] text-primary/80 uppercase tracking-widest font-bold">Aureum Codex Edition</span>
+                        <h2 id="quick-settings-title" class="text-base sm:text-lg font-black text-white font-serif-royal">Trung Tâm Cài Đặt Nhanh</h2>
+                        <span class="text-[10px] text-primary/80 uppercase tracking-widest font-bold">Quick Settings Master Hub</span>
                     </div>
                 </div>
-                <button id="close-quick-settings-btn" type="button" onclick="const m = document.getElementById('quick-settings-modal'); if(m){m.classList.add('hidden'); m.classList.remove('flex');}" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer" aria-label="Đóng cài đặt">
+                <button id="close-quick-settings-btn" type="button" onclick="window.QuickSettingsController?.close();" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer" aria-label="Đóng cài đặt">
                     <i class="fas fa-times text-base"></i>
                 </button>
             </div>
 
-            <!-- Modal Content -->
-            <div class="space-y-4">
-                <!-- 1. Font Family Selection -->
-                <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                    <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
-                        <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-font text-primary"></i> Font chữ Tiếng Việt</span>
-                        <span id="quick-font-family-badge" class="text-primary text-[11px] font-bold">Be Vietnam Pro</span>
+            <!-- Segmented Navigation Tabs -->
+            <div class="flex items-center gap-1.5 p-1 bg-black/40 rounded-2xl border border-white/5 shrink-0 mb-4">
+                <button type="button" class="quick-tab-btn flex-1 py-2 px-3 rounded-xl text-xs font-bold text-slate-300 hover:text-white transition-all flex items-center justify-center gap-1.5 active" data-tab="appearance">
+                    <i class="fas fa-palette text-xs"></i> <span>Giao diện</span>
+                </button>
+                <button type="button" class="quick-tab-btn flex-1 py-2 px-3 rounded-xl text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center justify-center gap-1.5" data-tab="voice">
+                    <i class="fas fa-microphone-lines text-xs"></i> <span>Giọng đọc</span>
+                </button>
+                <button type="button" class="quick-tab-btn flex-1 py-2 px-3 rounded-xl text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center justify-center gap-1.5" data-tab="experience">
+                    <i class="fas fa-bolt text-xs"></i> <span>Tiện ích</span>
+                </button>
+            </div>
+
+            <!-- Tab Content Scrollable Area -->
+            <div class="flex-1 overflow-y-auto space-y-4 pr-1 hide-scrollbar" id="quick-tab-content">
+                
+                <!-- TAB 1: GIAO DIỆN & TYPOGRAPHY -->
+                <div id="quick-panel-appearance" class="quick-tab-panel space-y-4">
+                    <!-- Font chữ tiếng Việt -->
+                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
+                        <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
+                            <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-font text-primary"></i> Font chữ Tiếng Việt</span>
+                            <span id="quick-font-family-badge" class="text-primary text-[11px] font-bold">Be Vietnam Pro</span>
+                        </div>
+                        <div class="relative">
+                            <select id="quick-font-family-select"
+                                class="w-full bg-[#17130F] border border-primary/30 rounded-xl p-3 text-xs sm:text-sm text-[#F5EFEB] appearance-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-all cursor-pointer font-medium shadow-inner">
+                                <option value="Be Vietnam Pro">1. Be Vietnam Pro (Chuẩn Quốc Tế)</option>
+                                <option value="Playfair Display">2. Playfair Display (Serif Hoàng Gia)</option>
+                                <option value="Plus Jakarta Sans">3. Plus Jakarta Sans (Thanh Lịch Châu Âu)</option>
+                                <option value="Literata">4. Literata (Sách Chuẩn Google Books)</option>
+                                <option value="Lora">5. Lora (Văn Học Cổ Điển)</option>
+                                <option value="Merriweather">6. Merriweather (Serif Đậm Nét)</option>
+                                <option value="Montserrat">7. Montserrat (Hiện Đại Sang Trọng)</option>
+                                <option value="Inter">8. Inter (Tối Giản Tinh Tế)</option>
+                            </select>
+                            <i class="fas fa-chevron-down absolute right-3.5 top-1/2 -translate-y-1/2 text-primary/70 pointer-events-none text-xs"></i>
+                        </div>
+                        <p class="mt-2 text-[11px] text-slate-400 italic px-1" id="quick-font-sample-preview" style="font-family: 'Be Vietnam Pro', sans-serif;">
+                            "Trăm năm trong cõi người ta, chữ tài chữ mệnh khéo là ghét nhau."
+                        </p>
                     </div>
-                    <div class="relative">
-                        <select id="quick-font-family-select"
-                            class="w-full bg-[#17130F] border border-primary/30 rounded-xl p-3 text-xs sm:text-sm text-[#F5EFEB] appearance-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-all cursor-pointer font-medium shadow-inner">
-                            <option value="Be Vietnam Pro" selected>1. Be Vietnam Pro (Chuẩn Quốc Tế)</option>
-                            <option value="Playfair Display">2. Playfair Display (Serif Hoàng Gia)</option>
-                            <option value="Plus Jakarta Sans">3. Plus Jakarta Sans (Thanh Lịch Châu Âu)</option>
-                            <option value="Literata">4. Literata (Sách Chuẩn Google Books)</option>
-                            <option value="Lora">5. Lora (Văn Học Cổ Điển)</option>
-                            <option value="Merriweather">6. Merriweather (Serif Đậm Nét)</option>
-                            <option value="Montserrat">7. Montserrat (Hiện Đại Sang Trọng)</option>
-                            <option value="Inter">8. Inter (Tối Giản Tinh Tế)</option>
-                        </select>
-                        <i class="fas fa-chevron-down absolute right-3.5 top-1/2 -translate-y-1/2 text-primary/70 pointer-events-none text-xs"></i>
+
+                    <!-- Kích thước chữ -->
+                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
+                        <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
+                            <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-text-height text-primary"></i> Kích thước chữ</span>
+                            <span id="quick-font-size-val" class="text-primary font-mono text-sm">20px</span>
+                        </div>
+                        <input type="range" id="quick-font-size-range" min="12" max="42" step="1" value="20"
+                            class="w-full accent-primary h-1.5 cursor-pointer">
                     </div>
-                    <p class="mt-2 text-[11px] text-slate-400 italic px-1" id="quick-font-sample-preview" style="font-family: 'Be Vietnam Pro', sans-serif;">
-                        "Trăm năm trong cõi người ta, chữ tài chữ mệnh khéo là ghét nhau."
-                    </p>
+
+                    <!-- Màu chữ & Presets -->
+                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
+                        <div class="flex items-center justify-between text-xs font-bold px-1 mb-3">
+                            <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-palette text-primary"></i> Màu sắc chữ đọc</span>
+                            <button id="quick-color-reset-btn" type="button" class="text-[10px] text-primary/80 hover:text-primary underline">Mặc định Theme</button>
+                        </div>
+                        <div class="flex items-center gap-3">
+                            <input type="color" id="quick-font-color-picker" value="#CBD5E1" class="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0">
+                            <div class="flex items-center gap-2 flex-1 justify-end">
+                                <button type="button" class="quick-preset-color w-6 h-6 rounded-full border border-white/20 hover:scale-110 active:scale-95 transition-transform" style="background: #CBD5E1;" data-color="#CBD5E1" title="Slate Gray"></button>
+                                <button type="button" class="quick-preset-color w-6 h-6 rounded-full border border-white/20 hover:scale-110 active:scale-95 transition-transform" style="background: #FFE4B5;" data-color="#FFE4B5" title="Warm Amber"></button>
+                                <button type="button" class="quick-preset-color w-6 h-6 rounded-full border border-white/20 hover:scale-110 active:scale-95 transition-transform" style="background: #E8DDD0;" data-color="#E8DDD0" title="Vintage Paper"></button>
+                                <button type="button" class="quick-preset-color w-6 h-6 rounded-full border border-white/20 hover:scale-110 active:scale-95 transition-transform" style="background: #C8E0D0;" data-color="#C8E0D0" title="Mint Green"></button>
+                                <button type="button" class="quick-preset-color w-6 h-6 rounded-full border border-white/20 hover:scale-110 active:scale-95 transition-transform" style="background: #D4AF37;" data-color="#D4AF37" title="Imperial Gold"></button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Themes Hoàng gia -->
+                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
+                        <div class="flex items-center justify-between text-xs font-bold px-1 mb-3">
+                            <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-crown text-primary"></i> Chủ đề Hoàng gia (Themes)</span>
+                            <span id="quick-theme-current-name" class="text-primary text-[11px] font-bold">Vàng Hoàng Gia</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2" id="quick-theme-grid">
+                            <button type="button" class="quick-theme-btn p-2 rounded-xl border border-primary/40 bg-primary/10 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="default">
+                                <span class="w-4 h-4 rounded-full bg-[#D4AF37] shrink-0 border border-white/20"></span>
+                                <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Vàng Hoàng Gia</span>
+                            </button>
+                            <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="warm-night">
+                                <span class="w-4 h-4 rounded-full bg-[#C8A27A] shrink-0 border border-white/20"></span>
+                                <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Espresso Cashmere</span>
+                            </button>
+                            <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="forest">
+                                <span class="w-4 h-4 rounded-full bg-[#D97706] shrink-0 border border-white/20"></span>
+                                <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Bourbon Sồi Khói</span>
+                            </button>
+                            <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="rose">
+                                <span class="w-4 h-4 rounded-full bg-[#CD7F32] shrink-0 border border-white/20"></span>
+                                <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Gỗ Óc Chó Đồng Cổ</span>
+                            </button>
+                            <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="ocean">
+                                <span class="w-4 h-4 rounded-full bg-[#E59838] shrink-0 border border-white/20"></span>
+                                <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Cognac Hổ Phách</span>
+                            </button>
+                            <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="sepia">
+                                <span class="w-4 h-4 rounded-full bg-[#B88746] shrink-0 border border-white/20"></span>
+                                <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Giấy Cổ Oxford</span>
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
-                <!-- 2. Font Size Control -->
-                <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                    <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
-                        <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-text-height text-primary"></i> Kích thước chữ</span>
-                        <span id="quick-font-size-val" class="text-primary font-mono text-sm">20px</span>
+                <!-- TAB 2: GIỌNG ĐỌC & ÂM THANH (TTS) -->
+                <div id="quick-panel-voice" class="quick-tab-panel space-y-4 hidden">
+                    <!-- Voice Select -->
+                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
+                        <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
+                            <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-microphone-lines text-primary"></i> Giọng đọc AI</span>
+                            <span id="quick-voice-badge" class="text-primary text-[11px] font-bold">Hoài My</span>
+                        </div>
+                        <div class="relative">
+                            <select id="quick-voice-select"
+                                class="w-full bg-[#17130F] border border-primary/30 rounded-xl p-3 text-xs sm:text-sm text-[#F5EFEB] appearance-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-all cursor-pointer font-medium shadow-inner">
+                                <option value="vi-VN-HoaiMyNeural">Hoài My (Việt Nam - Nữ Truyền Cảm)</option>
+                                <option value="vi-VN-NamMinhNeural">Nam Minh (Việt Nam - Nam Trầm Ấm)</option>
+                                <option value="en-US-AriaNeural">Aria (USA - English Female)</option>
+                                <option value="en-US-GuyNeural">Guy (USA - English Male)</option>
+                            </select>
+                            <i class="fas fa-chevron-down absolute right-3.5 top-1/2 -translate-y-1/2 text-primary/70 pointer-events-none text-xs"></i>
+                        </div>
                     </div>
-                    <input type="range" id="quick-font-size-range" min="12" max="42" step="1" value="20"
-                        class="w-full accent-primary h-1.5 cursor-pointer">
+
+                    <!-- Tốc độ đọc (Speed) -->
+                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
+                        <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
+                            <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-gauge-high text-primary"></i> Tốc độ đọc (Playback Speed)</span>
+                            <span id="quick-speed-val" class="text-primary font-mono text-sm">1.0x</span>
+                        </div>
+                        <input type="range" id="quick-speed-range" min="0.5" max="2.5" step="0.1" value="1.0"
+                            class="w-full accent-primary h-1.5 cursor-pointer">
+                    </div>
+
+                    <!-- Cao độ Pitch -->
+                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
+                        <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
+                            <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-music text-primary"></i> Cao độ giọng (Vocal Pitch)</span>
+                            <span id="quick-pitch-val" class="text-primary font-mono text-sm">+0Hz</span>
+                        </div>
+                        <input type="range" id="quick-pitch-range" min="-15" max="15" step="1" value="0"
+                            class="w-full accent-primary h-1.5 cursor-pointer">
+                    </div>
+
+                    <!-- Số luồng xử lý AI (Workers) -->
+                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
+                        <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
+                            <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-microchip text-primary"></i> Luồng xử lý song song</span>
+                            <span id="quick-workers-val" class="text-primary font-mono text-sm">2 Luồng</span>
+                        </div>
+                        <input type="range" id="quick-workers-range" min="1" max="4" step="1" value="2"
+                            class="w-full accent-primary h-1.5 cursor-pointer">
+                    </div>
                 </div>
 
-                <!-- 3. Theme Grid Selection -->
-                <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                    <div class="flex items-center justify-between text-xs font-bold px-1 mb-3">
-                        <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-palette text-primary"></i> Chủ đề Hoàng gia (Themes)</span>
-                        <span id="quick-theme-current-name" class="text-primary text-[11px] font-bold">Vàng Hoàng Gia</span>
+                <!-- TAB 3: TIỆN ÍCH & TRẢI NGHIỆM (EXPERIENCE & UTILITIES) -->
+                <div id="quick-panel-experience" class="quick-tab-panel space-y-3 hidden">
+                    <!-- Lite Mode Switch -->
+                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                        <div class="pr-3">
+                            <div class="flex items-center gap-2 text-xs font-bold text-white mb-0.5">
+                                <i class="fas fa-bolt text-amber-400"></i> Chế độ Siêu Tiết Kiệm (Lite Mode)
+                            </div>
+                            <p class="text-[11px] text-slate-400">Tắt hiệu ứng mờ GPU, tối ưu pin và siêu mượt cho máy cấu hình yếu.</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                            <input type="checkbox" id="quick-lite-mode-toggle" class="sr-only peer">
+                            <div class="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                        </label>
                     </div>
-                    <div class="grid grid-cols-2 gap-2" id="quick-theme-grid">
-                        <button type="button" class="quick-theme-btn p-2 rounded-xl border border-primary/40 bg-primary/10 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="default">
-                            <span class="w-4 h-4 rounded-full bg-[#D4AF37] shrink-0 border border-white/20"></span>
-                            <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Vàng Hoàng Gia</span>
-                        </button>
-                        <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="warm-night">
-                            <span class="w-4 h-4 rounded-full bg-[#C8A27A] shrink-0 border border-white/20"></span>
-                            <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Espresso Cashmere</span>
-                        </button>
-                        <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="forest">
-                            <span class="w-4 h-4 rounded-full bg-[#D97706] shrink-0 border border-white/20"></span>
-                            <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Bourbon Sồi Khói</span>
-                        </button>
-                        <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="rose">
-                            <span class="w-4 h-4 rounded-full bg-[#CD7F32] shrink-0 border border-white/20"></span>
-                            <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Gỗ Óc Chó Đồng Cổ</span>
-                        </button>
-                        <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="ocean">
-                            <span class="w-4 h-4 rounded-full bg-[#E59838] shrink-0 border border-white/20"></span>
-                            <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Cognac Hổ Phách</span>
-                        </button>
-                        <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="sepia">
-                            <span class="w-4 h-4 rounded-full bg-[#B88746] shrink-0 border border-white/20"></span>
-                            <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Giấy Cổ Oxford</span>
-                        </button>
+
+                    <!-- Zen Mode Switch -->
+                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                        <div class="pr-3">
+                            <div class="flex items-center gap-2 text-xs font-bold text-white mb-0.5">
+                                <i class="fas fa-spa text-emerald-400"></i> Chế độ Đọc Tập Trung (Zen Mode)
+                            </div>
+                            <p class="text-[11px] text-slate-400">Ẩn các thanh công cụ thừa, mang lại không gian đọc thuần khiết.</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                            <input type="checkbox" id="quick-zen-mode-toggle" class="sr-only peer">
+                            <div class="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                        </label>
+                    </div>
+
+                    <!-- Screen WakeLock Switch -->
+                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                        <div class="pr-3">
+                            <div class="flex items-center gap-2 text-xs font-bold text-white mb-0.5">
+                                <i class="fas fa-sun text-yellow-400"></i> Giữ Màn Hình Luôn Sáng (WakeLock)
+                            </div>
+                            <p class="text-[11px] text-slate-400">Ngăn thiết bị tự động khóa hoặc tắt màn hình trong khi đang đọc.</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
+                            <input type="checkbox" id="quick-wakelock-toggle" class="sr-only peer">
+                            <div class="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                        </label>
+                    </div>
+
+                    <!-- UI Language Toggle -->
+                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                        <div class="pr-3">
+                            <div class="flex items-center gap-2 text-xs font-bold text-white mb-0.5">
+                                <i class="fas fa-language text-sky-400"></i> Ngôn ngữ Giao diện (Language)
+                            </div>
+                            <p class="text-[11px] text-slate-400">Chuyển đổi giữa Tiếng Việt và English.</p>
+                        </div>
+                        <div class="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10 shrink-0">
+                            <button type="button" id="quick-lang-vi-btn" class="px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all bg-primary text-black">VI</button>
+                            <button type="button" id="quick-lang-en-btn" class="px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all text-slate-400 hover:text-white">EN</button>
+                        </div>
                     </div>
                 </div>
+
             </div>
 
             <!-- Modal Footer -->
-            <div class="mt-5 pt-3 border-t border-white/10 flex items-center justify-between">
-                <span class="text-[10px] text-slate-500">Tự động lưu vào trình duyệt</span>
-                <button id="quick-settings-done-btn" type="button" onclick="const m = document.getElementById('quick-settings-modal'); if(m){m.classList.add('hidden'); m.classList.remove('flex');}" class="btn-primary px-5 py-2 text-xs rounded-xl font-bold cursor-pointer">
+            <div class="mt-4 pt-3 border-t border-white/10 flex items-center justify-between shrink-0">
+                <span class="text-[10px] text-slate-400 flex items-center gap-1">
+                    <i class="fas fa-check-circle text-emerald-400 text-xs"></i> Tự động lưu 100% vào thiết bị
+                </span>
+                <button id="quick-settings-done-btn" type="button" onclick="window.QuickSettingsController?.close();" class="btn-primary px-6 py-2 text-xs rounded-xl font-black cursor-pointer shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all">
                     Hoàn tất
                 </button>
             </div>
