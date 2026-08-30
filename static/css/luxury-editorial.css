@@ -225,6 +225,28 @@ nav {
     filter: none !important;
 }
 
+/* Desktop reading should feel expansive, not like a narrow centered column. */
+@media (min-width: 1024px) {
+    #text-container {
+        padding-top: clamp(1.5rem, 3vh, 3rem) !important;
+        padding-left: clamp(2rem, 4vw, 4.5rem) !important;
+        padding-right: clamp(3rem, 7vw, 7rem) !important;
+    }
+
+    #text-container .chunk-text {
+        width: min(100%, 86ch) !important;
+        margin-bottom: 0.8rem !important;
+        padding-top: 0.45rem !important;
+        padding-bottom: 0.45rem !important;
+    }
+}
+
+@media (min-width: 1440px) {
+    #text-container .chunk-text {
+        width: min(100%, 92ch) !important;
+    }
+}
+
 /* Player: a quiet, high-end audio object. */
 #media-player {
     border-radius: 1.35rem !important;
@@ -255,6 +277,12 @@ nav {
 
 #media-player-shell.player-discovery-dock #media-player {
     border-radius: 1.2rem !important;
+}
+
+@media (min-width: 1024px) {
+    #media-player {
+        max-width: min(100%, 72rem) !important;
+    }
 }
 
 /* Motion guardrails: keep state cues, remove decorative infinite glow. */
