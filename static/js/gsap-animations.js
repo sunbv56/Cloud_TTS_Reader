@@ -8,11 +8,14 @@
     'use strict';
 
     function startMotionLayer() {
+        if (window.__cloudTtsMotionLayerStarted) return;
+        window.__cloudTtsMotionLayerStarted = true;
+
         const gsap = window.gsap;
         if (!gsap) return;
 
-        const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-        const duration = reduceMotion ? 0 : 0.28;
+        let reduceMotion = false;
+        let duration = 0.28;
         const ease = 'power3.out';
         const visibilityTargets = [
             'discovery-mode',
@@ -40,9 +43,12 @@
             compactDiscovery: '(max-width: 639px)',
             reduceMotion: '(prefers-reduced-motion: reduce)'
         }, context => {
+            reduceMotion = context.conditions.reduceMotion;
+            duration = reduceMotion ? 0 : 0.28;
             spotlightEnabled = context.conditions.desktopPointer && !context.conditions.reduceMotion;
             compactDiscovery = context.conditions.compactDiscovery;
             return () => {
+                reduceMotion = true;
                 spotlightEnabled = false;
                 compactDiscovery = false;
             };
@@ -242,6 +248,19 @@
             });
             statusObserver.observe(statusIndicator, { childList: true, characterData: true, subtree: true });
         }
+
+        // The waveform is a state cue, not ambient decoration. Keep it tied
+        // to the native audio lifecycle so it never animates while paused.
+        const mainAudio = document.getElementById('main-audio');
+        if (mainAudio) {
+            const syncAudioMotion = () => {
+                window.MotionLayer?.setAudioWaveState(!mainAudio.paused && !mainAudio.ended);
+            };
+            ['play', 'playing', 'pause', 'ended', 'emptied'].forEach(eventName => {
+                mainAudio.addEventListener(eventName, syncAudioMotion);
+            });
+            syncAudioMotion();
+        }
     }
 
     // Expose MotionLayer utilities globally
@@ -323,14 +342,9 @@
                 return;
             }
             gsap.to(element, {
-                opacity: 0,
+                autoAlpha: 0,
                 x: 20,
                 scale: 0.95,
-                height: 0,
-                paddingTop: 0,
-                paddingBottom: 0,
-                marginTop: 0,
-                marginBottom: 0,
                 duration: 0.28,
                 ease: 'power2.in',
                 onComplete: () => {
@@ -408,11 +422,33 @@
         },
         setAudioWaveState(isPlaying) {
             const bars = document.querySelectorAll('.audio-wave-bars');
+            const gsap = window.gsap;
+            const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             bars.forEach(el => {
+                el.classList.toggle('is-playing', Boolean(isPlaying));
+                const waveBars = el.querySelectorAll('.audio-wave-bar');
+                if (!gsap || reduceMotion) return;
+
+                gsap.killTweensOf(waveBars);
                 if (isPlaying) {
-                    el.classList.add('is-playing');
+                    gsap.to(waveBars, {
+                        scaleY: (index) => [0.72, 1.18, 0.9, 1.05][index % 4],
+                        transformOrigin: 'center center',
+                        duration: 0.42,
+                        ease: 'sine.inOut',
+                        stagger: 0.08,
+                        repeat: -1,
+                        yoyo: true,
+                        delay: (index) => index * 0.08,
+                        overwrite: 'auto'
+                    });
                 } else {
-                    el.classList.remove('is-playing');
+                    gsap.to(waveBars, {
+                        scaleY: 1,
+                        duration: 0.18,
+                        ease: 'power2.out',
+                        overwrite: 'auto'
+                    });
                 }
             });
         }
