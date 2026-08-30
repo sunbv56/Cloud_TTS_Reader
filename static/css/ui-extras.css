@@ -451,8 +451,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 
 /* ===== LUXURY LEATHER-BOUND BOOK & HORLOGERIE SYSTEM ===== */
 
-.font-cinzel { font-family: "Cinzel", "Playfair Display", Georgia, serif !important; }
-.font-serif-royal { font-family: "Playfair Display", "Cinzel", Georgia, serif !important; }
+.font-cinzel { font-family: "Playfair Display", "Be Vietnam Pro", Georgia, serif !important; }
+.font-serif-royal { font-family: "Playfair Display", "Be Vietnam Pro", Georgia, serif !important; }
 .font-reading { font-family: "Literata", Georgia, serif !important; }
 
 /* Haute Horlogerie Watchmaker Dial (Crown Button) */
@@ -661,7 +661,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     transition: color 0.24s ease, text-shadow 0.24s ease;
 }
 .discovery-book-card .discovery-book-title {
-    font-family: "Cinzel", "Playfair Display", Georgia, serif !important;
+    font-family: "Playfair Display", "Be Vietnam Pro", Georgia, serif !important;
     color: #F8F4F0 !important;
     font-size: 1.02rem !important;
     font-weight: 700 !important;

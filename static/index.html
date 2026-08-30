@@ -34,17 +34,17 @@
     <link rel="stylesheet" href="/static/css/mini-player.css">
     <!-- Modular Master Stylesheet -->
     <link rel="stylesheet" href="/static/css/main.css">
-    <!-- Google Fonts: Playfair Display for Royal Headings + Literata for Book Reading + Inter for UI Controls -->
+    <!-- Google Fonts: 8 Luxury Fonts with 100% Vietnamese Support -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700;800;900&family=Inter:wght@300;400;500;600;700;800&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;0,7..72,600;0,7..72,700;1,7..72,400&family=Playfair+Display:ital,wght@0,600;0,700;0,800;0,900;1,400;1,600&display=swap"
+    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,600&family=Inter:wght@300;400;500;600;700;800&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;0,7..72,600;0,7..72,700;1,7..72,400&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400&family=Montserrat:wght@400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,600;0,700;0,800;0,900;1,400;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
         rel="stylesheet">
     <style type="text/tailwindcss">
         @theme {
-            --font-cinzel: "Cinzel", "Playfair Display", Georgia, serif;
-            --font-serif-royal: "Playfair Display", "Cinzel", Georgia, serif;
-            --font-reading: "Literata", Georgia, serif;
-            --font-inter: "Inter", sans-serif;
+            --font-cinzel: "Playfair Display", "Be Vietnam Pro", Georgia, serif;
+            --font-serif-royal: "Playfair Display", "Be Vietnam Pro", Georgia, serif;
+            --font-reading: var(--reader-font-family, "Be Vietnam Pro", "Literata", sans-serif);
+            --font-inter: "Be Vietnam Pro", "Inter", sans-serif;
             --color-primary: var(--theme-primary, #D4AF37);
             --color-primary-dim: var(--theme-primary-dim, #AA8728);
             --color-bg-dark: var(--theme-bg, #0C0A09);
@@ -137,6 +137,17 @@
         </div>
 
         <div class="flex items-center gap-2 sm:gap-4 lg:gap-8">
+            <!-- Quick Appearance & Theme Settings Button (Discovery & Reader) -->
+            <button id="quick-settings-btn"
+                class="icon-btn w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 hover:border-primary/50 hover:bg-primary/15 hover:text-primary transition-all relative group cursor-pointer"
+                aria-label="Cài đặt Theme & Font chữ" title="Cài đặt Theme & Font chữ">
+                <i class="fas fa-sliders text-sm sm:text-base text-primary/90"></i>
+                <div
+                    class="absolute top-full right-0 mt-2 p-2 bg-surface-high border border-primary/20 rounded-lg text-[10px] font-bold opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[100] text-[#F5EFEB]">
+                    Giao diện & Font chữ
+                </div>
+            </button>
+
             <button id="stats-toggle-btn"
                 class="icon-btn w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 hover:border-primary/40 hover:bg-primary/15 hover:text-primary transition-all relative group" aria-label="Mở thống kê đọc" title="Thống kê đọc">
                 <i class="fas fa-chart-line text-sm sm:text-base text-primary/90"></i>
@@ -430,8 +441,30 @@
                     </h3>
                     <div id="visual-settings-body" class="space-y-4">
 
-                        <!-- Font Size Control -->
+                        <!-- Font Family Selection (8 Luxury Vietnamese Fonts) -->
                         <div class="bg-white/5 p-4 rounded-2xl border border-white/5 mt-4">
+                            <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
+                                <span class="text-slate-400 uppercase tracking-tighter">Font Chữ (Tiếng Việt)</span>
+                                <span id="font-family-val" class="text-primary text-[11px] font-bold">Be Vietnam Pro</span>
+                            </div>
+                            <div class="relative">
+                                <select id="font-family-select"
+                                    class="w-full bg-[#17130F] border border-primary/20 rounded-xl p-2.5 text-xs text-[#F5EFEB] appearance-none focus:border-primary/60 transition-colors cursor-pointer font-medium">
+                                    <option value="Be Vietnam Pro" selected>1. Be Vietnam Pro (Chuẩn Quốc Tế)</option>
+                                    <option value="Playfair Display">2. Playfair Display (Serif Hoàng Gia)</option>
+                                    <option value="Plus Jakarta Sans">3. Plus Jakarta Sans (Thanh Lịch Châu Âu)</option>
+                                    <option value="Literata">4. Literata (Sách Chuẩn Google Books)</option>
+                                    <option value="Lora">5. Lora (Văn Học Cổ Điển)</option>
+                                    <option value="Merriweather">6. Merriweather (Serif Đậm Nét)</option>
+                                    <option value="Montserrat">7. Montserrat (Hiện Đại Sang Trọng)</option>
+                                    <option value="Inter">8. Inter (Tối Giản Tinh Tế)</option>
+                                </select>
+                                <i class="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-primary/70 pointer-events-none text-xs"></i>
+                            </div>
+                        </div>
+
+                        <!-- Font Size Control -->
+                        <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
                             <div class="flex items-center justify-between text-xs font-bold px-1 mb-3">
                                 <span class="text-slate-400 uppercase tracking-tighter">Font Size</span>
                                 <span id="font-size-val" class="text-primary font-mono text-sm">20px</span>
@@ -1311,10 +1344,104 @@ Nội dung chương hai...</pre>
                 </div>
             </div>
 
-            <div id="loading-dots" class="flex gap-1.5 mt-5">
-                <span class="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.3s]"></span>
-                <span class="w-1.5 h-1.5 bg-primary rounded-full animate-bounce [animation-delay:-0.15s]"></span>
-                <span class="w-1.5 h-1.5 bg-primary rounded-full animate-bounce"></span>
+    <!-- Quick Appearance & Theme Settings Modal (Accessible from Discovery & Reader) -->
+    <div id="quick-settings-modal" class="fixed inset-0 z-[195] hidden items-center justify-center p-3 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="quick-settings-title">
+        <div class="absolute inset-0 bg-black/75 backdrop-blur-md" id="quick-settings-overlay"></div>
+        <div class="glass relative flex w-full max-w-lg flex-col rounded-[2rem] p-5 sm:p-6 border border-[#D4AF37]/35 shadow-[0_20px_50px_rgba(0,0,0,0.85)] max-h-[90vh] overflow-y-auto hide-scrollbar animate-in fade-in zoom-in duration-200">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between pb-4 mb-4 border-b border-white/10">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center text-primary shadow-[0_0_15px_rgba(212,175,55,0.25)]">
+                        <i class="fas fa-sliders text-sm sm:text-base"></i>
+                    </div>
+                    <div>
+                        <h2 id="quick-settings-title" class="text-base sm:text-lg font-black text-white font-serif-royal">Cài đặt Giao diện & Font chữ</h2>
+                        <span class="text-[10px] text-primary/80 uppercase tracking-widest font-bold">Aureum Codex Edition</span>
+                    </div>
+                </div>
+                <button id="close-quick-settings-btn" type="button" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors" aria-label="Đóng cài đặt">
+                    <i class="fas fa-times text-base"></i>
+                </button>
+            </div>
+
+            <!-- Modal Content -->
+            <div class="space-y-4">
+                <!-- 1. Font Family Selection -->
+                <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
+                    <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
+                        <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-font text-primary"></i> Font chữ Tiếng Việt</span>
+                        <span id="quick-font-family-badge" class="text-primary text-[11px] font-bold">Be Vietnam Pro</span>
+                    </div>
+                    <div class="relative">
+                        <select id="quick-font-family-select"
+                            class="w-full bg-[#17130F] border border-primary/30 rounded-xl p-3 text-xs sm:text-sm text-[#F5EFEB] appearance-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-all cursor-pointer font-medium shadow-inner">
+                            <option value="Be Vietnam Pro" selected>1. Be Vietnam Pro (Chuẩn Quốc Tế)</option>
+                            <option value="Playfair Display">2. Playfair Display (Serif Hoàng Gia)</option>
+                            <option value="Plus Jakarta Sans">3. Plus Jakarta Sans (Thanh Lịch Châu Âu)</option>
+                            <option value="Literata">4. Literata (Sách Chuẩn Google Books)</option>
+                            <option value="Lora">5. Lora (Văn Học Cổ Điển)</option>
+                            <option value="Merriweather">6. Merriweather (Serif Đậm Nét)</option>
+                            <option value="Montserrat">7. Montserrat (Hiện Đại Sang Trọng)</option>
+                            <option value="Inter">8. Inter (Tối Giản Tinh Tế)</option>
+                        </select>
+                        <i class="fas fa-chevron-down absolute right-3.5 top-1/2 -translate-y-1/2 text-primary/70 pointer-events-none text-xs"></i>
+                    </div>
+                    <p class="mt-2 text-[11px] text-slate-400 italic px-1" id="quick-font-sample-preview" style="font-family: 'Be Vietnam Pro', sans-serif;">
+                        "Trăm năm trong cõi người ta, chữ tài chữ mệnh khéo là ghét nhau."
+                    </p>
+                </div>
+
+                <!-- 2. Font Size Control -->
+                <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
+                    <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
+                        <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-text-height text-primary"></i> Kích thước chữ</span>
+                        <span id="quick-font-size-val" class="text-primary font-mono text-sm">20px</span>
+                    </div>
+                    <input type="range" id="quick-font-size-range" min="12" max="42" step="1" value="20"
+                        class="w-full accent-primary h-1.5 cursor-pointer">
+                </div>
+
+                <!-- 3. Theme Grid Selection -->
+                <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
+                    <div class="flex items-center justify-between text-xs font-bold px-1 mb-3">
+                        <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-palette text-primary"></i> Chủ đề Hoàng gia (Themes)</span>
+                        <span id="quick-theme-current-name" class="text-primary text-[11px] font-bold">Vàng Hoàng Gia</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2" id="quick-theme-grid">
+                        <button type="button" class="quick-theme-btn p-2 rounded-xl border border-primary/40 bg-primary/10 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="default">
+                            <span class="w-4 h-4 rounded-full bg-[#D4AF37] shrink-0 border border-white/20"></span>
+                            <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Vàng Hoàng Gia</span>
+                        </button>
+                        <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="warm-night">
+                            <span class="w-4 h-4 rounded-full bg-[#C8A27A] shrink-0 border border-white/20"></span>
+                            <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Espresso Cashmere</span>
+                        </button>
+                        <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="forest">
+                            <span class="w-4 h-4 rounded-full bg-[#D97706] shrink-0 border border-white/20"></span>
+                            <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Bourbon Sồi Khói</span>
+                        </button>
+                        <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="rose">
+                            <span class="w-4 h-4 rounded-full bg-[#CD7F32] shrink-0 border border-white/20"></span>
+                            <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Gỗ Óc Chó Đồng Cổ</span>
+                        </button>
+                        <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="ocean">
+                            <span class="w-4 h-4 rounded-full bg-[#E59838] shrink-0 border border-white/20"></span>
+                            <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Cognac Hổ Phách</span>
+                        </button>
+                        <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="sepia">
+                            <span class="w-4 h-4 rounded-full bg-[#B88746] shrink-0 border border-white/20"></span>
+                            <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Giấy Cổ Oxford</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal Footer -->
+            <div class="mt-5 pt-3 border-t border-white/10 flex items-center justify-between">
+                <span class="text-[10px] text-slate-500">Tự động lưu vào trình duyệt</span>
+                <button id="quick-settings-done-btn" type="button" class="btn-primary px-5 py-2 text-xs rounded-xl font-bold cursor-pointer">
+                    Hoàn tất
+                </button>
             </div>
         </div>
     </div>

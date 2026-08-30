@@ -14,6 +14,7 @@
     --theme-is-light: 0;
 
     /* Custom Typography Defaults */
+    --reader-font-family: 'Be Vietnam Pro', 'Inter', sans-serif;
     --reader-font-size: 1.25rem;
     --reader-text-color: var(--theme-text-reading);
 }
@@ -269,12 +270,16 @@
 }
 
 /* Reading Content & Active Paragraphs */
-[data-theme] #text-container {
+[data-theme] #text-container,
+#text-container {
     color: var(--reader-text-color);
+    font-family: var(--reader-font-family, 'Be Vietnam Pro', sans-serif);
 }
 
-[data-theme] .chunk-text {
+[data-theme] .chunk-text,
+.chunk-text {
     color: var(--reader-text-color);
+    font-family: var(--reader-font-family, 'Be Vietnam Pro', sans-serif) !important;
 }
 
 [data-theme] .chunk-text:hover {

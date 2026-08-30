@@ -5374,12 +5374,138 @@ document.querySelectorAll('.preset-color').forEach(btn => {
     };
 });
 
+function applyFontFamily(fontFamily, syncElements = true) {
+    if (!fontFamily) fontFamily = 'Be Vietnam Pro';
+    STATE.settings.fontFamily = fontFamily;
+    try {
+        localStorage.setItem('reader-font-family', fontFamily);
+    } catch (_) {}
+
+    document.documentElement.style.setProperty('--reader-font-family', `'${fontFamily}', sans-serif`);
+    
+    if (syncElements) {
+        const sel1 = document.getElementById('font-family-select');
+        if (sel1) sel1.value = fontFamily;
+        const sel2 = document.getElementById('quick-font-family-select');
+        if (sel2) sel2.value = fontFamily;
+        const badge = document.getElementById('quick-font-family-badge');
+        if (badge) badge.innerText = fontFamily;
+        const val1 = document.getElementById('font-family-val');
+        if (val1) val1.innerText = fontFamily;
+        const sample = document.getElementById('quick-font-sample-preview');
+        if (sample) sample.style.fontFamily = `'${fontFamily}', sans-serif`;
+    }
+}
+
+// Bind Font Selectors
+const fontSelect = document.getElementById('font-family-select');
+if (fontSelect) {
+    fontSelect.onchange = (e) => {
+        applyFontFamily(e.target.value);
+    };
+}
+
+const quickFontSelect = document.getElementById('quick-font-family-select');
+if (quickFontSelect) {
+    quickFontSelect.onchange = (e) => {
+        applyFontFamily(e.target.value);
+    };
+}
+
+// Quick Appearance & Theme Settings Modal Handlers
+const quickSettingsBtn = document.getElementById('quick-settings-btn');
+const quickSettingsModal = document.getElementById('quick-settings-modal');
+const quickSettingsOverlay = document.getElementById('quick-settings-overlay');
+const closeQuickSettingsBtn = document.getElementById('close-quick-settings-btn');
+const quickSettingsDoneBtn = document.getElementById('quick-settings-done-btn');
+
+function openQuickSettings() {
+    if (!quickSettingsModal) return;
+    quickSettingsModal.classList.remove('hidden');
+    quickSettingsModal.classList.add('flex');
+    
+    // Sync active theme
+    const currentTheme = localStorage.getItem('reader-theme') || 'default';
+    document.querySelectorAll('.quick-theme-btn').forEach(btn => {
+        const isActive = btn.dataset.theme === currentTheme;
+        btn.classList.toggle('border-primary/50', isActive);
+        btn.classList.toggle('bg-primary/15', isActive);
+    });
+    const themeNameEl = document.getElementById('quick-theme-current-name');
+    if (themeNameEl && window.THEMES_DATA && window.THEMES_DATA[currentTheme]) {
+        themeNameEl.innerText = window.THEMES_DATA[currentTheme].nameVi || currentTheme;
+    }
+    
+    // Sync current font
+    const currentFont = localStorage.getItem('reader-font-family') || 'Be Vietnam Pro';
+    applyFontFamily(currentFont, true);
+    
+    // Sync font size
+    const currentSize = parseInt(localStorage.getItem('reader-font-size') || '20');
+    const sizeRange = document.getElementById('quick-font-size-range');
+    const sizeVal = document.getElementById('quick-font-size-val');
+    if (sizeRange) sizeRange.value = currentSize;
+    if (sizeVal) sizeVal.innerText = `${currentSize}px`;
+}
+
+function closeQuickSettings() {
+    if (!quickSettingsModal) return;
+    quickSettingsModal.classList.add('hidden');
+    quickSettingsModal.classList.remove('flex');
+}
+
+quickSettingsBtn?.addEventListener('click', openQuickSettings);
+quickSettingsOverlay?.addEventListener('click', closeQuickSettings);
+closeQuickSettingsBtn?.addEventListener('click', closeQuickSettings);
+quickSettingsDoneBtn?.addEventListener('click', closeQuickSettings);
+
+// Quick Theme Buttons Click Handlers
+document.querySelectorAll('.quick-theme-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const themeId = btn.dataset.theme;
+        if (typeof window.applyTheme === 'function') {
+            window.applyTheme(themeId);
+        }
+        document.querySelectorAll('.quick-theme-btn').forEach(b => {
+            const isSelected = b.dataset.theme === themeId;
+            b.classList.toggle('border-primary/50', isSelected);
+            b.classList.toggle('bg-primary/15', isSelected);
+        });
+        const themeNameEl = document.getElementById('quick-theme-current-name');
+        if (themeNameEl && window.THEMES_DATA && window.THEMES_DATA[themeId]) {
+            themeNameEl.innerText = window.THEMES_DATA[themeId].nameVi || themeId;
+        }
+    });
+});
+
+// Quick Font Size Slider
+const quickSizeRange = document.getElementById('quick-font-size-range');
+if (quickSizeRange) {
+    quickSizeRange.oninput = (e) => {
+        const val = parseInt(e.target.value);
+        STATE.settings.fontSize = val;
+        localStorage.setItem('reader-font-size', val);
+        const valEl = document.getElementById('quick-font-size-val');
+        if (valEl) valEl.innerText = `${val}px`;
+        const sidebarVal = document.getElementById('font-size-val');
+        if (sidebarVal) sidebarVal.innerText = `${val}px`;
+        const sidebarRange = document.getElementById('font-size-range');
+        if (sidebarRange) sidebarRange.value = val;
+        document.documentElement.style.setProperty('--reader-font-size', `${val}px`);
+        debouncedApplyTypography();
+    };
+}
+
 function applyTypographySettings() {
     const s = STATE.settings;
     const root = document.documentElement;
 
     // Apply Font Size
     root.style.setProperty('--reader-font-size', `${s.fontSize}px`);
+
+    // Apply Font Family
+    const currentFont = localStorage.getItem('reader-font-family') || 'Be Vietnam Pro';
+    applyFontFamily(currentFont, true);
 
     // Apply Text Color
     if (s.textColor === "default") {
