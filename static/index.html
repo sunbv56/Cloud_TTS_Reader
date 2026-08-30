@@ -139,6 +139,7 @@
         <div class="flex items-center gap-2 sm:gap-4 lg:gap-8">
             <!-- Quick Appearance & Theme Settings Button (Discovery & Reader) -->
             <button id="quick-settings-btn"
+                onclick="const m = document.getElementById('quick-settings-modal'); if(m){m.classList.remove('hidden'); m.classList.add('flex');}"
                 class="icon-btn w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-gradient-to-br from-[#241D17] to-[#0C0A09] border border-[#D4AF37]/35 hover:border-primary hover:shadow-[0_0_16px_rgba(212,175,55,0.4)] hover:scale-105 active:scale-95 transition-all relative group cursor-pointer shadow-md"
                 aria-label="Cài đặt Theme & Font chữ" title="Cài đặt Theme & Font chữ">
                 <i class="fas fa-sliders text-sm sm:text-base text-primary"></i>
@@ -1346,7 +1347,7 @@ Nội dung chương hai...</pre>
 
     <!-- Quick Appearance & Theme Settings Modal (Accessible from Discovery & Reader) -->
     <div id="quick-settings-modal" class="fixed inset-0 z-[195] hidden items-center justify-center p-3 sm:p-4" role="dialog" aria-modal="true" aria-labelledby="quick-settings-title">
-        <div class="absolute inset-0 bg-black/75 backdrop-blur-md" id="quick-settings-overlay"></div>
+        <div class="absolute inset-0 bg-black/75 backdrop-blur-md cursor-pointer" id="quick-settings-overlay" onclick="const m = document.getElementById('quick-settings-modal'); if(m){m.classList.add('hidden'); m.classList.remove('flex');}"></div>
         <div class="glass relative flex w-full max-w-lg flex-col rounded-[2rem] p-5 sm:p-6 border border-[#D4AF37]/35 shadow-[0_20px_50px_rgba(0,0,0,0.85)] max-h-[90vh] overflow-y-auto hide-scrollbar animate-in fade-in zoom-in duration-200">
             <!-- Modal Header -->
             <div class="flex items-center justify-between pb-4 mb-4 border-b border-white/10">
@@ -1359,7 +1360,7 @@ Nội dung chương hai...</pre>
                         <span class="text-[10px] text-primary/80 uppercase tracking-widest font-bold">Aureum Codex Edition</span>
                     </div>
                 </div>
-                <button id="close-quick-settings-btn" type="button" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors" aria-label="Đóng cài đặt">
+                <button id="close-quick-settings-btn" type="button" onclick="const m = document.getElementById('quick-settings-modal'); if(m){m.classList.add('hidden'); m.classList.remove('flex');}" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer" aria-label="Đóng cài đặt">
                     <i class="fas fa-times text-base"></i>
                 </button>
             </div>
@@ -1439,12 +1440,20 @@ Nội dung chương hai...</pre>
             <!-- Modal Footer -->
             <div class="mt-5 pt-3 border-t border-white/10 flex items-center justify-between">
                 <span class="text-[10px] text-slate-500">Tự động lưu vào trình duyệt</span>
-                <button id="quick-settings-done-btn" type="button" class="btn-primary px-5 py-2 text-xs rounded-xl font-bold cursor-pointer">
+                <button id="quick-settings-done-btn" type="button" onclick="const m = document.getElementById('quick-settings-modal'); if(m){m.classList.add('hidden'); m.classList.remove('flex');}" class="btn-primary px-5 py-2 text-xs rounded-xl font-bold cursor-pointer">
                     Hoàn tất
                 </button>
             </div>
         </div>
     </div>
+
+    <!-- Master Modular Application Scripts -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="/static/js/gsap-animations.js"></script>
+    <script type="module" src="/static/js/main.js"></script>
+    <script type="module" src="/static/app.js"></script>
+    <script src="/static/js/mini-player-widget.js"></script>
+    <script src="/static/js/image-manager.js"></script>
 
 </body>
 
