@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cloud-tts-v9-mobile-ux-pro';
+const CACHE_NAME = 'cloud-tts-v10-luxury-fonts';
 const ASSETS = [
     '/',
     '/static/index.html',

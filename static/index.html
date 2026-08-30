@@ -112,11 +112,11 @@
 
 <body class="h-screen h-[100dvh] flex flex-col overflow-hidden">
 
-    <!-- Top Navigation Bar -->
-    <nav class="h-16 lg:h-20 flex items-center justify-between px-3 sm:px-6 lg:px-10 z-[60] bg-transparent">
+    <!-- Top Navigation Bar (Luxury Crystal Header) -->
+    <nav class="h-16 lg:h-20 flex items-center justify-between px-3 sm:px-6 lg:px-10 z-[100] bg-surface-low/95 backdrop-blur-2xl border-b border-[#D4AF37]/20 shrink-0 shadow-[0_4px_30px_rgba(0,0,0,0.6)]">
         <div class="flex items-center gap-2 sm:gap-4">
             <!-- Mobile Menu Toggle -->
-            <button id="mobile-menu-btn" class="icon-btn lg:hidden p-2 text-xl hover:text-primary transition-colors" aria-label="Mở menu điều hướng" title="Mở menu điều hướng">
+            <button id="mobile-menu-btn" class="icon-btn lg:hidden p-2 text-xl text-[#F5EFEB] hover:text-primary transition-colors cursor-pointer" aria-label="Mở menu điều hướng" title="Mở menu điều hướng">
                 <i class="fas fa-bars"></i>
             </button>
 
@@ -127,7 +127,7 @@
                     <i class="fas fa-crown text-base sm:text-lg text-[#D4AF37]"></i>
                 </div>
                 <div>
-                    <h1 class="text-lg sm:text-xl lg:text-2xl font-black font-cinzel bg-clip-text text-transparent bg-gradient-to-r from-[#F5EFEB] via-[#D4AF37] to-[#CD7F32] tracking-wider"
+                    <h1 class="text-lg sm:text-xl lg:text-2xl font-black font-serif-royal bg-clip-text text-transparent bg-gradient-to-r from-[#F5EFEB] via-[#D4AF37] to-[#CD7F32] tracking-wider"
                         data-i18n="cloud-tts">
                         CLOUD TTS</h1>
                     <span class="text-[9px] uppercase font-bold tracking-[0.28em] text-[#D4AF37]/80 -mt-1 hidden sm:block font-serif-royal"
@@ -139,22 +139,22 @@
         <div class="flex items-center gap-2 sm:gap-4 lg:gap-8">
             <!-- Quick Appearance & Theme Settings Button (Discovery & Reader) -->
             <button id="quick-settings-btn"
-                class="icon-btn w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 hover:border-primary/50 hover:bg-primary/15 hover:text-primary transition-all relative group cursor-pointer"
+                class="icon-btn w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-gradient-to-br from-[#241D17] to-[#0C0A09] border border-[#D4AF37]/35 hover:border-primary hover:shadow-[0_0_16px_rgba(212,175,55,0.4)] hover:scale-105 active:scale-95 transition-all relative group cursor-pointer shadow-md"
                 aria-label="Cài đặt Theme & Font chữ" title="Cài đặt Theme & Font chữ">
-                <i class="fas fa-sliders text-sm sm:text-base text-primary/90"></i>
+                <i class="fas fa-sliders text-sm sm:text-base text-primary"></i>
                 <div
-                    class="absolute top-full right-0 mt-2 p-2 bg-surface-high border border-primary/20 rounded-lg text-[10px] font-bold opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[100] text-[#F5EFEB]">
+                    class="absolute top-full right-0 mt-2 p-2 bg-surface-high border border-primary/20 rounded-lg text-[10px] font-bold opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[100] text-[#F5EFEB] shadow-xl">
                     Giao diện & Font chữ
                 </div>
             </button>
 
             <button id="stats-toggle-btn"
-                class="icon-btn w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-white/5 border border-white/10 hover:border-primary/40 hover:bg-primary/15 hover:text-primary transition-all relative group" aria-label="Mở thống kê đọc" title="Thống kê đọc">
-                <i class="fas fa-chart-line text-sm sm:text-base text-primary/90"></i>
+                class="icon-btn w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-gradient-to-br from-[#241D17] to-[#0C0A09] border border-[#D4AF37]/35 hover:border-primary hover:shadow-[0_0_16px_rgba(212,175,55,0.4)] hover:scale-105 active:scale-95 transition-all relative group cursor-pointer shadow-md" aria-label="Mở thống kê đọc" title="Thống kê đọc">
+                <i class="fas fa-chart-line text-sm sm:text-base text-primary"></i>
                 <span class="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full border-2 border-bg-dark hidden"
                     id="streak-dot"></span>
                 <div
-                    class="absolute top-full right-0 mt-2 p-2 bg-surface-high border border-primary/20 rounded-lg text-[10px] font-bold opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[100] text-[#F5EFEB]">
+                    class="absolute top-full right-0 mt-2 p-2 bg-surface-high border border-primary/20 rounded-lg text-[10px] font-bold opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[100] text-[#F5EFEB] shadow-xl">
                     Reading Stats
                 </div>
             </button>

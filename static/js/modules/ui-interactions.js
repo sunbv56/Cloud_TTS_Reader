@@ -218,6 +218,58 @@ export function initUIInteractions() {
         applyTheme('default');
     }
 
+    // Quick Appearance & Theme Settings Modal
+    const quickSettingsBtn = document.getElementById('quick-settings-btn');
+    const quickSettingsModal = document.getElementById('quick-settings-modal');
+    const quickSettingsOverlay = document.getElementById('quick-settings-overlay');
+    const closeQuickSettingsBtn = document.getElementById('close-quick-settings-btn');
+    const quickSettingsDoneBtn = document.getElementById('quick-settings-done-btn');
+
+    function openQuickModal() {
+        if (!quickSettingsModal) return;
+        quickSettingsModal.classList.remove('hidden');
+        quickSettingsModal.classList.add('flex');
+
+        // Sync theme active
+        const curTheme = localStorage.getItem('reader-theme') || 'default';
+        document.querySelectorAll('.quick-theme-btn').forEach(btn => {
+            const isAct = btn.dataset.theme === curTheme;
+            btn.classList.toggle('border-primary/50', isAct);
+            btn.classList.toggle('bg-primary/15', isAct);
+        });
+
+        // Sync font family
+        const curFont = localStorage.getItem('reader-font-family') || 'Be Vietnam Pro';
+        const qFontSelect = document.getElementById('quick-font-family-select');
+        if (qFontSelect) qFontSelect.value = curFont;
+        const qFontBadge = document.getElementById('quick-font-family-badge');
+        if (qFontBadge) qFontBadge.innerText = curFont;
+        const qPreview = document.getElementById('quick-font-sample-preview');
+        if (qPreview) qPreview.style.fontFamily = `'${curFont}', sans-serif`;
+
+        // Sync font size
+        const curSize = parseInt(localStorage.getItem('reader-font-size') || '20');
+        const qSizeRange = document.getElementById('quick-font-size-range');
+        const qSizeVal = document.getElementById('quick-font-size-val');
+        if (qSizeRange) qSizeRange.value = curSize;
+        if (qSizeVal) qSizeVal.innerText = `${curSize}px`;
+    }
+
+    function closeQuickModal() {
+        if (!quickSettingsModal) return;
+        quickSettingsModal.classList.add('hidden');
+        quickSettingsModal.classList.remove('flex');
+    }
+
+    quickSettingsBtn?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        openQuickModal();
+    });
+    quickSettingsOverlay?.addEventListener('click', closeQuickModal);
+    closeQuickSettingsBtn?.addEventListener('click', closeQuickModal);
+    quickSettingsDoneBtn?.addEventListener('click', closeQuickModal);
+
     // Dictionary Panel handlers
     const dictInput = document.getElementById('dict-input');
     const dictSaveBtn = document.getElementById('dict-save-btn');
