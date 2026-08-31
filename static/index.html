@@ -138,22 +138,23 @@
             </div>
         </div>
 
-        <div class="flex items-center gap-2 sm:gap-4 lg:gap-8">
+        <div class="flex items-center gap-1.5 sm:gap-4 lg:gap-8">
             <!-- Quick Appearance & Theme Settings Button (Discovery & Reader) -->
             <button id="quick-settings-btn"
                 onclick="window.QuickSettingsController ? window.QuickSettingsController.open() : (function(){const m=document.getElementById('quick-settings-modal');if(m){m.classList.remove('hidden');m.classList.add('flex');}})();"
-                class="icon-btn w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-gradient-to-br from-[#241D17] to-[#0C0A09] border border-[#D4AF37]/35 hover:border-primary hover:shadow-[0_0_16px_rgba(212,175,55,0.4)] hover:scale-105 active:scale-95 transition-all relative group cursor-pointer shadow-md"
+                class="icon-btn w-8.5 h-8.5 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-gradient-to-br from-[#241D17] to-[#0C0A09] border border-[#D4AF37]/35 hover:border-primary hover:shadow-[0_0_16px_rgba(212,175,55,0.4)] hover:scale-105 active:scale-95 transition-all relative group cursor-pointer shadow-md"
                 aria-label="Cài đặt Theme & Font chữ" title="Cài đặt Theme & Font chữ">
-                <i class="fas fa-sliders text-sm sm:text-base text-primary"></i>
+                <i class="fas fa-sliders text-xs sm:text-base text-primary"></i>
                 <div
                     class="absolute top-full right-0 mt-2 p-2 bg-surface-high border border-primary/20 rounded-lg text-[10px] font-bold opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[100] text-[#F5EFEB] shadow-xl">
                     Giao diện & Font chữ
                 </div>
             </button>
 
+            <!-- Reading Stats Button (Visible on tablet & desktop >= 640px) -->
             <button id="stats-toggle-btn"
-                class="icon-btn w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-gradient-to-br from-[#241D17] to-[#0C0A09] border border-[#D4AF37]/35 hover:border-primary hover:shadow-[0_0_16px_rgba(212,175,55,0.4)] hover:scale-105 active:scale-95 transition-all relative group cursor-pointer shadow-md" aria-label="Mở thống kê đọc" title="Thống kê đọc">
-                <i class="fas fa-chart-line text-sm sm:text-base text-primary"></i>
+                class="icon-btn hidden sm:flex w-9 h-9 sm:w-10 sm:h-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#241D17] to-[#0C0A09] border border-[#D4AF37]/35 hover:border-primary hover:shadow-[0_0_16px_rgba(212,175,55,0.4)] hover:scale-105 active:scale-95 transition-all relative group cursor-pointer shadow-md" aria-label="Mở thống kê đọc" title="Thống kê đọc">
+                <i class="fas fa-chart-line text-xs sm:text-base text-primary"></i>
                 <span class="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full border-2 border-bg-dark hidden"
                     id="streak-dot"></span>
                 <div
@@ -161,17 +162,23 @@
                     Reading Stats
                 </div>
             </button>
+
+            <!-- Auth User Indicator on Desktop -->
             <div id="auth-info"
-                class="hidden sm:flex text-sm font-semibold items-center gap-3 px-4 py-2 rounded-full bg-white/5 border border-white/10">
+                class="hidden md:flex text-sm font-semibold items-center gap-3 px-4 py-2 rounded-full bg-white/5 border border-white/10">
                 <span class="w-2 h-2 rounded-full bg-amber-500/70"></span>
                 <span class="text-slate-400" data-i18n="guest-mode">Guest Mode</span>
             </div>
+
+            <!-- Fullscreen Button -->
             <button id="fullscreen-btn"
-                class="icon-btn lg:hidden w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary transition-all" aria-label="Bật toàn màn hình" title="Toàn màn hình">
-                <i class="fas fa-expand text-sm sm:text-base"></i>
+                class="icon-btn lg:hidden w-8.5 h-8.5 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-white/5 hover:bg-primary/20 hover:text-primary transition-all cursor-pointer" aria-label="Bật toàn màn hình" title="Toàn màn hình">
+                <i class="fas fa-expand text-xs sm:text-base"></i>
             </button>
-            <button id="auth-btn" class="btn-primary flex items-center gap-2 px-3 sm:px-6 py-1.5 sm:py-2 text-xs sm:text-sm">
-                <i class="fab fa-google text-sm sm:text-lg"></i>
+
+            <!-- Auth Button (Compact on Mobile, Pill on Desktop) -->
+            <button id="auth-btn" class="btn-primary w-8.5 h-8.5 sm:w-auto sm:h-10 flex items-center justify-center gap-1.5 px-0 sm:px-4 py-0 sm:py-2 text-xs sm:text-sm rounded-xl cursor-pointer shrink-0 shadow-md" aria-label="Tài khoản">
+                <i class="fab fa-google text-xs sm:text-sm"></i>
                 <span class="hidden sm:inline" data-i18n="sign-in">Sign In</span>
             </button>
         </div>

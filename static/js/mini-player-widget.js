@@ -170,7 +170,7 @@
     // Show / hide / close
     // ---------------------------------------------------------
     function show(reason) {
-        if (!bridge.STATE.currentBook) return;
+        if (!bridge?.STATE?.currentBook || !root) return;
         floatReason = reason || 'manual';
         root.classList.add('mpw-visible');
         setCollapsed(localStorage.getItem(COLLAPSED_KEY) === 'true', false);
@@ -187,7 +187,9 @@
 
     function hide() {
         floatReason = null;
-        root.classList.remove('mpw-visible');
+        if (root) {
+            root.classList.remove('mpw-visible');
+        }
         if (syncTimer) {
             clearInterval(syncTimer);
             syncTimer = null;
@@ -195,10 +197,13 @@
     }
 
     function setCollapsed(collapsed, persist = true) {
+        if (!root) return;
         root.classList.toggle('mpw-collapsed', collapsed);
-        card.setAttribute('aria-label', collapsed
-            ? 'Mở trình phát thu nhỏ'
-            : 'Trình phát thu nhỏ');
+        if (card) {
+            card.setAttribute('aria-label', collapsed
+                ? 'Mở trình phát thu nhỏ'
+                : 'Trình phát thu nhỏ');
+        }
         if (persist) localStorage.setItem(COLLAPSED_KEY, String(collapsed));
         if (root.classList.contains('mpw-visible')) applyCorner(loadCorner());
     }

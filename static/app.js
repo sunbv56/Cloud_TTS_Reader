@@ -5511,7 +5511,10 @@ const toggleFullscreen = () => {
     }
 };
 
-document.getElementById('fullscreen-btn').onclick = toggleFullscreen;
+const fullscreenBtn = document.getElementById('fullscreen-btn');
+if (fullscreenBtn) {
+    fullscreenBtn.onclick = toggleFullscreen;
+}
 
 // Performance / Lite Mode
 const liteModeToggle = document.getElementById('lite-mode-toggle');
