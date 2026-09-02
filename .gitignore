@@ -32,3 +32,5 @@ Thumbs.db
 .kilo/
 memory/
 *_backup*.*
+*.mp3
+tests/output_samples/

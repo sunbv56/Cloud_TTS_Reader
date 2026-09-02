@@ -1,5 +1,5 @@
 app = "cloud-tts-reader"
-primary_region = 'sin'
+primary_region = 'sjc'
 
 [build]
 
