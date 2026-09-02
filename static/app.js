@@ -771,8 +771,9 @@ function applyDiscoverySearch() {
     let matches = 0;
     Array.from(grid.children).forEach(card => {
         if (!card.dataset.title) return;
-        const visible = card.dataset.title.includes(query);
+        const visible = !query || card.dataset.title.includes(query);
         card.style.display = visible ? '' : 'none';
+        card.classList.toggle('is-search-hidden', !visible);
         if (visible) matches += 1;
     });
     if (count) count.textContent = `${matches}/${discoveryLibrary.length || matches} sách`;
@@ -797,12 +798,14 @@ function setDiscoveryView(view, persist = true) {
     listButton.setAttribute('aria-pressed', String(isList));
     if (persist) localStorage.setItem(DISCOVERY_VIEW_STORAGE_KEY, isList ? 'list' : 'grid');
 
+    applyDiscoverySearch();
+
     if (window.gsap && persist) {
-        const cards = grid.querySelectorAll('.discovery-book-card');
-        if (cards.length > 0) {
-            window.gsap.fromTo(cards,
+        const visibleCards = Array.from(grid.querySelectorAll('.discovery-book-card')).filter(c => c.style.display !== 'none' && !c.classList.contains('is-search-hidden'));
+        if (visibleCards.length > 0) {
+            window.gsap.fromTo(visibleCards,
                 { opacity: 0, y: 12, scale: 0.98 },
-                { opacity: 1, y: 0, scale: 1, duration: 0.28, stagger: 0.03, ease: 'power2.out', clearProps: 'all' }
+                { opacity: 1, y: 0, scale: 1, duration: 0.28, stagger: 0.03, ease: 'power2.out', clearProps: 'opacity,transform' }
             );
         }
     }
@@ -2800,7 +2803,7 @@ async function refreshLibrary() {
             deleteBtn.innerHTML = '<i class="fas fa-trash-alt w-4 text-center"></i> Xóa truyện';
             deleteBtn.onclick = (e) => {
                 e.stopPropagation();
-                deleteBook(bookId, filename, data.title);
+                deleteBook(bookId, data.filename, data.title);
             };
 
             dropdown.appendChild(mergeBtn);
@@ -2879,7 +2882,7 @@ async function refreshLibrary() {
                 deleteBtn.innerHTML = '<i class="fas fa-trash-alt w-4 text-center"></i> Xóa truyện';
                 deleteBtn.onclick = (e) => {
                     e.stopPropagation();
-                    deleteBook(bookId, filename, data.title);
+                    deleteBook(bookId, data.filename, data.title);
                 };
 
                 dropdown.appendChild(mergeBtn);
@@ -3004,6 +3007,16 @@ async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
 
 // ── Kebab Menu Helpers ───────────────────────────────────────────────────────
 
+function closeAllKebabMenus(exceptId = null) {
+    document.querySelectorAll('[id*="kebab-menu-"]').forEach(menu => {
+        if (!exceptId || menu.id !== exceptId) {
+            menu.classList.add('hidden');
+            const owner = menu.closest('[data-book-id], .group\\/item, .discovery-book-card');
+            if (owner) owner.style.zIndex = '';
+        }
+    });
+}
+
 /**
  * Toggles a kebab dropdown menu. Closes all other open menus first.
  */
@@ -3011,14 +3024,8 @@ function toggleKebabMenu(bookId, isDiscovery = false) {
     const prefix = isDiscovery ? 'discovery-kebab-menu-' : 'kebab-menu-';
     const targetId = prefix + bookId;
 
-    // Hide ALL open menus (sidebar and discovery)
-    document.querySelectorAll('[id*="kebab-menu-"]').forEach(menu => {
-        if (menu.id !== targetId) {
-            menu.classList.add('hidden');
-            const owner = menu.closest('[data-book-id], .group\\/item, .discovery-book-card');
-            if (owner) owner.style.zIndex = '';
-        }
-    });
+    // Hide ALL other open menus (sidebar and discovery)
+    closeAllKebabMenus(targetId);
 
     const menu = document.getElementById(targetId);
     if (menu) {
@@ -3033,11 +3040,7 @@ function toggleKebabMenu(bookId, isDiscovery = false) {
 
 // Close all kebab menus when clicking anywhere outside
 document.addEventListener('click', () => {
-    document.querySelectorAll('[id*="kebab-menu-"]').forEach(menu => {
-        menu.classList.add('hidden');
-        const owner = menu.closest('[data-book-id], .group\\/item, .discovery-book-card');
-        if (owner) owner.style.zIndex = '';
-    });
+    closeAllKebabMenus();
 });
 
 // ── Feature 1: Delete Book ───────────────────────────────────────────────────
@@ -3047,7 +3050,7 @@ document.addEventListener('click', () => {
  * Gracefully handles the case where the Storage file doesn't exist.
  */
 async function deleteBook(bookId, filename, title, bypassConfirm = false) {
-    toggleKebabMenu(bookId); // close menu first
+    closeAllKebabMenus(); // close menu first
 
     if (!bypassConfirm && !confirm(`Xóa truyện "${title}"?\n\nHành động này sẽ xóa vĩnh viễn dữ liệu trên Cloud. Không thể hoàn tác!`)) return;
     if (!STATE.user) return;

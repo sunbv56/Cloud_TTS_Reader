@@ -816,7 +816,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     aspect-ratio: auto !important;
     min-height: 4.25rem !important;
     margin-bottom: 0.55rem !important;
-    display: flex !important;
+    display: flex;
     flex-direction: row !important;
     align-items: center !important;
     padding: 0.4rem 0.6rem !important;
@@ -829,6 +829,12 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     background: linear-gradient(135deg, rgba(23, 19, 15, 0.85) 0%, rgba(12, 10, 9, 0.95) 100%) !important;
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
     transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.22s ease, box-shadow 0.22s ease !important;
+}
+.discovery-book-card.is-search-hidden,
+.discovery-list-view .discovery-book-card.is-search-hidden,
+#discovery-grid .discovery-book-card[style*="display: none"],
+#discovery-grid.discovery-list-view .discovery-book-card[style*="display: none"] {
+    display: none !important;
 }
 .discovery-list-view .discovery-book-card:hover {
     transform: translateY(-1px) !important;
