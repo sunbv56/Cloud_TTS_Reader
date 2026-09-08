@@ -480,7 +480,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     padding-bottom: 5.5rem;
 }
 
-/* ── Royal Embossed Leather Book Card (Imperial Aureum Codex) ──────── */
+/* ── Royal Embossed Leather Book Card (Imperial Aureum Codex & Theme-Adaptive) ──────── */
 .discovery-book-card {
     aspect-ratio: 0.78;
     min-height: 20rem;
@@ -491,25 +491,25 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     border-radius: 1.5rem !important;
     background: linear-gradient(
         160deg,
-        #1E1610 0%,
-        #130D09 45%,
-        #0A0604 100%
+        var(--theme-surface-high, #1E1610) 0%,
+        var(--theme-surface, #130D09) 55%,
+        var(--theme-bg, #0A0604) 100%
     ) !important;
-    border: 1.5px solid rgba(212, 175, 55, 0.4) !important;
-    box-shadow: 0 16px 42px -10px rgba(0, 0, 0, 0.9),
-                0 0 0 1px rgba(212, 175, 55, 0.18),
-                inset 0 0 24px rgba(212, 175, 55, 0.08),
-                inset 0 1px 0 rgba(255, 235, 170, 0.35) !important;
+    border: 1.5px solid var(--theme-glass-border, rgba(212, 175, 55, 0.4)) !important;
+    box-shadow: 0 16px 42px -10px rgba(0, 0, 0, 0.5),
+                0 0 0 1px var(--theme-glass-border, rgba(212, 175, 55, 0.18)),
+                inset 0 0 24px var(--theme-glow, rgba(212, 175, 55, 0.08)),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
     transition: all 0.38s cubic-bezier(0.16, 1, 0.3, 1) !important;
     position: relative;
 }
 .discovery-book-card:hover {
     transform: translateY(-6px) scale(1.02) !important;
-    border-color: rgba(212, 175, 55, 0.85) !important;
-    box-shadow: 0 24px 54px -10px rgba(0, 0, 0, 0.95),
-                0 0 35px -2px rgba(212, 175, 55, 0.45),
-                inset 0 0 28px rgba(212, 175, 55, 0.16),
-                inset 0 1px 0 rgba(255, 245, 200, 0.6) !important;
+    border-color: var(--theme-primary, rgba(212, 175, 55, 0.85)) !important;
+    box-shadow: 0 24px 54px -10px rgba(0, 0, 0, 0.65),
+                0 0 35px -2px var(--theme-glow, rgba(212, 175, 55, 0.45)),
+                inset 0 0 28px var(--theme-glow, rgba(212, 175, 55, 0.16)),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
 }
 
 /* 3D Book Hinge & Left Spine Crease (Realistic Leather Hardcover Feel) */
@@ -520,8 +520,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     bottom: 0;
     left: 0;
     width: 14px;
-    background: linear-gradient(90deg, rgba(212, 175, 55, 0.22) 0%, rgba(0, 0, 0, 0.5) 40%, transparent 100%);
-    border-right: 1px solid rgba(212, 175, 55, 0.2);
+    background: linear-gradient(90deg, color-mix(in srgb, var(--theme-primary, #D4AF37) 18%, transparent) 0%, rgba(0, 0, 0, 0.25) 40%, transparent 100%);
+    border-right: 1px solid var(--theme-glass-border, rgba(212, 175, 55, 0.2));
     pointer-events: none;
     z-index: 12;
     border-top-left-radius: 1.5rem;
@@ -539,8 +539,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     top: 0;
     bottom: 0;
     width: 6px;
-    background: linear-gradient(180deg, #D4AF37 0%, #CD7F32 50%, #8E5D2A 100%);
-    box-shadow: 2px 0 6px rgba(0,0,0,0.6);
+    background: linear-gradient(180deg, var(--theme-primary, #D4AF37) 0%, var(--theme-primary-dim, #CD7F32) 50%, color-mix(in srgb, var(--theme-primary, #8E5D2A) 70%, black) 100%);
+    box-shadow: 2px 0 6px rgba(0,0,0,0.3);
     border-top-left-radius: 1.25rem;
     border-bottom-left-radius: 1.25rem;
     z-index: 15;
@@ -556,9 +556,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     right: 3.25rem;
     width: 13px;
     height: 34px;
-    background: linear-gradient(180deg, #F0D37B 0%, #D4AF37 40%, #8E5D2A 100%);
+    background: linear-gradient(180deg, color-mix(in srgb, var(--theme-primary, #D4AF37) 75%, white) 0%, var(--theme-primary, #D4AF37) 40%, var(--theme-primary-dim, #8E5D2A) 100%);
     clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.6), 0 0 8px rgba(212, 175, 55, 0.3);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4), 0 0 8px var(--theme-glow, rgba(212, 175, 55, 0.3));
     z-index: 18;
     transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -571,7 +571,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     inset: 0 0 auto;
     height: 72%;
     overflow: hidden;
-    background: radial-gradient(circle at 50% 30%, #2E2117 0%, #150E0A 70%, #0A0604 100%);
+    background: radial-gradient(circle at 50% 30%, var(--theme-surface-high, #2E2117) 0%, var(--theme-surface, #150E0A) 70%, var(--theme-bg, #0A0604) 100%);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -585,9 +585,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     width: 3.8rem;
     height: 3.8rem;
     border-radius: 1.25rem;
-    background: radial-gradient(circle at 35% 30%, #2E2117 0%, #160F0A 100%);
-    border: 1.5px solid rgba(212, 175, 55, 0.45);
-    box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.7), 0 0 18px -2px rgba(212, 175, 55, 0.3);
+    background: radial-gradient(circle at 35% 30%, var(--theme-surface-high, #2E2117) 0%, var(--theme-surface, #160F0A) 100%);
+    border: 1.5px solid var(--theme-glass-border, rgba(212, 175, 55, 0.45));
+    box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.5), 0 0 18px -2px var(--theme-glow, rgba(212, 175, 55, 0.3));
     backdrop-filter: blur(12px);
     display: flex;
     align-items: center;
@@ -597,13 +597,13 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     z-index: 10;
 }
 .discovery-art-badge i {
-    color: #D4AF37 !important;
-    text-shadow: 0 0 12px rgba(212, 175, 55, 0.6);
+    color: var(--theme-primary, #D4AF37) !important;
+    text-shadow: 0 0 12px var(--theme-glow, rgba(212, 175, 55, 0.6));
 }
 .discovery-book-card:hover .discovery-art-badge {
     transform: scale(1.12);
-    border-color: #D4AF37;
-    box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.8), 0 0 28px rgba(212, 175, 55, 0.5);
+    border-color: var(--theme-primary, #D4AF37);
+    box-shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.6), 0 0 28px var(--theme-glow, rgba(212, 175, 55, 0.5));
 }
 .discovery-book-art[data-cover-status="loaded"] .discovery-art-badge,
 .discovery-book-art:has(img:not(.hidden)) .discovery-art-badge,
@@ -616,11 +616,11 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     inset: 0;
     background: linear-gradient(
         180deg,
-        rgba(0, 0, 0, 0.05) 0%,
+        rgba(0, 0, 0, 0.03) 0%,
         transparent 25%,
-        rgba(10, 6, 4, 0.4) 60%,
-        rgba(10, 6, 4, 0.85) 85%,
-        #0A0604 100%
+        color-mix(in srgb, var(--theme-surface, #0A0604) 35%, transparent) 60%,
+        color-mix(in srgb, var(--theme-surface, #0A0604) 80%, transparent) 85%,
+        var(--theme-surface, #0A0604) 100%
     );
     pointer-events: none;
 }
@@ -647,9 +647,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
         180deg,
         transparent 0%,
         transparent 35%,
-        rgba(10, 6, 4, 0.6) 55%,
-        rgba(10, 6, 4, 0.95) 75%,
-        #0A0604 100%
+        color-mix(in srgb, var(--theme-surface, #0A0604) 55%, transparent) 55%,
+        color-mix(in srgb, var(--theme-surface, #0A0604) 92%, transparent) 75%,
+        var(--theme-surface, #0A0604) 100%
     );
     pointer-events: none;
 }
@@ -663,7 +663,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 .discovery-book-card .discovery-book-title {
     font-family: "Playfair Display", "Be Vietnam Pro", Georgia, serif !important;
-    color: #F8F4F0 !important;
+    color: var(--theme-text, #F8F4F0) !important;
     font-size: 1.02rem !important;
     font-weight: 700 !important;
     letter-spacing: 0.02em !important;
@@ -674,32 +674,28 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     overflow: hidden !important;
     text-overflow: ellipsis !important;
     white-space: normal !important;
-    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.95);
 }
 .discovery-book-card:hover .discovery-book-title {
-    color: #F3D079 !important;
-    text-shadow: 0 0 14px rgba(212, 175, 55, 0.5);
+    color: var(--theme-primary, #F3D079) !important;
 }
 .discovery-book-card .discovery-book-meta {
     font-family: "Literata", Georgia, serif !important;
-    color: #D4AF37 !important;
-    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.85);
+    color: var(--theme-primary, #D4AF37) !important;
     font-size: 0.75rem !important;
     margin-top: 0.25rem;
 }
 .discovery-book-card .discovery-book-progress {
     padding-top: 0.55rem;
-    border-top: 1px solid rgba(212, 175, 55, 0.2);
+    border-top: 1px solid var(--theme-glass-border, rgba(212, 175, 55, 0.2));
 }
 .discovery-book-card.is-spotlit .discovery-book-title {
     white-space: normal;
     overflow: visible;
     text-overflow: clip;
-    color: #FFFFFF !important;
-    text-shadow: 0 2px 16px rgba(0, 0, 0, 0.8);
+    color: var(--theme-text, #FFFFFF) !important;
 }
 .discovery-book-card.is-spotlit .discovery-book-meta {
-    color: #E5C378 !important;
+    color: var(--theme-primary, #E5C378) !important;
 }
 .discovery-book-card.is-spotlit .discovery-book-progress {
     filter: brightness(1.15);
@@ -710,7 +706,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     }
 }
 .discovery-book-card:focus-visible {
-    outline: 2px solid #D4AF37;
+    outline: 2px solid var(--theme-primary, #D4AF37);
     outline-offset: 3px;
 }
 
@@ -721,21 +717,21 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     right: 0.65rem !important;
     width: 2.25rem !important;
     height: 2.25rem !important;
-    background: rgba(14, 10, 8, 0.65) !important;
+    background: color-mix(in srgb, var(--theme-surface-high, #140E0A) 82%, transparent) !important;
     backdrop-filter: blur(12px) !important;
     -webkit-backdrop-filter: blur(12px) !important;
-    border: 1px solid rgba(212, 175, 55, 0.35) !important;
-    color: #F5EFEB !important;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.6) !important;
+    border: 1px solid var(--theme-glass-border, rgba(212, 175, 55, 0.35)) !important;
+    color: var(--theme-text, #F5EFEB) !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
     border-radius: 0.85rem !important;
     z-index: 20 !important;
     transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
 }
 .discovery-book-card .icon-btn:hover {
-    background: #D4AF37 !important;
+    background: var(--theme-primary, #D4AF37) !important;
     color: #000000 !important;
-    border-color: #F5EFEB !important;
-    box-shadow: 0 0 16px rgba(212, 175, 55, 0.6) !important;
+    border-color: var(--theme-primary, #D4AF37) !important;
+    box-shadow: 0 0 16px var(--theme-glow, rgba(212, 175, 55, 0.6)) !important;
     transform: scale(1.08) !important;
 }
 
@@ -825,9 +821,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     position: relative !important;
     gap: 0.65rem !important;
     isolation: auto !important;
-    border: 1px solid rgba(212, 175, 55, 0.18) !important;
-    background: linear-gradient(135deg, rgba(23, 19, 15, 0.85) 0%, rgba(12, 10, 9, 0.95) 100%) !important;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4) !important;
+    border: 1px solid var(--theme-glass-border, rgba(212, 175, 55, 0.18)) !important;
+    background: linear-gradient(135deg, var(--theme-surface, rgba(23, 19, 15, 0.85)) 0%, color-mix(in srgb, var(--theme-surface-high, rgba(12, 10, 9, 0.95)) 85%, transparent) 100%) !important;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25) !important;
     transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.22s ease, box-shadow 0.22s ease !important;
 }
 .discovery-book-card.is-search-hidden,
@@ -838,8 +834,8 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 .discovery-list-view .discovery-book-card:hover {
     transform: translateY(-1px) !important;
-    border-color: rgba(212, 175, 55, 0.45) !important;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6), 0 0 12px rgba(212, 175, 55, 0.2) !important;
+    border-color: var(--theme-primary, rgba(212, 175, 55, 0.45)) !important;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35), 0 0 12px var(--theme-glow, rgba(212, 175, 55, 0.2)) !important;
 }
 .discovery-list-view .discovery-book-art {
     position: static !important;
@@ -855,9 +851,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    border: 1px solid rgba(212, 175, 55, 0.25) !important;
-    background: radial-gradient(circle at 35% 30%, #2E2117 0%, #150E0A 100%) !important;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5) !important;
+    border: 1px solid var(--theme-glass-border, rgba(212, 175, 55, 0.25)) !important;
+    background: radial-gradient(circle at 35% 30%, var(--theme-surface-high, #2E2117) 0%, var(--theme-surface, #150E0A) 100%) !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25) !important;
 }
 .discovery-list-view .discovery-art-badge {
     width: 100% !important;
@@ -925,13 +921,14 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     font-size: 0.7rem !important;
     border-radius: 0.65rem !important;
     z-index: 20 !important;
-    background: rgba(14, 10, 8, 0.6) !important;
-    border: 1px solid rgba(212, 175, 55, 0.25) !important;
+    background: color-mix(in srgb, var(--theme-surface-high, #0E0A08) 78%, transparent) !important;
+    border: 1px solid var(--theme-glass-border, rgba(212, 175, 55, 0.25)) !important;
+    color: var(--theme-text, #F5EFEB) !important;
 }
 .discovery-list-view .icon-btn:hover {
     transform: scale(1.08) !important;
-    background: #D4AF37 !important;
-    color: #0C0A09 !important;
+    background: var(--theme-primary, #D4AF37) !important;
+    color: #000000 !important;
 }
 .discovery-list-view .icon-btn:active {
     transform: scale(0.95) !important;
