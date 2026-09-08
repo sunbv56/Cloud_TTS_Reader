@@ -6,73 +6,73 @@ export const THEMES_DATA = {
     'default': {
         nameEn: 'Imperial Sovereign Gold',
         nameVi: 'Vàng Hoàng Gia Đế Vương',
-        moodEn: 'Obsidian Ebony & 24K Gold',
-        moodVi: 'Gỗ mun đen · Vàng 24K hoàng gia',
-        metaColor: '#0C0A09',
+        moodEn: 'European Royalty · 24K Gold & Obsidian',
+        moodVi: 'Vương giả Châu Âu · Vàng 24K & Gỗ mun',
+        metaColor: '#0A0908',
         isLight: false
     },
     'warm-night': {
-        nameEn: 'Espresso & Warm Cashmere',
-        nameVi: 'Espresso & Lụa Cashmere',
-        moodEn: 'Dark Roast & Toffee Cashmere',
-        moodVi: 'Cà phê rang sẫm · Lụa hạt dẻ',
-        metaColor: '#0F0C0A',
+        nameEn: 'Cyberpunk Neon Horizon',
+        nameVi: 'Cyberpunk Neon Viễn Tưởng',
+        moodEn: 'Neo-Tokyo Midnight · Electric Cyan Laser HUD',
+        moodVi: 'Công nghệ viễn tưởng · Laser Cyan HUD',
+        metaColor: '#05070D',
         isLight: false
     },
     'forest': {
-        nameEn: 'Aged Bourbon & Smoked Oak',
-        nameVi: 'Bourbon & Gỗ Sồi Khói',
-        moodEn: 'Aged Oak Cask & Amber Bourbon',
-        moodVi: 'Gỗ sồi ủ rượu · Hổ phách hun khói',
-        metaColor: '#0D0907',
+        nameEn: 'Emerald Zen Sanctuary',
+        nameVi: 'Ngọc Lục Bảo Thiền Định',
+        moodEn: 'Bamboo Mist & Imperial Jade Tea House',
+        moodVi: 'Trà đạo thiền định · Rừng thông ngập sương',
+        metaColor: '#050E0A',
         isLight: false
     },
     'rose': {
-        nameEn: 'Royal Dark Walnut & Bronze',
-        nameVi: 'Gỗ Óc Chó & Đồng Cổ',
-        moodEn: 'Noble Walnut & Antique Bronze',
-        moodVi: 'Gỗ óc chó quý tộc · Đồng thau cổ',
-        metaColor: '#0C0A09',
+        nameEn: 'Bordeaux Haute Couture',
+        nameVi: 'Vang Đỏ Bordeaux Quý Tộc',
+        moodEn: 'Parisian Velvet Noir & Rose Gold Champagne',
+        moodVi: 'Thời trang Paris · Vàng hồng & Nhung đỏ',
+        metaColor: '#0E050A',
         isLight: false
     },
     'ocean': {
-        nameEn: 'Cognac Amber & Havana Leather',
-        nameVi: 'Hổ Phách Cognac & Da Havana',
-        moodEn: 'Aged Havana & Honey Cognac',
-        moodVi: 'Da thuộc Havana · Rượu Cognac mật ong',
-        metaColor: '#100B08',
+        nameEn: 'Monaco Deep Sapphire',
+        nameVi: 'Lam Ngọc Biển Sâu Monaco',
+        moodEn: 'Abyssal Oceanic Trench & Bioluminescent Waves',
+        moodVi: 'Đại dương sâu thẳm · Lam ngọc phát quang',
+        metaColor: '#030712',
         isLight: false
     },
     'mocha': {
-        nameEn: 'Sahara Sand Gold & Dunes',
-        nameVi: 'Vàng Cát Sa Mạc Sahara',
-        moodEn: 'Desert Midnight & Dune Gold',
-        moodVi: 'Cát vàng sa mạc · Đêm huyền bí',
-        metaColor: '#0E0C0A',
+        nameEn: 'Nordic Bauhaus Studio',
+        nameVi: 'Tối Giản Bắc Âu Bauhaus',
+        moodEn: 'Scandinavian Slate & Bauhaus Cobalt Minimalism',
+        moodVi: 'Kiến trúc Scandinavian · Sắc nét & Tối giản',
+        metaColor: '#0B0E14',
         isLight: false
     },
     'sepia': {
-        nameEn: 'Florentine Antique Sepia',
-        nameVi: 'Sepia Phục Hưng Florence',
-        moodEn: 'Renaissance Leather & Terracotta',
-        moodVi: 'Bản thảo Phục Hưng · Nâu đất nung',
-        metaColor: '#14100C',
-        isLight: false
+        nameEn: 'Florentine Renaissance Parchment',
+        nameVi: 'Bản Thảo Phục Hưng Florence',
+        moodEn: '16th Century Vellum & Antique Terracotta Bronze',
+        moodVi: 'Giấy da vellum cổ · Mực đất nung ấm áp',
+        metaColor: '#F5EEDC',
+        isLight: true
     },
     'paper': {
-        nameEn: 'Antique Honey & Sandalwood',
-        nameVi: 'Vàng Mật Ong & Đàn Hương',
-        moodEn: 'Deep Sandalwood & Honey Gold',
-        moodVi: 'Gỗ đàn hương tuyền · Mật ong hổ phách',
-        metaColor: '#0B0806',
-        isLight: false
+        nameEn: 'Swiss Editorial Newsprint',
+        nameVi: 'Ấn Phẩm Nghệ Thuật Thụy Sĩ',
+        moodEn: 'Alabaster White Paper & International Klein Blue',
+        moodVi: 'Giấy trắng Alabaster · Mực in tạp chí nghệ thuật',
+        metaColor: '#F8F9FA',
+        isLight: true
     },
     'e-ink': {
-        nameEn: 'Champagne Brut & Onyx Noir',
-        nameVi: 'Champagne Brut & Đá Onyx',
-        moodEn: 'Noir Onyx & Polished Champagne',
-        moodVi: 'Đá Onyx đen bóng · Rượu Champagne Brut',
-        metaColor: '#0A0B0E',
+        nameEn: 'Kindle Paperwhite Monolith',
+        nameVi: 'Mực Điện Tử Kindle Monolith',
+        moodEn: 'Anti-Glare Paperwhite & Pure Matte Monochrome',
+        moodVi: 'E-Ink chống chói · Tối ưu mắt đọc xuyên đêm',
+        metaColor: '#0B0C0E',
         isLight: false
     }
 };
