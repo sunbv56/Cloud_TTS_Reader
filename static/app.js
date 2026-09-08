@@ -2835,7 +2835,7 @@ async function refreshLibrary() {
 
                 // ── Kebab (⋮) button ──────────────────────────────────────────────
                 const kebabBtn = document.createElement('button');
-                kebabBtn.className = 'icon-btn absolute top-2 right-2 sm:top-3 sm:right-3 w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center border border-white/20 bg-black/55 text-white shadow-lg shadow-black/30 backdrop-blur-md hover:scale-105 hover:border-primary/80 hover:bg-primary hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-all z-20';
+                kebabBtn.className = 'icon-btn absolute top-2 right-2 sm:top-3 sm:right-3 w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-all z-20';
                 kebabBtn.title = 'Tùy chọn';
                 kebabBtn.setAttribute('aria-label', `Tùy chọn cho ${data.title}`);
                 kebabBtn.innerHTML = '<i class="fas fa-ellipsis-v text-xs sm:text-sm"></i>';
@@ -2847,11 +2847,11 @@ async function refreshLibrary() {
                 // ── Dropdown menu ─────────────────────────────────────────────────
                 const dropdown = document.createElement('div');
                 dropdown.id = `discovery-kebab-menu-${bookId}`;
-                dropdown.className = 'hidden absolute right-3 sm:right-4 top-12 sm:top-16 w-48 bg-surface-high/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl z-50 overflow-hidden py-1';
+                dropdown.className = 'hidden absolute right-3 sm:right-4 top-12 sm:top-16 w-48 bg-surface-high/95 backdrop-blur-xl border border-glass-border rounded-2xl shadow-2xl z-50 overflow-hidden py-1';
                 dropdown.onclick = (e) => e.stopPropagation();
 
                 const mergeBtn = document.createElement('button');
-                mergeBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-slate-300 font-bold';
+                mergeBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-main font-bold';
                 mergeBtn.innerHTML = '<i class="fas fa-file-import w-4 text-center"></i> Nối chương';
                 mergeBtn.onclick = (e) => {
                     e.stopPropagation();
@@ -2860,7 +2860,7 @@ async function refreshLibrary() {
                 };
 
                 const downloadTextBtn = document.createElement('button');
-                downloadTextBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-slate-300 font-bold';
+                downloadTextBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-main font-bold';
                 downloadTextBtn.innerHTML = '<i class="fas fa-file-download w-4 text-center"></i> Tải file TXT';
                 downloadTextBtn.onclick = (e) => {
                     e.stopPropagation();
@@ -2869,7 +2869,7 @@ async function refreshLibrary() {
                 };
 
                 const imagesBtn = document.createElement('button');
-                imagesBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-slate-300 font-bold';
+                imagesBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-main font-bold';
                 imagesBtn.innerHTML = '<i class="fas fa-images w-4 text-center"></i> Quản lý ảnh & crop';
                 imagesBtn.onclick = (e) => {
                     e.stopPropagation();
@@ -2878,7 +2878,7 @@ async function refreshLibrary() {
                 };
 
                 const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-red-500/10 hover:text-red-400 transition-colors text-slate-300 font-bold';
+                deleteBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-red-500/10 hover:text-red-400 transition-colors text-main font-bold';
                 deleteBtn.innerHTML = '<i class="fas fa-trash-alt w-4 text-center"></i> Xóa truyện';
                 deleteBtn.onclick = (e) => {
                     e.stopPropagation();
@@ -2893,26 +2893,26 @@ async function refreshLibrary() {
                 discCard.innerHTML = `
                     <div class="book-spine-accent"></div>
                     <div class="book-ribbon"></div>
-                    <div class="discovery-book-art ${isActive ? 'text-black' : 'text-primary'} flex items-center justify-center">
+                    <div class="discovery-book-art ${isActive ? 'text-primary' : 'text-primary'} flex items-center justify-center">
                         <img data-cover-image="${bookId}" class="hidden" alt="Bìa truyện ${data.title}">
                         <div class="discovery-art-badge">
-                            <i class="fas ${isActive ? 'fa-crown' : 'fa-book-open'} text-2xl sm:text-3xl text-[#D4AF37]"></i>
+                            <i class="fas ${isActive ? 'fa-crown' : 'fa-book-open'} text-2xl sm:text-3xl text-primary"></i>
                         </div>
                     </div>
                     <div class="discovery-book-content">
                         <div class="min-w-0 pr-11 sm:pr-14">
-                            <h3 class="discovery-book-title font-cinzel ${isActive ? 'text-[#D4AF37]' : 'text-[#F5EFEB]'} font-bold group-hover:text-[#D4AF37] transition-colors" title="${data.title}">${data.title}</h3>
-                            <div class="discovery-book-meta text-xs ${isActive ? 'text-[#D4AF37]' : 'text-[#EADBCE]/80'} flex items-center gap-2 mt-1 font-serif-royal">
-                                <i class="fas ${isActive ? 'fa-play' : 'fa-bookmark'} text-[10px] text-[#D4AF37]"></i> ${isActive ? 'Currently Reading' : 'Continue Reading'}
+                            <h3 class="discovery-book-title font-cinzel ${isActive ? 'text-primary' : 'text-main'} font-bold group-hover:text-primary transition-colors" title="${data.title}">${data.title}</h3>
+                            <div class="discovery-book-meta text-xs ${isActive ? 'text-primary' : 'text-muted'} flex items-center gap-2 mt-1 font-serif-royal">
+                                <i class="fas ${isActive ? 'fa-play' : 'fa-bookmark'} text-[10px] text-primary"></i> ${isActive ? 'Currently Reading' : 'Continue Reading'}
                             </div>
                         </div>
                         <div class="discovery-book-progress mt-3 sm:mt-5">
                             <div class="flex justify-between items-center text-xs font-mono font-bold mb-2">
-                                <span class="text-[#EADBCE]/70 text-[10px] font-serif-royal">TIẾN ĐỘ ĐỌC</span>
-                                <span class="text-[#D4AF37] font-mono">${progress}%</span>
+                                <span class="text-muted text-[10px] font-serif-royal">TIẾN ĐỘ ĐỌC</span>
+                                <span class="text-primary font-mono">${progress}%</span>
                             </div>
-                            <div class="w-full bg-black/40 border border-[#D4AF37]/15 h-1.5 rounded-full overflow-hidden">
-                                <div class="bg-gradient-to-r from-[#D4AF37]/60 via-[#E5C378] to-[#CD7F32] h-full transition-all duration-500 shadow-[0_0_8px_rgba(212,175,55,0.4)]" style="width: ${progress}%"></div>
+                            <div class="w-full bg-surface-high/60 border border-glass-border h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-gradient-to-r from-primary/70 via-primary to-primary h-full transition-all duration-500 shadow-[0_0_8px_var(--theme-glow)]" style="width: ${progress}%"></div>
                             </div>
                         </div>
                     </div>
