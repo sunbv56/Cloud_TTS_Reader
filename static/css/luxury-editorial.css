@@ -6,15 +6,15 @@
  * gradients/glows with a quieter editorial hierarchy.
  */
 :root {
-    --luxury-ink: #0B0A08;
-    --luxury-surface: #14120F;
-    --luxury-raised: #1C1915;
-    --luxury-ivory: #F3EEE6;
-    --luxury-reading: #E7DED2;
-    --luxury-muted: #9B9185;
-    --luxury-champagne: #C8A873;
-    --luxury-line: rgba(243, 238, 230, 0.12);
-    --luxury-shadow: 0 18px 50px rgba(0, 0, 0, 0.34);
+    --luxury-ink: var(--theme-bg, #0B0A08);
+    --luxury-surface: var(--theme-surface, #14120F);
+    --luxury-raised: var(--theme-surface-high, #1C1915);
+    --luxury-ivory: var(--theme-text, #F3EEE6);
+    --luxury-reading: var(--theme-text-reading, #E7DED2);
+    --luxury-muted: var(--theme-text-muted, #9B9185);
+    --luxury-champagne: var(--theme-primary, #C8A873);
+    --luxury-line: color-mix(in srgb, var(--theme-text, #F3EEE6) 12%, transparent);
+    --luxury-shadow: 0 18px 50px rgba(0, 0, 0, 0.16);
 }
 
 html,
@@ -32,7 +32,7 @@ body {
 nav {
     background: color-mix(in srgb, var(--theme-bg, var(--luxury-ink)) 92%, transparent) !important;
     border-bottom: 1px solid color-mix(in srgb, var(--theme-text, var(--luxury-ivory)) 11%, transparent) !important;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18) !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08) !important;
 }
 
 /* One restrained brand mark instead of a wall of gold glow. */
@@ -40,9 +40,30 @@ nav {
     width: 2.75rem !important;
     height: 2.75rem !important;
     border-radius: 0.85rem !important;
-    background: linear-gradient(145deg, var(--luxury-raised), var(--luxury-ink)) !important;
-    border-color: color-mix(in srgb, var(--theme-primary, var(--luxury-champagne)) 42%, transparent) !important;
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 8px 20px rgba(0,0,0,0.22) !important;
+    background: linear-gradient(145deg, var(--theme-surface-high, var(--luxury-raised)), var(--theme-surface, var(--luxury-ink))) !important;
+    background-image: linear-gradient(145deg, var(--theme-surface-high, var(--luxury-raised)), var(--theme-surface, var(--luxury-ink))) !important;
+    border-color: var(--theme-glass-border, color-mix(in srgb, var(--theme-primary, var(--luxury-champagne)) 42%, transparent)) !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 4px 14px rgba(0,0,0,0.12) !important;
+    color: var(--theme-primary) !important;
+}
+
+#logo-btn > div:first-child i {
+    color: var(--theme-primary) !important;
+}
+
+/* Header buttons dynamic theme styling */
+#quick-settings-btn,
+#stats-toggle-btn {
+    background: linear-gradient(145deg, var(--theme-surface-high, var(--luxury-raised)), var(--theme-surface, var(--luxury-surface))) !important;
+    background-image: linear-gradient(145deg, var(--theme-surface-high, var(--luxury-raised)), var(--theme-surface, var(--luxury-surface))) !important;
+    border-color: var(--theme-glass-border, color-mix(in srgb, var(--theme-primary, var(--luxury-champagne)) 32%, transparent)) !important;
+    color: var(--theme-primary) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+}
+
+#quick-settings-btn i,
+#stats-toggle-btn i {
+    color: var(--theme-primary) !important;
 }
 
 #logo-btn h1 {
@@ -147,9 +168,9 @@ nav {
 .discovery-book-card {
     min-height: 19rem !important;
     border-radius: 1.15rem !important;
-    background: linear-gradient(160deg, var(--luxury-raised), var(--luxury-ink)) !important;
+    background: linear-gradient(160deg, var(--theme-surface-high, var(--luxury-raised)), var(--theme-surface, var(--luxury-ink))) !important;
     border: 1px solid color-mix(in srgb, var(--theme-text, var(--luxury-ivory)) 13%, transparent) !important;
-    box-shadow: 0 14px 34px rgba(0,0,0,0.28) !important;
+    box-shadow: 0 14px 34px rgba(0,0,0,0.16) !important;
 }
 
 .discovery-book-card:hover {
@@ -219,10 +240,11 @@ nav {
 }
 
 #text-container .chunk-active {
-    background: linear-gradient(90deg, color-mix(in srgb, var(--theme-primary, var(--luxury-champagne)) 10%, transparent), transparent 75%) !important;
-    border-left: 2px solid var(--theme-primary, var(--luxury-champagne)) !important;
-    box-shadow: none !important;
-    filter: none !important;
+    background: var(--theme-active-chunk-bg, linear-gradient(90deg, color-mix(in srgb, var(--theme-primary, var(--luxury-champagne)) 10%, transparent), transparent 75%)) !important;
+    border-left: var(--theme-active-chunk-border, 3px solid var(--theme-primary, var(--luxury-champagne))) !important;
+    box-shadow: var(--theme-active-chunk-shadow, none) !important;
+    border-radius: var(--theme-active-chunk-radius, 0 0.75rem 0.75rem 0) !important;
+    filter: none;
 }
 
 /* Desktop reading should feel expansive, not like a narrow centered column. */
@@ -257,14 +279,20 @@ nav {
 
 #media-player #play-btn,
 #media-player .horlogerie-dial {
-    background: var(--theme-text, var(--luxury-ivory)) !important;
+    background: var(--theme-primary, var(--luxury-champagne)) !important;
     border: 1px solid color-mix(in srgb, var(--theme-primary, var(--luxury-champagne)) 42%, transparent) !important;
-    box-shadow: 0 10px 24px rgba(0,0,0,0.28) !important;
+    box-shadow: 0 10px 24px rgba(0,0,0,0.20) !important;
+    color: #FFFFFF !important;
+}
+
+#media-player #play-btn i {
+    color: #FFFFFF !important;
 }
 
 #media-player #play-btn:hover,
 #media-player .horlogerie-dial:hover {
-    box-shadow: 0 14px 30px rgba(0,0,0,0.34) !important;
+    box-shadow: 0 14px 30px rgba(0,0,0,0.30) !important;
+    transform: scale(1.04);
 }
 
 #media-player #player-title {

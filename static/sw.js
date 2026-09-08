@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cloud-tts-v12-modal-dom-fix';
+const CACHE_NAME = 'cloud-tts-v13-light-themes-fix';
 const ASSETS = [
     '/',
     '/static/index.html',

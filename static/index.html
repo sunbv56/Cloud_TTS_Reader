@@ -31,11 +31,11 @@
     <!-- Font Awesome for Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <!-- Mini Player Widget (floating YouTube-style player) -->
-    <link rel="stylesheet" href="/static/css/mini-player.css">
+    <link rel="stylesheet" href="/static/css/mini-player.css?v=13">
     <!-- Modular Master Stylesheet -->
-    <link rel="stylesheet" href="/static/css/main.css">
+    <link rel="stylesheet" href="/static/css/main.css?v=13">
     <!-- Luxury editorial surface and motion-ready visual tokens -->
-    <link rel="stylesheet" href="/static/css/luxury-editorial.css">
+    <link rel="stylesheet" href="/static/css/luxury-editorial.css?v=13">
     <!-- Google Fonts: 8 Luxury Fonts with 100% Vietnamese Support -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -125,14 +125,14 @@
             <div id="logo-btn" class="flex items-center gap-2 sm:gap-3 cursor-pointer group transition-transform active:scale-95"
                 title="Home / Discovery">
                 <div
-                    class="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center bg-gradient-to-br from-[#241D17] to-[#0C0A09] border border-[#D4AF37]/40 shadow-[0_0_20px_rgba(212,175,55,0.2)] group-hover:border-[#D4AF37] group-hover:shadow-[0_0_25px_rgba(212,175,55,0.4)] transition-all">
-                    <i class="fas fa-crown text-base sm:text-lg text-[#D4AF37]"></i>
+                    class="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl flex items-center justify-center bg-surface-high border border-glass-border shadow-md group-hover:border-primary group-hover:shadow-lg transition-all text-primary">
+                    <i class="fas fa-crown text-base sm:text-lg"></i>
                 </div>
                 <div>
-                    <h1 class="text-lg sm:text-xl lg:text-2xl font-black font-serif-royal bg-clip-text text-transparent bg-gradient-to-r from-[#F5EFEB] via-[#D4AF37] to-[#CD7F32] tracking-wider"
+                    <h1 class="text-lg sm:text-xl lg:text-2xl font-black font-serif-royal tracking-wider text-main"
                         data-i18n="cloud-tts">
                         CLOUD TTS</h1>
-                    <span class="text-[9px] uppercase font-bold tracking-[0.28em] text-[#D4AF37]/80 -mt-1 hidden sm:block font-serif-royal"
+                    <span class="text-[9px] uppercase font-bold tracking-[0.28em] text-primary/80 -mt-1 hidden sm:block font-serif-royal"
                         data-i18n="pro-reader-edition">Imperial Sovereign Edition</span>
                 </div>
             </div>
@@ -142,23 +142,23 @@
             <!-- Quick Appearance & Theme Settings Button (Discovery & Reader) -->
             <button id="quick-settings-btn"
                 onclick="window.QuickSettingsController ? window.QuickSettingsController.open() : (function(){const m=document.getElementById('quick-settings-modal');if(m){m.classList.remove('hidden');m.classList.add('flex');}})();"
-                class="icon-btn w-8.5 h-8.5 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-gradient-to-br from-[#241D17] to-[#0C0A09] border border-[#D4AF37]/35 hover:border-primary hover:shadow-[0_0_16px_rgba(212,175,55,0.4)] hover:scale-105 active:scale-95 transition-all relative group cursor-pointer shadow-md"
+                class="icon-btn w-8.5 h-8.5 sm:w-10 sm:h-10 flex items-center justify-center rounded-xl bg-surface-high border border-glass-border hover:border-primary hover:shadow-md hover:scale-105 active:scale-95 transition-all relative group cursor-pointer shadow-sm text-primary"
                 aria-label="Cài đặt Theme & Font chữ" title="Cài đặt Theme & Font chữ">
-                <i class="fas fa-sliders text-xs sm:text-base text-primary"></i>
+                <i class="fas fa-sliders text-xs sm:text-base"></i>
                 <div
-                    class="absolute top-full right-0 mt-2 p-2 bg-surface-high border border-primary/20 rounded-lg text-[10px] font-bold opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[100] text-[#F5EFEB] shadow-xl">
+                    class="absolute top-full right-0 mt-2 p-2 bg-surface-high border border-glass-border rounded-lg text-[10px] font-bold opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[100] text-main shadow-xl">
                     Giao diện & Font chữ
                 </div>
             </button>
 
             <!-- Reading Stats Button (Visible on tablet & desktop >= 640px) -->
             <button id="stats-toggle-btn"
-                class="icon-btn hidden sm:flex w-9 h-9 sm:w-10 sm:h-10 items-center justify-center rounded-xl bg-gradient-to-br from-[#241D17] to-[#0C0A09] border border-[#D4AF37]/35 hover:border-primary hover:shadow-[0_0_16px_rgba(212,175,55,0.4)] hover:scale-105 active:scale-95 transition-all relative group cursor-pointer shadow-md" aria-label="Mở thống kê đọc" title="Thống kê đọc">
-                <i class="fas fa-chart-line text-xs sm:text-base text-primary"></i>
+                class="icon-btn hidden sm:flex w-9 h-9 sm:w-10 sm:h-10 items-center justify-center rounded-xl bg-surface-high border border-glass-border hover:border-primary hover:shadow-md hover:scale-105 active:scale-95 transition-all relative group cursor-pointer shadow-sm text-primary" aria-label="Mở thống kê đọc" title="Thống kê đọc">
+                <i class="fas fa-chart-line text-xs sm:text-base"></i>
                 <span class="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full border-2 border-bg-dark hidden"
                     id="streak-dot"></span>
                 <div
-                    class="absolute top-full right-0 mt-2 p-2 bg-surface-high border border-primary/20 rounded-lg text-[10px] font-bold opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[100] text-[#F5EFEB] shadow-xl">
+                    class="absolute top-full right-0 mt-2 p-2 bg-surface-high border border-glass-border rounded-lg text-[10px] font-bold opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity whitespace-nowrap z-[100] text-main shadow-xl">
                     Reading Stats
                 </div>
             </button>
@@ -589,7 +589,7 @@
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-2" id="theme-card-grid">
                             <!-- 1. Imperial Sovereign Gold -->
                             <button type="button" class="theme-card active group" data-theme="default" style="--card-accent: #D4AF37;" title="Imperial Sovereign Gold">
-                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #0C0A09 0%, #17130F 60%, #D4AF37 120%);">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #0A0908 0%, #161310 60%, #D4AF37 120%);">
                                     <span class="theme-card-icon" style="color: #D4AF37;"><i class="fas fa-crown"></i></span>
                                 </div>
                                 <div class="theme-card-info">
@@ -597,127 +597,127 @@
                                         <span class="theme-card-title" data-i18n="theme-default-name">Vàng Hoàng Gia Đế Vương</span>
                                         <span class="theme-mode-badge" title="Chế độ Tối">🌙</span>
                                     </div>
-                                    <span class="theme-card-mood" data-i18n="theme-default-mood">Gỗ mun đen · Vàng 24K hoàng gia</span>
+                                    <span class="theme-card-mood" data-i18n="theme-default-mood">Vương giả Châu Âu · Vàng 24K & Gỗ mun</span>
                                 </div>
                                 <div class="theme-card-check"><i class="fas fa-check"></i></div>
                             </button>
 
-                            <!-- 2. Espresso & Warm Cashmere -->
-                            <button type="button" class="theme-card group" data-theme="warm-night" style="--card-accent: #C8A27A;" title="Espresso & Warm Cashmere">
-                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #0F0C0A 0%, #1A1512 60%, #C8A27A 120%);">
-                                    <span class="theme-card-icon" style="color: #C8A27A;"><i class="fas fa-mug-hot"></i></span>
+                            <!-- 2. Cyberpunk Neon Horizon -->
+                            <button type="button" class="theme-card group" data-theme="warm-night" style="--card-accent: #00F2FE;" title="Cyberpunk Neon Horizon">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #05070D 0%, #0B111E 60%, #00F2FE 120%);">
+                                    <span class="theme-card-icon" style="color: #00F2FE;"><i class="fas fa-bolt"></i></span>
                                 </div>
                                 <div class="theme-card-info">
                                     <div class="flex items-center justify-between gap-1">
-                                        <span class="theme-card-title" data-i18n="theme-warm-night-name">Espresso & Lụa Cashmere</span>
+                                        <span class="theme-card-title" data-i18n="theme-warm-night-name">Cyberpunk Neon Viễn Tưởng</span>
                                         <span class="theme-mode-badge" title="Chế độ Tối">🌙</span>
                                     </div>
-                                    <span class="theme-card-mood" data-i18n="theme-warm-night-mood">Cà phê rang sẫm · Lụa hạt dẻ</span>
+                                    <span class="theme-card-mood" data-i18n="theme-warm-night-mood">Công nghệ viễn tưởng · Laser Cyan HUD</span>
                                 </div>
                                 <div class="theme-card-check"><i class="fas fa-check"></i></div>
                             </button>
 
-                            <!-- 3. Aged Bourbon & Smoked Oak -->
-                            <button type="button" class="theme-card group" data-theme="forest" style="--card-accent: #D97706;" title="Aged Bourbon & Smoked Oak">
-                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #0D0907 0%, #19120D 60%, #D97706 120%);">
-                                    <span class="theme-card-icon" style="color: #D97706;"><i class="fas fa-glass-whiskey"></i></span>
+                            <!-- 3. Emerald Zen Sanctuary -->
+                            <button type="button" class="theme-card group" data-theme="forest" style="--card-accent: #10B981;" title="Emerald Zen Sanctuary">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #050E0A 0%, #0C1A14 60%, #10B981 120%);">
+                                    <span class="theme-card-icon" style="color: #10B981;"><i class="fas fa-leaf"></i></span>
                                 </div>
                                 <div class="theme-card-info">
                                     <div class="flex items-center justify-between gap-1">
-                                        <span class="theme-card-title" data-i18n="theme-forest-name">Bourbon & Gỗ Sồi Khói</span>
+                                        <span class="theme-card-title" data-i18n="theme-forest-name">Ngọc Lục Bảo Thiền Định</span>
                                         <span class="theme-mode-badge" title="Chế độ Tối">🌙</span>
                                     </div>
-                                    <span class="theme-card-mood" data-i18n="theme-forest-mood">Gỗ sồi ủ rượu · Hổ phách hun khói</span>
+                                    <span class="theme-card-mood" data-i18n="theme-forest-mood">Trà đạo thiền định · Rừng thông ngập sương</span>
                                 </div>
                                 <div class="theme-card-check"><i class="fas fa-check"></i></div>
                             </button>
 
-                            <!-- 4. Royal Dark Walnut & Bronze -->
-                            <button type="button" class="theme-card group" data-theme="rose" style="--card-accent: #CD7F32;" title="Royal Dark Walnut & Bronze">
-                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #0C0A09 0%, #171412 60%, #CD7F32 120%);">
-                                    <span class="theme-card-icon" style="color: #CD7F32;"><i class="fas fa-tree"></i></span>
+                            <!-- 4. Bordeaux Haute Couture -->
+                            <button type="button" class="theme-card group" data-theme="rose" style="--card-accent: #FB7185;" title="Bordeaux Haute Couture">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #0E050A 0%, #1A0A13 60%, #FB7185 120%);">
+                                    <span class="theme-card-icon" style="color: #FB7185;"><i class="fas fa-wine-glass-alt"></i></span>
                                 </div>
                                 <div class="theme-card-info">
                                     <div class="flex items-center justify-between gap-1">
-                                        <span class="theme-card-title" data-i18n="theme-rose-name">Gỗ Óc Chó & Đồng Cổ</span>
+                                        <span class="theme-card-title" data-i18n="theme-rose-name">Vang Đỏ Bordeaux Quý Tộc</span>
                                         <span class="theme-mode-badge" title="Chế độ Tối">🌙</span>
                                     </div>
-                                    <span class="theme-card-mood" data-i18n="theme-rose-mood">Gỗ óc chó quý tộc · Đồng thau cổ</span>
+                                    <span class="theme-card-mood" data-i18n="theme-rose-mood">Thời trang Paris · Vàng hồng & Nhung đỏ</span>
                                 </div>
                                 <div class="theme-card-check"><i class="fas fa-check"></i></div>
                             </button>
 
-                            <!-- 5. Cognac Amber & Havana Leather -->
-                            <button type="button" class="theme-card group" data-theme="ocean" style="--card-accent: #E59838;" title="Cognac Amber & Havana Leather">
-                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #100B08 0%, #1C130E 60%, #E59838 120%);">
-                                    <span class="theme-card-icon" style="color: #E59838;"><i class="fas fa-gem"></i></span>
+                            <!-- 5. Monaco Deep Sapphire -->
+                            <button type="button" class="theme-card group" data-theme="ocean" style="--card-accent: #38BDF8;" title="Monaco Deep Sapphire">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #030712 0%, #0B132B 60%, #38BDF8 120%);">
+                                    <span class="theme-card-icon" style="color: #38BDF8;"><i class="fas fa-water"></i></span>
                                 </div>
                                 <div class="theme-card-info">
                                     <div class="flex items-center justify-between gap-1">
-                                        <span class="theme-card-title" data-i18n="theme-ocean-name">Hổ Phách Cognac & Da Havana</span>
+                                        <span class="theme-card-title" data-i18n="theme-ocean-name">Lam Ngọc Biển Sâu Monaco</span>
                                         <span class="theme-mode-badge" title="Chế độ Tối">🌙</span>
                                     </div>
-                                    <span class="theme-card-mood" data-i18n="theme-ocean-mood">Da thuộc Havana · Rượu Cognac mật ong</span>
+                                    <span class="theme-card-mood" data-i18n="theme-ocean-mood">Đại dương sâu thẳm · Lam ngọc phát quang</span>
                                 </div>
                                 <div class="theme-card-check"><i class="fas fa-check"></i></div>
                             </button>
 
-                            <!-- 6. Sahara Sand Gold & Dunes -->
-                            <button type="button" class="theme-card group" data-theme="mocha" style="--card-accent: #D1A766;" title="Sahara Sand Gold & Dunes">
-                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #0E0C0A 0%, #181512 60%, #D1A766 120%);">
-                                    <span class="theme-card-icon" style="color: #D1A766;"><i class="fas fa-mountain"></i></span>
+                            <!-- 6. Nordic Bauhaus Studio -->
+                            <button type="button" class="theme-card group" data-theme="mocha" style="--card-accent: #60A5FA;" title="Nordic Bauhaus Studio">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #0B0E14 0%, #151B26 60%, #60A5FA 120%);">
+                                    <span class="theme-card-icon" style="color: #60A5FA;"><i class="fas fa-cube"></i></span>
                                 </div>
                                 <div class="theme-card-info">
                                     <div class="flex items-center justify-between gap-1">
-                                        <span class="theme-card-title" data-i18n="theme-mocha-name">Vàng Cát Sa Mạc Sahara</span>
+                                        <span class="theme-card-title" data-i18n="theme-mocha-name">Tối Giản Bắc Âu Bauhaus</span>
                                         <span class="theme-mode-badge" title="Chế độ Tối">🌙</span>
                                     </div>
-                                    <span class="theme-card-mood" data-i18n="theme-mocha-mood">Cát vàng sa mạc · Đêm huyền bí</span>
+                                    <span class="theme-card-mood" data-i18n="theme-mocha-mood">Kiến trúc Scandinavian · Sắc nét & Tối giản</span>
                                 </div>
                                 <div class="theme-card-check"><i class="fas fa-check"></i></div>
                             </button>
 
-                            <!-- 7. Florentine Antique Sepia -->
-                            <button type="button" class="theme-card group" data-theme="sepia" style="--card-accent: #B47E43;" title="Florentine Antique Sepia">
-                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #14100C 0%, #201A14 60%, #B47E43 120%);">
-                                    <span class="theme-card-icon" style="color: #B47E43;"><i class="fas fa-scroll"></i></span>
+                            <!-- 7. Florentine Renaissance Parchment -->
+                            <button type="button" class="theme-card group" data-theme="sepia" style="--card-accent: #854D0E;" title="Florentine Renaissance Parchment">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #F5EEDC 0%, #EADFC8 60%, #854D0E 120%);">
+                                    <span class="theme-card-icon" style="color: #854D0E;"><i class="fas fa-scroll"></i></span>
                                 </div>
                                 <div class="theme-card-info">
                                     <div class="flex items-center justify-between gap-1">
-                                        <span class="theme-card-title" data-i18n="theme-sepia-name">Sepia Phục Hưng Florence</span>
-                                        <span class="theme-mode-badge" title="Chế độ Tối">🌙</span>
+                                        <span class="theme-card-title" data-i18n="theme-sepia-name">Bản Thảo Phục Hưng Florence</span>
+                                        <span class="theme-mode-badge" title="Chế độ Sáng">☀️</span>
                                     </div>
-                                    <span class="theme-card-mood" data-i18n="theme-sepia-mood">Bản thảo Phục Hưng · Nâu đất nung</span>
+                                    <span class="theme-card-mood" data-i18n="theme-sepia-mood">Giấy da vellum cổ · Mực đất nung ấm áp</span>
                                 </div>
                                 <div class="theme-card-check"><i class="fas fa-check"></i></div>
                             </button>
 
-                            <!-- 8. Antique Honey & Sandalwood -->
-                            <button type="button" class="theme-card group" data-theme="paper" style="--card-accent: #E0A946;" title="Antique Honey & Sandalwood">
-                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #0B0806 0%, #17110C 60%, #E0A946 120%);">
-                                    <span class="theme-card-icon" style="color: #E0A946;"><i class="fas fa-feather-alt"></i></span>
+                            <!-- 8. Swiss Editorial Newsprint -->
+                            <button type="button" class="theme-card group" data-theme="paper" style="--card-accent: #1D4ED8;" title="Swiss Editorial Newsprint">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #FFFFFF 0%, #F1F3F5 60%, #1D4ED8 120%);">
+                                    <span class="theme-card-icon" style="color: #1D4ED8;"><i class="fas fa-newspaper"></i></span>
                                 </div>
                                 <div class="theme-card-info">
                                     <div class="flex items-center justify-between gap-1">
-                                        <span class="theme-card-title" data-i18n="theme-paper-name">Vàng Mật Ong & Đàn Hương</span>
-                                        <span class="theme-mode-badge" title="Chế độ Tối">🌙</span>
+                                        <span class="theme-card-title" data-i18n="theme-paper-name">Ấn Phẩm Nghệ Thuật Thụy Sĩ</span>
+                                        <span class="theme-mode-badge" title="Chế độ Sáng">☀️</span>
                                     </div>
-                                    <span class="theme-card-mood" data-i18n="theme-paper-mood">Gỗ đàn hương tuyền · Mật ong hổ phách</span>
+                                    <span class="theme-card-mood" data-i18n="theme-paper-mood">Giấy trắng Alabaster · Mực in tạp chí nghệ thuật</span>
                                 </div>
                                 <div class="theme-card-check"><i class="fas fa-check"></i></div>
                             </button>
 
-                            <!-- 9. Champagne Brut & Onyx Noir -->
-                            <button type="button" class="theme-card group" data-theme="e-ink" style="--card-accent: #E5C378;" title="Champagne Brut & Onyx Noir">
-                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #0A0B0E 0%, #141720 60%, #E5C378 120%);">
-                                    <span class="theme-card-icon" style="color: #E5C378;"><i class="fas fa-shield-alt"></i></span>
+                            <!-- 9. Kindle Paperwhite Monolith -->
+                            <button type="button" class="theme-card group" data-theme="e-ink" style="--card-accent: #E2E8F0;" title="Kindle Paperwhite Monolith">
+                                <div class="theme-card-preview" style="background: linear-gradient(135deg, #0B0C0E 0%, #131519 60%, #E2E8F0 120%);">
+                                    <span class="theme-card-icon" style="color: #E2E8F0;"><i class="fas fa-book-open"></i></span>
                                 </div>
                                 <div class="theme-card-info">
                                     <div class="flex items-center justify-between gap-1">
-                                        <span class="theme-card-title" data-i18n="theme-e-ink-name">Champagne Brut & Đá Onyx</span>
-                                        <span class="theme-mode-badge" title="Chế độ Tối">🌙</span>
+                                        <span class="theme-card-title" data-i18n="theme-e-ink-name">Mực Điện Tử Kindle Monolith</span>
+                                        <span class="theme-mode-badge" title="Chế độ E-Ink">🌙</span>
                                     </div>
-                                    <span class="theme-card-mood" data-i18n="theme-e-ink-mood">Đá Onyx đen bóng · Rượu Champagne Brut</span>
+                                    <span class="theme-card-mood" data-i18n="theme-e-ink-mood">E-Ink chống chói · Tối ưu mắt đọc xuyên đêm</span>
                                 </div>
                                 <div class="theme-card-check"><i class="fas fa-check"></i></div>
                             </button>
@@ -870,14 +870,14 @@
                     class="max-w-5xl mx-auto glass rounded-[3rem] shadow-[0_25px_60px_rgba(0,0,0,0.8)] p-4 lg:p-6 grid grid-cols-1 lg:grid-cols-3 items-center gap-4 lg:gap-0 pointer-events-auto relative border border-[#D4AF37]/25">
                     <!-- Minimize Button -->
                     <button id="minimize-btn"
-                        class="absolute -top-3 right-8 w-8 h-8 rounded-full bg-[#17130F] border border-[#D4AF37]/30 flex items-center justify-center hover:border-primary hover:text-primary transition-all z-10 shadow-lg text-[#F5EFEB]/80"
+                        class="absolute -top-3 right-8 w-8 h-8 rounded-full bg-surface-high border border-glass-border flex items-center justify-center hover:border-primary hover:text-primary transition-all z-10 shadow-md text-main"
                         title="Thu gọn trình phát" aria-label="Thu gọn trình phát" aria-expanded="true">
                         <i class="fas fa-chevron-down text-[10px]"></i>
                     </button>
                     <!-- Information Layer -->
                     <div id="player-info-layer" class="flex items-center gap-4 w-full">
                         <div
-                            class="w-12 h-12 lg:w-16 lg:h-16 rounded-2xl bg-gradient-to-br from-[#241D17] to-[#0C0A09] border border-[#D4AF37]/30 flex items-center justify-center shrink-0 overflow-hidden relative shadow-inner">
+                            class="w-12 h-12 lg:w-16 lg:h-16 rounded-2xl bg-surface-high border border-glass-border flex items-center justify-center shrink-0 overflow-hidden relative shadow-sm">
                             <div class="absolute inset-0 bg-gradient-to-br from-primary/15 to-transparent"></div>
                             <i class="fas fa-compact-disc text-primary/60 text-xl lg:text-2xl animate-spin-slow"></i>
                         </div>
@@ -990,9 +990,9 @@
         <section id="discovery-mode" class="absolute inset-0 z-[80] bg-bg-dark flex flex-col overflow-y-auto">
             <!-- Search Bar Area -->
             <div class="px-4 sm:px-6 lg:px-20 pt-8 sm:pt-16 pb-6 sm:pb-8 flex flex-col items-center">
-                <h1 class="text-3xl sm:text-4xl lg:text-6xl font-black font-cinzel text-transparent bg-clip-text bg-gradient-to-b from-[#FFFFFF] via-[#F5EFEB] to-[#D4AF37] mb-3 sm:mb-4 tracking-tight text-center drop-shadow-lg"
+                <h1 class="discovery-hero-title text-3xl sm:text-4xl lg:text-6xl font-black font-cinzel text-transparent bg-clip-text mb-3 sm:mb-4 tracking-tight text-center drop-shadow-lg"
                     data-i18n="discover-masterpiece">Discover Your Next Masterpiece</h1>
-                <p class="text-xs sm:text-sm text-[#D4AF37]/80 font-serif-royal italic mb-6 sm:mb-8 tracking-wider text-center">
+                <p class="text-xs sm:text-sm text-primary/80 font-serif-royal italic mb-6 sm:mb-8 tracking-wider text-center">
                     Kho tàng tri thức & Nghệ thuật âm thanh hoàng gia
                 </p>
                 <div class="relative w-full max-w-2xl group">
@@ -1000,25 +1000,25 @@
                         class="absolute inset-0 bg-primary/20 blur-xl rounded-full opacity-40 group-hover:opacity-80 transition-opacity">
                     </div>
                     <input id="discovery-search" type="text" placeholder="Search library..."
-                        class="w-full bg-[#17130F]/90 border border-[#D4AF37]/30 rounded-full pl-12 sm:pl-14 pr-6 sm:pr-8 py-3.5 sm:py-4 text-sm sm:text-base text-[#F5EFEB] placeholder-[#A89A88] focus:outline-none focus:border-[#D4AF37] focus:ring-2 focus:ring-[#D4AF37]/20 relative z-10 shadow-2xl transition-all">
+                        class="w-full bg-surface/90 border border-glass-border rounded-full pl-12 sm:pl-14 pr-6 sm:pr-8 py-3.5 sm:py-4 text-sm sm:text-base text-main placeholder:text-slate-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 relative z-10 shadow-lg transition-all">
                     <i
-                        class="fas fa-search absolute left-4 sm:left-6 top-1/2 -translate-y-1/2 text-[#D4AF37]/70 z-10 pointer-events-none text-sm sm:text-base"></i>
+                        class="fas fa-search absolute left-4 sm:left-6 top-1/2 -translate-y-1/2 text-primary/80 z-10 pointer-events-none text-sm sm:text-base"></i>
                 </div>
-                <section id="discovery-continue-card" hidden class="mt-4 sm:mt-6 md:mt-8 rounded-2xl sm:rounded-3xl p-3 sm:p-4 md:p-5 flex flex-row items-center gap-3 sm:gap-4 md:gap-5 shadow-xl transition-all cursor-pointer group/cont border border-[#D4AF37]/30 bg-gradient-to-r from-[#17130F] to-[#241D17]" aria-label="Tiếp tục nghe">
-                    <div class="discovery-book-art relative w-12 h-12 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-xl sm:rounded-2xl shrink-0 overflow-hidden flex items-center justify-center bg-black/40 border border-[#D4AF37]/30 group-hover/cont:border-primary transition-colors">
+                <section id="discovery-continue-card" hidden class="mt-4 sm:mt-6 md:mt-8 rounded-2xl sm:rounded-3xl p-3 sm:p-4 md:p-5 flex flex-row items-center gap-3 sm:gap-4 md:gap-5 shadow-xl transition-all cursor-pointer group/cont border border-glass-border bg-surface" aria-label="Tiếp tục nghe">
+                    <div class="discovery-book-art relative w-12 h-12 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-xl sm:rounded-2xl shrink-0 overflow-hidden flex items-center justify-center bg-surface-high border border-glass-border group-hover/cont:border-primary transition-colors">
                         <i class="fas fa-headphones-alt relative z-10 text-base sm:text-xl md:text-2xl text-primary/90"></i>
                     </div>
                     <div class="min-w-0 flex-1">
                         <div class="text-[10px] sm:text-xs font-black tracking-[0.14em] uppercase text-primary font-serif-royal">ĐANG NGHE</div>
-                        <h2 id="discovery-continue-title" class="mt-0.5 sm:mt-1 text-sm sm:text-base md:text-lg font-bold text-white truncate font-cinzel">—</h2>
-                        <p id="discovery-continue-meta" class="mt-0.5 text-[11px] sm:text-xs md:text-sm text-slate-400 sm:text-slate-300 truncate">—</p>
-                        <div class="mt-2 sm:mt-2.5 h-1 sm:h-1.5 rounded-full overflow-hidden bg-black/40 border border-white/5">
+                        <h2 id="discovery-continue-title" class="mt-0.5 sm:mt-1 text-sm sm:text-base md:text-lg font-bold text-main truncate font-cinzel">—</h2>
+                        <p id="discovery-continue-meta" class="mt-0.5 text-[11px] sm:text-xs md:text-sm text-slate-400 truncate">—</p>
+                        <div class="mt-2 sm:mt-2.5 h-1 sm:h-1.5 rounded-full overflow-hidden bg-surface-high border border-glass-border">
                             <div id="discovery-continue-progress" class="h-full bg-gradient-to-r from-primary/50 to-primary rounded-full transition-all duration-300" style="width: 0%"></div>
                         </div>
                     </div>
-                    <button id="discovery-continue-btn" type="button" class="shrink-0 min-h-9 sm:min-h-11 px-3 sm:px-5 py-2 rounded-xl sm:rounded-2xl btn-primary font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg shadow-primary/20 hover:brightness-110 active:scale-95 transition-all">
-                        <i class="fas fa-play text-xs sm:text-sm text-black"></i>
-                        <span class="whitespace-nowrap text-black">Nghe tiếp</span>
+                    <button id="discovery-continue-btn" type="button" class="shrink-0 min-h-9 sm:min-h-11 px-3 sm:px-5 py-2 rounded-xl sm:rounded-2xl btn-primary font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg shadow-primary/20 hover:brightness-110 active:scale-95 transition-all text-white">
+                        <i class="fas fa-play text-xs sm:text-sm text-white"></i>
+                        <span class="whitespace-nowrap text-white">Nghe tiếp</span>
                     </button>
                 </section>
             </div>
@@ -1249,8 +1249,11 @@ Nội dung chương hai...</pre>
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/static/sw.js')
-                    .then(reg => console.log('PWA Service Worker registered:', reg.scope))
+                navigator.serviceWorker.register('/static/sw.js?v=13')
+                    .then(reg => {
+                        reg.update();
+                        console.log('PWA Service Worker registered and updated:', reg.scope);
+                    })
                     .catch(err => console.log('PWA Service Worker registration failed:', err));
             });
         }
@@ -1370,11 +1373,11 @@ Nội dung chương hai...</pre>
             <!-- Modal Header -->
             <div class="flex items-center justify-between pb-4 mb-3 border-b border-white/10 shrink-0">
                 <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#241D17] to-[#0C0A09] border border-[#D4AF37]/40 flex items-center justify-center text-primary shadow-[0_0_20px_rgba(212,175,55,0.25)]">
+                    <div class="w-10 h-10 rounded-2xl bg-surface-high border border-glass-border flex items-center justify-center text-primary shadow-sm">
                         <i class="fas fa-sliders text-base text-primary"></i>
                     </div>
                     <div>
-                        <h2 id="quick-settings-title" class="text-base sm:text-lg font-black text-white font-serif-royal">Trung Tâm Cài Đặt Nhanh</h2>
+                        <h2 id="quick-settings-title" class="text-base sm:text-lg font-black text-main font-serif-royal">Trung Tâm Cài Đặt Nhanh</h2>
                         <span class="text-[10px] text-primary/80 uppercase tracking-widest font-bold">Quick Settings Master Hub</span>
                     </div>
                 </div>
@@ -1384,7 +1387,7 @@ Nội dung chương hai...</pre>
             </div>
 
             <!-- Segmented Navigation Tabs -->
-            <div class="flex items-center gap-1.5 p-1 bg-black/40 rounded-2xl border border-white/5 shrink-0 mb-4">
+            <div class="flex items-center gap-1.5 p-1 bg-surface-high rounded-2xl border border-glass-border shrink-0 mb-4">
                 <button type="button" class="quick-tab-btn flex-1 py-2 px-3 rounded-xl text-xs font-bold text-slate-300 hover:text-white transition-all flex items-center justify-center gap-1.5 active" data-tab="appearance">
                     <i class="fas fa-palette text-xs"></i> <span>Giao diện</span>
                 </button>
@@ -1409,7 +1412,7 @@ Nội dung chương hai...</pre>
                         </div>
                         <div class="relative">
                             <select id="quick-font-family-select"
-                                class="w-full bg-[#17130F] border border-primary/30 rounded-xl p-3 text-xs sm:text-sm text-[#F5EFEB] appearance-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-all cursor-pointer font-medium shadow-inner">
+                                class="w-full bg-surface border border-glass-border rounded-xl p-3 text-xs sm:text-sm text-main appearance-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-all cursor-pointer font-medium shadow-sm">
                                 <option value="Be Vietnam Pro">1. Be Vietnam Pro (Chuẩn Quốc Tế)</option>
                                 <option value="Playfair Display">2. Playfair Display (Serif Hoàng Gia)</option>
                                 <option value="Plus Jakarta Sans">3. Plus Jakarta Sans (Thanh Lịch Châu Âu)</option>
@@ -1460,30 +1463,42 @@ Nội dung chương hai...</pre>
                             <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-crown text-primary"></i> Chủ đề Hoàng gia (Themes)</span>
                             <span id="quick-theme-current-name" class="text-primary text-[11px] font-bold">Vàng Hoàng Gia</span>
                         </div>
-                        <div class="grid grid-cols-2 gap-2" id="quick-theme-grid">
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2" id="quick-theme-grid">
                             <button type="button" class="quick-theme-btn p-2 rounded-xl border border-primary/40 bg-primary/10 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="default">
-                                <span class="w-4 h-4 rounded-full bg-[#D4AF37] shrink-0 border border-white/20"></span>
-                                <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Vàng Hoàng Gia</span>
+                                <span class="w-3.5 h-3.5 rounded-full bg-[#D4AF37] shrink-0 border border-white/20"></span>
+                                <span class="text-[11px] font-bold text-white truncate">Vàng Hoàng Gia</span>
                             </button>
                             <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="warm-night">
-                                <span class="w-4 h-4 rounded-full bg-[#C8A27A] shrink-0 border border-white/20"></span>
-                                <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Espresso Cashmere</span>
+                                <span class="w-3.5 h-3.5 rounded-full bg-[#00F2FE] shrink-0 border border-white/20"></span>
+                                <span class="text-[11px] font-bold text-white truncate">Cyberpunk Neon</span>
                             </button>
                             <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="forest">
-                                <span class="w-4 h-4 rounded-full bg-[#D97706] shrink-0 border border-white/20"></span>
-                                <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Bourbon Sồi Khói</span>
+                                <span class="w-3.5 h-3.5 rounded-full bg-[#10B981] shrink-0 border border-white/20"></span>
+                                <span class="text-[11px] font-bold text-white truncate">Ngọc Lục Bảo</span>
                             </button>
                             <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="rose">
-                                <span class="w-4 h-4 rounded-full bg-[#CD7F32] shrink-0 border border-white/20"></span>
-                                <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Gỗ Óc Chó Đồng Cổ</span>
+                                <span class="w-3.5 h-3.5 rounded-full bg-[#FB7185] shrink-0 border border-white/20"></span>
+                                <span class="text-[11px] font-bold text-white truncate">Vang Đỏ Bordeaux</span>
                             </button>
                             <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="ocean">
-                                <span class="w-4 h-4 rounded-full bg-[#E59838] shrink-0 border border-white/20"></span>
-                                <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Cognac Hổ Phách</span>
+                                <span class="w-3.5 h-3.5 rounded-full bg-[#38BDF8] shrink-0 border border-white/20"></span>
+                                <span class="text-[11px] font-bold text-white truncate">Lam Ngọc Monaco</span>
+                            </button>
+                            <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="mocha">
+                                <span class="w-3.5 h-3.5 rounded-full bg-[#60A5FA] shrink-0 border border-white/20"></span>
+                                <span class="text-[11px] font-bold text-white truncate">Tối Giản Bắc Âu</span>
                             </button>
                             <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="sepia">
-                                <span class="w-4 h-4 rounded-full bg-[#B88746] shrink-0 border border-white/20"></span>
-                                <span class="text-[11px] font-bold text-[#F5EFEB] truncate">Giấy Cổ Oxford</span>
+                                <span class="w-3.5 h-3.5 rounded-full bg-[#854D0E] shrink-0 border border-white/20"></span>
+                                <span class="text-[11px] font-bold text-white truncate">Bản Thảo Florence</span>
+                            </button>
+                            <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="paper">
+                                <span class="w-3.5 h-3.5 rounded-full bg-[#1D4ED8] shrink-0 border border-white/20"></span>
+                                <span class="text-[11px] font-bold text-white truncate">Ấn Phẩm Thụy Sĩ</span>
+                            </button>
+                            <button type="button" class="quick-theme-btn p-2 rounded-xl border border-white/10 bg-white/5 hover:border-primary/30 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="e-ink">
+                                <span class="w-3.5 h-3.5 rounded-full bg-[#E2E8F0] shrink-0 border border-white/20"></span>
+                                <span class="text-[11px] font-bold text-white truncate">Kindle Monolith</span>
                             </button>
                         </div>
                     </div>
@@ -1499,7 +1514,7 @@ Nội dung chương hai...</pre>
                         </div>
                         <div class="relative">
                             <select id="quick-voice-select"
-                                class="w-full bg-[#17130F] border border-primary/30 rounded-xl p-3 text-xs sm:text-sm text-[#F5EFEB] appearance-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-all cursor-pointer font-medium shadow-inner">
+                                class="w-full bg-surface border border-glass-border rounded-xl p-3 text-xs sm:text-sm text-main appearance-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-all cursor-pointer font-medium shadow-sm">
                                 <option value="vi-VN-HoaiMyNeural">Hoài My (Việt Nam - Nữ Truyền Cảm)</option>
                                 <option value="vi-VN-NamMinhNeural">Nam Minh (Việt Nam - Nam Trầm Ấm)</option>
                                 <option value="en-US-AriaNeural">Aria (USA - English Female)</option>
