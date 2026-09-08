@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import pytest
 from fastapi.testclient import TestClient
 from app.server import create_app
@@ -7,18 +8,199 @@ from app.core import security, database
 
 TEST_UID = "test_user_e2e_123"
 
+
+class _MockBlob:
+    def __init__(self, path, store):
+        self.path = path
+        self._store = store
+
+    def upload_from_filename(self, filename, content_type=None):
+        with open(filename, "rb") as f:
+            self._store[self.path] = f.read()
+
+    def upload_from_string(self, data, content_type=None):
+        if isinstance(data, str):
+            self._store[self.path] = data.encode("utf-8")
+        else:
+            self._store[self.path] = bytes(data)
+
+    def download_as_text(self):
+        if self.path not in self._store:
+            raise FileNotFoundError(f"Blob not found: {self.path}")
+        val = self._store[self.path]
+        return val.decode("utf-8") if isinstance(val, bytes) else str(val)
+
+    def download_as_bytes(self):
+        if self.path not in self._store:
+            raise FileNotFoundError(f"Blob not found: {self.path}")
+        val = self._store[self.path]
+        return val if isinstance(val, bytes) else str(val).encode("utf-8")
+
+    def download_to_filename(self, filename):
+        os.makedirs(os.path.dirname(os.path.abspath(filename)), exist_ok=True)
+        with open(filename, "wb") as f:
+            f.write(self.download_as_bytes())
+
+    def exists(self):
+        return self.path in self._store
+
+    def delete(self):
+        self._store.pop(self.path, None)
+
+
+class _MockStorageBackend:
+    provider_name = "mock_storage"
+
+    def __init__(self):
+        self._files = {}
+
+    def bucket(self):
+        return self
+
+    def blob(self, path):
+        return _MockBlob(path, self._files)
+
+    def list_keys(self, prefix):
+        return [k for k in self._files if k.startswith(prefix)]
+
+    def delete_prefix(self, prefix):
+        for k in self.list_keys(prefix):
+            self._files.pop(k, None)
+
+    def is_not_found(self, exc):
+        return isinstance(exc, FileNotFoundError) or "not found" in str(exc).lower()
+
+    def get_diagnostic_info(self):
+        return {"provider": "mock_storage", "bucket": "test-mock-bucket", "connected": True, "error": None}
+
+
+class _MockDocSnapshot:
+    def __init__(self, exists, data, doc_id):
+        self.exists = exists
+        self._data = data
+        self.id = doc_id
+
+    def to_dict(self):
+        return dict(self._data) if self._data is not None else None
+
+
+def _sanitize_mock_data(data):
+    import datetime
+    if isinstance(data, dict):
+        new_d = {}
+        for k, v in data.items():
+            if hasattr(v, "__class__") and "Sentinel" in v.__class__.__name__:
+                new_d[k] = datetime.datetime.now(datetime.timezone.utc)
+            elif isinstance(v, dict):
+                new_d[k] = _sanitize_mock_data(v)
+            elif isinstance(v, list):
+                new_d[k] = [_sanitize_mock_data(x) for x in v]
+            else:
+                new_d[k] = v
+        return new_d
+    elif isinstance(data, list):
+        return [_sanitize_mock_data(x) for x in data]
+    return data
+
+
+class _MockDocRef:
+    def __init__(self, path, store):
+        self.path = path
+        self._store = store
+        self.id = path.rstrip("/").split("/")[-1]
+
+    def set(self, data, merge=False):
+        clean = _sanitize_mock_data(data)
+        if merge and self.path in self._store:
+            self._store[self.path].update(clean)
+        else:
+            self._store[self.path] = dict(clean)
+
+    def update(self, data):
+        clean = _sanitize_mock_data(data)
+        if self.path in self._store:
+            self._store[self.path].update(clean)
+        else:
+            self._store[self.path] = dict(clean)
+
+    def get(self):
+        exists = self.path in self._store
+        data = self._store.get(self.path)
+        return _MockDocSnapshot(exists, data, self.id)
+
+    def delete(self):
+        self._store.pop(self.path, None)
+
+    def collection(self, name):
+        return _MockCollection(f"{self.path}/{name}", self._store)
+
+
+class _MockCollection:
+    def __init__(self, path, store):
+        self.path = path
+        self._store = store
+
+    def document(self, doc_id=None):
+        if not doc_id:
+            import uuid
+            doc_id = str(uuid.uuid4())
+        return _MockDocRef(f"{self.path}/{doc_id}", self._store)
+
+    def stream(self):
+        prefix = f"{self.path}/"
+        docs = []
+        for k in list(self._store.keys()):
+            if k.startswith(prefix):
+                suffix = k[len(prefix):]
+                if "/" not in suffix:
+                    docs.append(_MockDocRef(k, self._store).get())
+        return docs
+
+
+class _MockFirestore:
+    def __init__(self):
+        self._store = {}
+
+    def collection(self, name):
+        return _MockCollection(name, self._store)
+
+
 @pytest.fixture(autouse=True)
 def mock_auth(monkeypatch):
-    """Bypass Firebase token validation for integration tests across all routers."""
+    """Bypass Firebase token validation and mock cloud storage/firestore for hermetic integration tests."""
     monkeypatch.setattr(security, "firebase_admin_initialized", True)
     monkeypatch.setattr(database, "firebase_admin_initialized", True)
-    
+
     def fake_verify_id_token(token, clock_skew_seconds=10):
         if not token or token == "invalid_token":
             raise ValueError("Invalid token")
         return {"uid": TEST_UID, "email": "test@example.com"}
-    
+
     monkeypatch.setattr(security.auth, "verify_id_token", fake_verify_id_token)
+
+    mock_storage = _MockStorageBackend()
+    mock_firestore = _MockFirestore()
+
+    monkeypatch.setattr(database, "storage", mock_storage)
+    monkeypatch.setattr(database, "db_admin", mock_firestore)
+
+    import app.routers.books as books_mod
+    monkeypatch.setattr(books_mod, "storage", mock_storage)
+    monkeypatch.setattr(books_mod, "db_admin", mock_firestore)
+
+    import app.services.book_service as bs_mod
+    monkeypatch.setattr(bs_mod, "storage", mock_storage)
+    monkeypatch.setattr(bs_mod, "db_admin", mock_firestore)
+
+    import app.services.cache_service as cs_mod
+    if hasattr(cs_mod, "storage"):
+        monkeypatch.setattr(cs_mod, "storage", mock_storage)
+    if hasattr(cs_mod, "db_admin"):
+        monkeypatch.setattr(cs_mod, "db_admin", mock_firestore)
+
+    import app.routers.system as sys_mod
+    if hasattr(sys_mod, "storage"):
+        monkeypatch.setattr(sys_mod, "storage", mock_storage)
 
 @pytest.fixture
 def client():
