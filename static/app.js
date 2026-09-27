@@ -445,7 +445,12 @@ async function startFirebase() {
             if (user) {
                 authInfo.innerHTML = `<img src="${user.photoURL}" class="w-6 h-6 rounded-full"> ${user.displayName}`;
                 authBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i>';
-                authBtn.onclick = () => signOut(auth);
+                authBtn.onclick = () => {
+                    signOut(auth).catch(err => {
+                        console.error('Sign out error:', err);
+                        APP_STATUS.error('Đăng xuất thất bại: ' + (err.message || err));
+                    });
+                };
 
                 // Fetch recent books from Firestore
                 await refreshLibrary();
@@ -454,7 +459,14 @@ async function startFirebase() {
                 closeWebSocketIntentionally();
                 authInfo.innerHTML = `<span class="text-slate-500">Guest Mode</span>`;
                 authBtn.innerHTML = '<i class="fab fa-google"></i>';
-                authBtn.onclick = () => signInWithPopup(auth, provider);
+                authBtn.onclick = () => {
+                    signInWithPopup(auth, provider).catch(err => {
+                        console.error('Sign in error:', err);
+                        if (err.code !== 'auth/popup-closed-by-user') {
+                            APP_STATUS.error('Đăng nhập thất bại: ' + (err.message || err));
+                        }
+                    });
+                };
 
                 // --- Reset UI on Logout ---
                 document.getElementById('book-list').innerHTML = '<div class="text-center p-8 text-slate-500 italic text-sm">Login to see your library.</div>';
@@ -1409,7 +1421,7 @@ document.getElementById('book-image-input')?.addEventListener('change', event =>
 });
 document.getElementById('confirm-upload-files-btn')?.addEventListener('click', () => {
     if (!STATE.pendingUploadTextFile) {
-        alert('Vui lòng chọn file .txt trước.');
+        APP_STATUS.toast('Vui lòng chọn file .txt trước.', 'warning');
         return;
     }
     const files = [STATE.pendingUploadTextFile, ...STATE.pendingUploadImageFiles];
@@ -1439,7 +1451,7 @@ async function processImageFiles(fileList) {
         APP_STATUS.toast(`Đã cập nhật ${files.length} ảnh thành công.`, 'success');
     } catch (err) {
         console.error('[Images] Manage error:', err);
-        alert(`Không thể cập nhật ảnh: ${err.message}`);
+        APP_STATUS.error(`Không thể cập nhật ảnh: ${err.message}`);
     } finally {
         setButtonLoading(addBtn, false);
         hideLoading();
@@ -1462,14 +1474,14 @@ document.querySelectorAll('[data-close-upload-options]').forEach(el => el.addEve
 document.querySelectorAll('[data-close-image-manager]').forEach(el => el.addEventListener('click', () => setModalVisibility('image-manager-modal', false)));
 document.getElementById('select-images-btn')?.addEventListener('click', () => {
     if (!STATE.currentBookId) {
-        alert('Hãy mở truyện cần quản lý ảnh trước.');
+        APP_STATUS.toast('Hãy mở truyện cần quản lý ảnh trước.', 'warning');
         return;
     }
     openImageManager();
 });
 document.getElementById('discovery-select-images-btn')?.addEventListener('click', () => {
     if (!STATE.currentBookId) {
-        alert('Hãy mở truyện cần quản lý ảnh trước.');
+        APP_STATUS.toast('Hãy mở truyện cần quản lý ảnh trước.', 'warning');
         return;
     }
     openImageManager();
@@ -2419,7 +2431,7 @@ async function renderImageManager() {
 
 async function openImageManager(bookId = STATE.currentBookId, bookTitle = STATE.currentBook?.title || '') {
     if (!bookId) {
-        alert('Hãy mở một truyện trước.');
+        APP_STATUS.toast('Hãy mở một truyện trước.', 'warning');
         return;
     }
     imageManagerBookId = bookId;
@@ -2427,7 +2439,7 @@ async function openImageManager(bookId = STATE.currentBookId, bookTitle = STATE.
     setModalVisibility('image-manager-modal', true);
     try { await renderImageManager(); } catch (err) {
         console.error('[Images] Manager load error:', err);
-        alert(`Không thể tải danh sách ảnh: ${err.message}`);
+        APP_STATUS.error(`Không thể tải danh sách ảnh: ${err.message}`);
     }
 }
 
@@ -2659,7 +2671,12 @@ function getLocalIndices(globalIdx) {
 }
 
 async function refreshLibrary() {
-    if (!STATE.user) return;
+    if (!STATE.user) {
+        if (window.APP_STATUS?.toast) {
+            window.APP_STATUS.toast('Vui lòng đăng nhập để đồng bộ thư viện đám mây.', 'info');
+        }
+        return;
+    }
     const bookList = document.getElementById('book-list');
     const discoveryGrid = document.getElementById('discovery-grid');
     discoveryLibrary = [];
@@ -2948,7 +2965,7 @@ async function refreshLibrary() {
  * segments in memory. */
 async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
     if (!STATE.user || !bookId) {
-        alert('Please login first to download books.');
+        APP_STATUS.toast('Vui lòng đăng nhập để tải sách về máy.', 'warning');
         return;
     }
 
@@ -2993,7 +3010,7 @@ async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
         }
     } catch (err) {
         console.error('[Export TXT]', err);
-        alert(`Không thể tải file TXT: ${err.message}`);
+        APP_STATUS.error(`Không thể tải file TXT: ${err.message}`);
         if (status) status.innerText = 'TXT download failed';
     } finally {
         if (btn) setButtonLoading(btn, false);
@@ -3094,7 +3111,7 @@ async function deleteBook(bookId, filename, title, bypassConfirm = false) {
 
     } catch (err) {
         console.error('[Delete] Error:', err);
-        alert(`Xóa thất bại: ${err.message}`);
+        APP_STATUS.error(`Xóa thất bại: ${err.message}`);
         document.getElementById('status-indicator').innerText = 'Error';
         setTimeout(() => document.getElementById('status-indicator').innerText = 'Ready', 3000);
     }
@@ -3218,7 +3235,7 @@ async function openImageCropper(bookId, image) {
         renderImageCropPreview();
     } catch (err) {
         console.error('[Images] Crop open error:', err);
-        alert(`Không thể mở crop: ${err.message}`);
+        APP_STATUS.error(`Không thể mở crop: ${err.message}`);
     }
 }
 
@@ -3283,7 +3300,7 @@ document.getElementById('save-image-crop-btn')?.addEventListener('click', async 
         APP_STATUS.toast('Đã lưu crop ảnh.', 'success');
     } catch (err) {
         console.error('[Images] Crop save error:', err);
-        alert(`Không thể lưu crop: ${err.message}`);
+        APP_STATUS.error(`Không thể lưu crop: ${err.message}`);
     } finally {
         button.disabled = false;
         button.textContent = 'Lưu crop';
@@ -3495,7 +3512,7 @@ async function loadBookFromStorage(bookId, bookData) {
     } catch (err) {
         if (err?.name === 'AbortError' || loadController.signal.aborted) return;
         console.error("Load from Storage Error:", err);
-        alert("Failed to load book from storage. Make sure the file still exists.");
+        APP_STATUS.error("Không thể tải sách từ bộ nhớ. Hãy kiểm tra file có còn tồn tại.");
     } finally {
         if (STATE.loadController === loadController) {
             STATE.loadController = null;
@@ -3524,18 +3541,18 @@ const handleFileUpload = async (e) => {
         return;
     }
     if (file.size === 0) {
-        alert('File đang trống. Vui lòng chọn file có nội dung.');
+        APP_STATUS.toast('File đang trống. Vui lòng chọn file có nội dung.', 'warning');
         e.target.value = '';
         return;
     }
     if (file.size > 25 * 1024 * 1024) {
-        alert('File vượt quá giới hạn 25 MB. Hãy chia nhỏ nội dung trước khi tải lên.');
+        APP_STATUS.toast('File vượt quá giới hạn 25 MB. Hãy chia nhỏ nội dung trước khi tải lên.', 'warning');
         e.target.value = '';
         return;
     }
 
     if (!STATE.user) {
-        alert("Please login first to upload books.");
+        APP_STATUS.toast("Vui lòng đăng nhập trước khi tải sách lên.", 'warning');
         return;
     }
 
@@ -3620,7 +3637,7 @@ const handleFileUpload = async (e) => {
                 await uploadBookImages(data.storyId, illustrations, bookInfo.title || file.name);
             } catch (imageError) {
                 console.error('[Images] Upload failed:', imageError);
-                alert(`Sách đã tải lên nhưng ảnh minh họa chưa lưu được: ${imageError.message}`);
+                APP_STATUS.toast(`Sách đã tải lên nhưng ảnh minh họa chưa lưu được: ${imageError.message}`, 'warning');
             }
         }
 
@@ -4400,13 +4417,13 @@ function dispatchDownloadQueue() {
 async function downloadSelectedChapters() {
     const checkboxes = document.querySelectorAll('.toc-chapter-checkbox:checked');
     if (checkboxes.length === 0) {
-        alert('Please select at least one chapter.');
+        APP_STATUS.toast('Vui lòng chọn ít nhất một chương.', 'warning');
         return;
     }
 
     const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.chapterIndex));
     if (selectedIndices.length > 5) {
-        alert('Tối đa chỉ cho tải 5 chương trong một lần tải để đảm bảo tốc độ siêu tốc và kết nối ổn định. Vui lòng chọn tối đa 5 chương.');
+        APP_STATUS.toast('Tối đa chỉ cho tải 5 chương trong một lần tải để đảm bảo tốc độ siêu tốc và kết nối ổn định. Vui lòng chọn tối đa 5 chương.', 'warning');
         return;
     }
 
@@ -5136,7 +5153,7 @@ async function editTitle() {
         document.getElementById('current-title').title = previousTitle;
         updateUI();
         console.error('[Title] Save failed:', err);
-        alert(`Không thể lưu tên truyện: ${err.message}`);
+        APP_STATUS.error(`Không thể lưu tên truyện: ${err.message}`);
     }
 }
 
@@ -5964,7 +5981,7 @@ function startSleepTimerFromCustom() {
 
     const seconds = h * 3600 + m * 60 + s;
     if (seconds <= 0) {
-        alert("Please set a valid duration.");
+        APP_STATUS.toast("Vui lòng thiết lập thời gian hẹn giờ hợp lệ.", 'warning');
         return;
     }
     startSleepTimer(seconds);
@@ -6395,7 +6412,7 @@ async function openEditChapterModal(index, triggerBtn = null) {
         }
     } catch (err) {
         console.error("Edit fetch error:", err);
-        alert(`Error: ${err.message}`);
+        APP_STATUS.error(`Lỗi tải nội dung: ${err.message}`);
         if (statusIndicator) statusIndicator.innerText = "Error";
     } finally {
         hideLoading();
@@ -6485,7 +6502,7 @@ async function saveChapterEdit() {
         }
     } catch (err) {
         console.error("Save edit error:", err);
-        alert(`Error: ${err.message}`);
+        APP_STATUS.error(`Lỗi lưu nội dung: ${err.message}`);
         if (statusIndicator) statusIndicator.innerText = "Error saving";
     } finally {
         hideLoading();
@@ -6528,7 +6545,7 @@ statsOverlay?.addEventListener('click', hideStatsModal);
 clearCacheBtn?.addEventListener('click', async () => {
     if (confirm('Are you sure you want to clear all offline audio cache?')) {
         await OFFLINE_MANAGER.clearCache();
-        alert('Cache cleared successfully!');
+        APP_STATUS.toast('Đã dọn sạch bộ nhớ cache ngoại tuyến!', 'success');
     }
 });
 

@@ -60,7 +60,34 @@ export const translations = {
         "theme-paper-name": "Swiss Editorial Newsprint",
         "theme-paper-mood": "Alabaster White Paper & International Klein Blue",
         "theme-e-ink-name": "Kindle Paperwhite Monolith",
-        "theme-e-ink-mood": "Anti-Glare Paperwhite & Pure Matte Monochrome"
+        "theme-e-ink-mood": "Anti-Glare Paperwhite & Pure Matte Monochrome",
+        "tab-library": "Library",
+        "tab-toc": "Contents",
+        "tab-voice": "Voice",
+        "quick-settings-title": "Quick Settings Master Hub",
+        "quick-settings-subtitle": "Quick Settings Master Hub",
+        "quick-tab-appearance": "Appearance",
+        "quick-tab-voice": "Voice & Audio",
+        "quick-tab-experience": "Utilities",
+        "quick-font-family": "Vietnamese Reading Font",
+        "quick-font-size": "Font Size",
+        "quick-font-color": "Reading Text Color",
+        "quick-color-default": "Theme Default",
+        "quick-theme-header": "Royal Reading Themes",
+        "quick-voice-header": "AI Reading Voice",
+        "quick-speed-header": "Playback Speed",
+        "quick-pitch-header": "Vocal Pitch",
+        "quick-workers-header": "Parallel Workers",
+        "quick-lite-mode-title": "Lite Mode (Power Saver)",
+        "quick-lite-mode-desc": "Disables GPU blur for maximum battery life & smoothness.",
+        "quick-zen-mode-title": "Zen Focus Reading Mode",
+        "quick-zen-mode-desc": "Hides toolbars for an uninterrupted pure reading space.",
+        "quick-wakelock-title": "Keep Screen Awake (WakeLock)",
+        "quick-wakelock-desc": "Prevents screen from dimming or turning off during reading.",
+        "quick-lang-title": "Interface Language",
+        "quick-lang-desc": "Switch between Vietnamese and English.",
+        "quick-auto-saved": "Auto-saved to device",
+        "quick-done-btn": "Done"
     },
     vi: {
         "cloud-tts": "CLOUD TTS",
@@ -118,7 +145,34 @@ export const translations = {
         "theme-paper-name": "Ấn Phẩm Nghệ Thuật Thụy Sĩ",
         "theme-paper-mood": "Giấy trắng Alabaster · Mực in tạp chí nghệ thuật",
         "theme-e-ink-name": "Mực Điện Tử Kindle Monolith",
-        "theme-e-ink-mood": "E-Ink chống chói · Tối ưu mắt đọc xuyên đêm"
+        "theme-e-ink-mood": "E-Ink chống chói · Tối ưu mắt đọc xuyên đêm",
+        "tab-library": "Thư viện",
+        "tab-toc": "Mục lục",
+        "tab-voice": "Giọng đọc",
+        "quick-settings-title": "Trung Tâm Cài Đặt Nhanh",
+        "quick-settings-subtitle": "Quick Settings Master Hub",
+        "quick-tab-appearance": "Giao diện",
+        "quick-tab-voice": "Giọng đọc",
+        "quick-tab-experience": "Tiện ích",
+        "quick-font-family": "Font chữ Tiếng Việt",
+        "quick-font-size": "Kích thước chữ",
+        "quick-font-color": "Màu sắc chữ đọc",
+        "quick-color-default": "Mặc định Theme",
+        "quick-theme-header": "Chủ đề Hoàng gia (Themes)",
+        "quick-voice-header": "Giọng đọc AI",
+        "quick-speed-header": "Tốc độ đọc (Playback Speed)",
+        "quick-pitch-header": "Cao độ giọng (Vocal Pitch)",
+        "quick-workers-header": "Luồng xử lý song song",
+        "quick-lite-mode-title": "Chế độ Siêu Tiết Kiệm (Lite Mode)",
+        "quick-lite-mode-desc": "Tắt hiệu ứng mờ GPU, tối ưu pin và siêu mượt cho máy cấu hình yếu.",
+        "quick-zen-mode-title": "Chế độ Đọc Tập Trung (Zen Mode)",
+        "quick-zen-mode-desc": "Ẩn các thanh công cụ thừa, mang lại không gian đọc thuần khiết.",
+        "quick-wakelock-title": "Giữ Màn Hình Luôn Sáng (WakeLock)",
+        "quick-wakelock-desc": "Ngăn thiết bị tự động khóa hoặc tắt màn hình trong khi đang đọc.",
+        "quick-lang-title": "Ngôn ngữ Giao diện (Language)",
+        "quick-lang-desc": "Chuyển đổi giữa Tiếng Việt và English.",
+        "quick-auto-saved": "Tự động lưu 100% vào thiết bị",
+        "quick-done-btn": "Hoàn tất"
     }
 };
 
@@ -143,6 +197,8 @@ export function applyLanguage(lang) {
         if (nameEl) nameEl.textContent = lang === 'vi' ? t.nameVi : t.nameEn;
         const moodEl = document.getElementById('current-theme-mood');
         if (moodEl) moodEl.textContent = lang === 'vi' ? t.moodVi : t.moodEn;
+        const quickThemeNameEl = document.getElementById('quick-theme-current-name');
+        if (quickThemeNameEl) quickThemeNameEl.textContent = lang === 'vi' ? t.nameVi : t.nameEn;
     }
 }
 
