@@ -1,22 +1,22 @@
 /* ===== THEME SYSTEM (HALLMARK MULTI-AESTHETIC STYLES EDITION) ===== */
 :root {
-    --theme-primary: #D4AF37;
-    --theme-primary-dim: #AA8728;
-    --theme-bg: #0A0908;
-    --theme-surface: #161310;
-    --theme-surface-high: #241E18;
-    --theme-glass: rgba(22, 19, 16, 0.88);
-    --theme-glass-border: rgba(212, 175, 55, 0.24);
-    --theme-text: #FDFBF7;
-    --theme-text-reading: #F3EDE2;
-    --theme-text-muted: #A89C8C;
-    --theme-glow: rgba(212, 175, 55, 0.22);
+    --theme-primary: #E5A93C;
+    --theme-primary-dim: #B45309;
+    --theme-bg: #0B0F19;
+    --theme-surface: #111827;
+    --theme-surface-high: #1F2937;
+    --theme-glass: rgba(17, 24, 39, 0.90);
+    --theme-glass-border: rgba(255, 255, 255, 0.08);
+    --theme-text: #F8FAFC;
+    --theme-text-reading: #E2E8F0;
+    --theme-text-muted: #94A3B8;
+    --theme-glow: rgba(229, 169, 60, 0.15);
     --theme-is-light: 0;
-    --theme-active-chunk-border: 4px solid #D4AF37;
-    --theme-active-chunk-bg: linear-gradient(90deg, rgba(212, 175, 55, 0.14) 0%, rgba(212, 175, 55, 0.02) 100%);
-    --theme-active-chunk-shadow: 0 4px 20px -2px rgba(212, 175, 55, 0.12);
+    --theme-active-chunk-border: 3px solid #E5A93C;
+    --theme-active-chunk-bg: linear-gradient(90deg, rgba(229, 169, 60, 0.12) 0%, rgba(229, 169, 60, 0.02) 100%);
+    --theme-active-chunk-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.3);
     --theme-active-chunk-radius: 0 0.75rem 0.75rem 0;
-    --theme-card-accent: #D4AF37;
+    --theme-card-accent: #E5A93C;
 
     /* Custom Typography Defaults */
     --reader-font-family: 'Be Vietnam Pro', 'Inter', sans-serif;
@@ -24,26 +24,26 @@
     --reader-text-color: var(--theme-text-reading);
 }
 
-/* 1. Theme: Imperial Sovereign Gold (Obsidian Ebony & 24K Sovereign Gold - European Royalty) */
+/* 1. Theme: Studio Slate & Amber Noir (Modern Audio Studio Edition) */
 [data-theme="default"],
 :root:not([data-theme]) {
-    --theme-primary: #D4AF37;
-    --theme-primary-dim: #AA8728;
-    --theme-bg: #0A0908;
-    --theme-surface: #161310;
-    --theme-surface-high: #241E18;
-    --theme-glass: rgba(22, 19, 16, 0.88);
-    --theme-glass-border: rgba(212, 175, 55, 0.24);
-    --theme-text: #FDFBF7;
-    --theme-text-reading: #F3EDE2;
-    --theme-text-muted: #A89C8C;
-    --theme-glow: rgba(212, 175, 55, 0.22);
+    --theme-primary: #E5A93C;
+    --theme-primary-dim: #B45309;
+    --theme-bg: #0B0F19;
+    --theme-surface: #111827;
+    --theme-surface-high: #1F2937;
+    --theme-glass: rgba(17, 24, 39, 0.90);
+    --theme-glass-border: rgba(255, 255, 255, 0.08);
+    --theme-text: #F8FAFC;
+    --theme-text-reading: #E2E8F0;
+    --theme-text-muted: #94A3B8;
+    --theme-glow: rgba(229, 169, 60, 0.15);
     --theme-is-light: 0;
-    --theme-active-chunk-border: 4px solid #D4AF37;
-    --theme-active-chunk-bg: linear-gradient(90deg, rgba(212, 175, 55, 0.14) 0%, rgba(212, 175, 55, 0.02) 100%);
-    --theme-active-chunk-shadow: 0 4px 20px -2px rgba(212, 175, 55, 0.12);
+    --theme-active-chunk-border: 3px solid #E5A93C;
+    --theme-active-chunk-bg: linear-gradient(90deg, rgba(229, 169, 60, 0.12) 0%, rgba(229, 169, 60, 0.02) 100%);
+    --theme-active-chunk-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.3);
     --theme-active-chunk-radius: 0 0.75rem 0.75rem 0;
-    --theme-card-accent: #D4AF37;
+    --theme-card-accent: #E5A93C;
 }
 
 /* 2. Theme: Cyberpunk Neon Horizon (Neo-Tokyo Midnight & Electric Cyan Laser HUD) */

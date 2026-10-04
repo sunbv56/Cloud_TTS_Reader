@@ -1,5 +1,5 @@
 // Firebase Modules
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
+import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
 import { initializeFirestore, getFirestore, doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { compressImageForStorage, IMAGE_MAX_BYTES } from "./js/image-manager.js";
@@ -7,6 +7,7 @@ import { toggleSidebar } from "./js/modules/ui-interactions.js";
 
 // Firebase placeholders (Initialized via API)
 let app, auth, db, provider;
+let authListenerBound = false;
 
 // Keep enough compressed audio for background playback without dispatching
 // hundreds of TTS jobs at once. The old 150/500-chunk policy caused large
@@ -425,20 +426,30 @@ async function startFirebase() {
             return;
         }
 
-        app = initializeApp(firebaseConfig);
-        auth = getAuth(app);
-        try {
-            db = initializeFirestore(app, {
-                experimentalForceLongPolling: true,
-                useFetchStreams: false,
-            });
-        } catch (e) {
-            db = getFirestore(app);
+        const existingApps = getApps();
+        if (existingApps.length > 0) {
+            app = getApp();
+        } else {
+            app = initializeApp(firebaseConfig);
         }
-        provider = new GoogleAuthProvider();
+
+        if (!auth) auth = getAuth(app);
+        if (!db) {
+            try {
+                db = initializeFirestore(app, {
+                    experimentalForceLongPolling: true,
+                    useFetchStreams: false,
+                });
+            } catch (e) {
+                db = getFirestore(app);
+            }
+        }
+        if (!provider) provider = new GoogleAuthProvider();
 
         // Bind Auth Change
-        onAuthStateChanged(auth, async (user) => {
+        if (!authListenerBound) {
+            authListenerBound = true;
+            onAuthStateChanged(auth, async (user) => {
             STATE.user = user;
             const authInfo = document.getElementById('auth-info');
             const authBtn = document.getElementById('auth-btn');
@@ -481,6 +492,7 @@ async function startFirebase() {
                 if (discoverySearch) discoverySearch.value = '';
             }
         });
+        }
 
         console.log("Firebase initialized successfully via API");
     } catch (err) {
@@ -3860,8 +3872,48 @@ async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
     void playFromSentence(STATE.currentSentenceIndex, loadGeneration);
     updateLibraryHighlight();
     void imageManifestPromise.catch(err => console.debug('[Images] Deferred manifest skipped:', err.message));
+    if (STATE.isSegmented) void fetchBookTOC(STATE.currentBookId, loadGeneration);
     return true;
 }
+
+/**
+ * Lightweight, RAM-minimal TOC loader.
+ * Fetches only chapter titles (flat string array) without allocating extra objects.
+ * Populates real titles across all chapters for instant search and full Table of Contents.
+ */
+async function fetchBookTOC(bookId, expectedLoadGeneration = STATE.loadGeneration) {
+    if (!STATE.isSegmented || !STATE.user || !bookId) return;
+    try {
+        const res = await authFetch(`/api/stories/${STATE.user.uid}/${bookId}/toc?t=${Date.now()}`, {
+            timeoutMs: 15_000
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (expectedLoadGeneration !== STATE.loadGeneration || STATE.currentBookId !== bookId) return;
+
+        const titles = data.titles;
+        if (Array.isArray(titles) && STATE.currentBook) {
+            if (!Array.isArray(STATE.currentBook.chapters)) {
+                STATE.currentBook.chapters = [];
+            }
+            for (let i = 0; i < titles.length; i++) {
+                const t = titles[i];
+                if (!STATE.currentBook.chapters[i]) {
+                    STATE.currentBook.chapters[i] = {
+                        title: t || `Chương ${i + 1}`,
+                        sentences: null
+                    };
+                } else if (t) {
+                    STATE.currentBook.chapters[i].title = t;
+                }
+            }
+            renderTOC();
+        }
+    } catch (err) {
+        console.debug('[TOC] Background TOC fetch skipped:', err.message);
+    }
+}
+window.fetchBookTOC = fetchBookTOC;
 
 async function fetchSegment(segmentIndex, expectedLoadGeneration = STATE.loadGeneration, expectedBookId = STATE.currentBookId) {
     if (STATE.loadedSegments.has(segmentIndex)) return;
@@ -4290,8 +4342,15 @@ function renderTOC() {
                 updateDownloadBar();
                 return;
             }
-            closeTOC();
-            await switchChapter(i, 0, true);
+            div.classList.add('toc-loading');
+            try {
+                await switchChapter(i, 0, true);
+                closeTOC();
+            } catch (err) {
+                console.error('[TOC] Switch chapter error:', err);
+            } finally {
+                div.classList.remove('toc-loading');
+            }
         };
         tocList.appendChild(div);
     });
@@ -4330,6 +4389,9 @@ function closeTOC() {
         toggleSidebar(false);
     }
 }
+window.renderTOC = renderTOC;
+window.scrollTOCCurrentChapter = scrollTOCCurrentChapter;
+window.closeTOC = closeTOC;
 
 // --- Offline Download Logic ---
 function toggleSelectMode() {
@@ -5945,11 +6007,20 @@ function updateWakeLockUI(isActive) {
 
     if (isActive) {
         btn.title = "Keep Screen Awake (On)";
-        icon.className = "fas fa-sun text-lg text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.6)] transition-all duration-300 transform scale-110";
+        icon.className = "fas fa-sun text-sm sm:text-base text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.6)] transition-all duration-300";
     } else {
         btn.title = "Keep Screen Awake (Off)";
-        icon.className = "far fa-sun text-lg transition-all duration-300";
+        icon.className = "far fa-sun text-sm sm:text-base transition-all duration-300";
     }
+
+    const pill = document.getElementById('wake-lock-status-pill');
+    if (pill) {
+        pill.textContent = isActive ? "Bật" : "Tắt";
+        pill.className = isActive 
+            ? "text-[10px] font-bold px-2 py-0.5 rounded-md bg-yellow-400/20 text-yellow-300" 
+            : "text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 text-slate-400";
+    }
+    updateReaderMoreActiveDot();
 }
 
 // --- Sleep Timer & Manual Save Logic ---
@@ -6066,20 +6137,28 @@ function updateSleepTimerUI(isActive, seconds = 0) {
     const remainingText = document.getElementById('sleep-timer-remaining');
 
     if (isActive) {
-        icon.className = "fas fa-moon text-lg text-primary scale-110";
-        badge.innerText = seconds > 60 ? Math.ceil(seconds / 60) + "m" : seconds;
-        badge.classList.remove('opacity-0');
-        btn.classList.add('bg-primary/10');
+        if (icon) icon.className = "fas fa-moon text-xs text-primary";
+        if (badge) {
+            badge.innerText = seconds > 60 ? Math.ceil(seconds / 60) + "m" : seconds + "s";
+            badge.className = "text-[10px] font-bold px-2 py-0.5 rounded-md bg-primary/20 text-primary";
+            badge.classList.remove('opacity-0');
+        }
+        if (btn) btn.classList.add('bg-primary/10');
 
         if (controls) controls.classList.remove('hidden');
         if (remainingText) remainingText.innerText = formatTime(seconds);
     } else {
-        icon.className = "fas fa-moon text-lg";
-        badge.classList.add('opacity-0');
-        btn.classList.remove('bg-primary/10');
+        if (icon) icon.className = "fas fa-moon text-xs text-slate-400";
+        if (badge) {
+            badge.innerText = "Tắt";
+            badge.className = "text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 text-slate-400";
+            badge.classList.add('opacity-0');
+        }
+        if (btn) btn.classList.remove('bg-primary/10');
 
         if (controls) controls.classList.add('hidden');
     }
+    updateReaderMoreActiveDot();
 }
 
 async function triggerManualSave() {
@@ -6278,10 +6357,9 @@ window.setSleepTimerPreset = setSleepTimerPreset;
 window.startSleepTimerFromCustom = startSleepTimerFromCustom;
 window.cancelSleepTimer = cancelSleepTimer;
 
-document.getElementById('sleep-timer-btn').onclick = () => toggleSleepTimerDropdown();
-document.getElementById('manual-save-btn').onclick = () => triggerManualSave();
-
-document.getElementById('wake-lock-btn').onclick = () => toggleWakeLock();
+document.getElementById('sleep-timer-btn')?.addEventListener('click', () => toggleSleepTimerDropdown());
+document.getElementById('manual-save-btn')?.addEventListener('click', () => triggerManualSave());
+document.getElementById('wake-lock-btn')?.addEventListener('click', () => toggleWakeLock());
 
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && STATE.wakeLockEnabled) {
@@ -6763,9 +6841,19 @@ window.MPW_BRIDGE = {
     playNextChapter,
     playPrevChapter,
     switchChapter,
+    renderTOC,
+    scrollTOCCurrentChapter,
 };
 
 // --- Zen Mode Control & Persistence ---
+function updateReaderMoreActiveDot() {
+    const dot = document.getElementById('reader-more-active-dot');
+    if (!dot) return;
+    const hasActive = !!(STATE.zenModeEnabled || STATE.wakeLockEnabled || STATE.sleepTimer);
+    dot.classList.toggle('hidden', !hasActive);
+}
+window.updateReaderMoreActiveDot = updateReaderMoreActiveDot;
+
 function setZenMode(enabled, persist = true) {
     STATE.zenModeEnabled = !!enabled;
     document.body.classList.toggle('zen-focus-mode', STATE.zenModeEnabled);
@@ -6775,6 +6863,14 @@ function setZenMode(enabled, persist = true) {
         btn.classList.toggle('bg-primary/20', STATE.zenModeEnabled);
         btn.setAttribute('aria-pressed', STATE.zenModeEnabled ? 'true' : 'false');
     }
+    const zenPill = document.getElementById('zen-mode-status-pill');
+    if (zenPill) {
+        zenPill.textContent = STATE.zenModeEnabled ? "Bật" : "Tắt";
+        zenPill.className = STATE.zenModeEnabled 
+            ? "text-[10px] font-bold px-2 py-0.5 rounded-md bg-primary/20 text-primary" 
+            : "text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 text-slate-400";
+    }
+    updateReaderMoreActiveDot();
     if (persist) {
         try {
             localStorage.setItem('zen-mode-enabled', STATE.zenModeEnabled ? 'true' : 'false');
@@ -6795,4 +6891,7 @@ if (zenToggleBtn) {
 
 // Apply initial settings to UI on startup
 applySettingsToUI();
+if (!STATE.currentBookId) {
+    toggleDiscoveryMode(true);
+}
 document.dispatchEvent(new CustomEvent('mpw-bridge-ready'));
