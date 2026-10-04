@@ -43,6 +43,7 @@ from app.parsers import (
     build_chapters_summary,
     safe_export_filename,
     chapter_from_text,
+    toc_blob_path,
 )
 from app.services.cache_service import (
     _run_blocking,
@@ -210,6 +211,22 @@ async def upload_story(
                 "build_chapters_summary", build_chapters_summary, chapters, request_id=request_id
             )
             story_metadata["chaptersSummary"] = chapters_summary
+
+        # Cache lightweight TOC manifest for instant Table of Contents load
+        try:
+            toc_titles = [c.get("title", f"Chương {idx+1}") for idx, c in enumerate(chapters)]
+            toc_counts = chapter_counts if story_metadata["isSegmented"] else [item.get("count", 0) for item in story_metadata.get("chaptersSummary", [])]
+            toc_blob = bucket.blob(toc_blob_path(userId, story_id))
+            await _run_blocking(
+                "storage.upload_toc",
+                _upload_json_blob,
+                toc_blob,
+                {"titles": toc_titles, "counts": toc_counts},
+                content_type="application/json",
+                request_id=request_id,
+            )
+        except Exception as toc_err:
+            logger.warning("upload_toc_cache_failed story_id=%s error=%s", story_id, toc_err)
 
         await _run_blocking(
             "firestore.write_story_metadata",
@@ -460,6 +477,105 @@ async def get_segment_data(
     if not isinstance(data, list):
         return JSONResponse({"error": "Segment data is invalid"}, status_code=502)
     return JSONResponse({"chapters": data})
+
+
+@router.get("/api/stories/{userId}/{storyId}/toc")
+async def get_story_toc(request: Request, userId: str, storyId: str):
+    auth_error = await _authorization_error_async(request, userId)
+    if auth_error:
+        return auth_error
+    if storage is None:
+        return JSONResponse({"error": "Storage unavailable"}, status_code=503)
+
+    bucket = storage.bucket()
+    toc_path = toc_blob_path(userId, storyId)
+    toc_blob = bucket.blob(toc_path)
+
+    # 1. Fast path: If pre-generated toc.json exists, return it directly
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+    tmp_path = tmp.name
+    tmp.close()
+    try:
+        try:
+            await _run_storage(
+                "storage.download_toc", toc_blob.download_to_filename, tmp_path,
+                request_id=_request_id(request)
+            )
+            toc_data = await _run_blocking(
+                "storage.parse_toc", _load_json_file, tmp_path, request_id=_request_id(request)
+            )
+            if isinstance(toc_data, dict) and "titles" in toc_data:
+                return JSONResponse(toc_data)
+        except Exception as exc:
+            if not is_storage_not_found(exc):
+                logger.warning("toc_read_failed storyId=%s error=%s", storyId, exc)
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+    # 2. Fallback path for legacy books: generate lightweight TOC from Firestore metadata or segments
+    try:
+        story_doc = await _run_firestore(
+            "firestore.get_story_for_toc",
+            db_admin.collection("users").document(userId).collection("stories").document(storyId).get,
+            request_id=_request_id(request),
+        )
+        if not story_doc.exists:
+            return JSONResponse({"error": "Story not found"}, status_code=404)
+
+        meta = story_doc.to_dict() or {}
+        titles = []
+        counts = []
+
+        if not meta.get("isSegmented") and meta.get("chaptersSummary"):
+            for item in meta["chaptersSummary"]:
+                titles.append(item.get("title", ""))
+                counts.append(item.get("count", 0))
+        elif meta.get("isSegmented") and meta.get("segmentsCount"):
+            segments_count = int(meta["segmentsCount"])
+            version = int(meta.get("segmentFormatVersion") or 0)
+            for seg_idx in range(segments_count):
+                seg_blob = bucket.blob(segment_blob_path(userId, storyId, seg_idx, version))
+                tmp_seg = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
+                tmp_seg_path = tmp_seg.name
+                tmp_seg.close()
+                try:
+                    await _run_storage(
+                        "storage.download_seg_for_toc", seg_blob.download_to_filename, tmp_seg_path,
+                        request_id=_request_id(request)
+                    )
+                    seg_data = await _run_blocking(
+                        "storage.parse_seg_for_toc", _load_json_file, tmp_seg_path, request_id=_request_id(request)
+                    )
+                    if isinstance(seg_data, list):
+                        for c in seg_data:
+                            titles.append(c.get("title", f"Chương {len(titles)+1}"))
+                            counts.append(len(c.get("sentences", [])))
+                    del seg_data
+                except Exception as seg_err:
+                    logger.warning("seg_read_error seg=%s error=%s", seg_idx, seg_err)
+                finally:
+                    if os.path.exists(tmp_seg_path):
+                        os.remove(tmp_seg_path)
+
+        toc_payload = {"titles": titles, "counts": counts}
+        if titles:
+            try:
+                await _run_blocking(
+                    "storage.cache_toc",
+                    _upload_json_blob,
+                    toc_blob,
+                    toc_payload,
+                    content_type="application/json",
+                    request_id=_request_id(request),
+                )
+            except Exception as e:
+                logger.warning("failed_to_cache_toc storyId=%s error=%s", storyId, e)
+
+        return JSONResponse(toc_payload)
+    except Exception as exc:
+        logger.exception("toc_generation_failed storyId=%s", storyId)
+        return JSONResponse({"error": "Failed to load TOC", "retryable": True}, status_code=500)
 
 
 @router.get("/api/stories/{userId}/{storyId}/images/manifest")

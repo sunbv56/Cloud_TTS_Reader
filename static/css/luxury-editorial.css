@@ -247,25 +247,22 @@ nav {
     filter: none;
 }
 
-/* Desktop reading should feel expansive, not like a narrow centered column. */
+/* Desktop reading expands to full width with comfortable padding */
 @media (min-width: 1024px) {
     #text-container {
-        padding-top: clamp(1.5rem, 3vh, 3rem) !important;
-        padding-left: clamp(2rem, 4vw, 4.5rem) !important;
-        padding-right: clamp(3rem, 7vw, 7rem) !important;
+        padding-top: clamp(1.25rem, 2.5vh, 2.5rem) !important;
+        padding-left: clamp(1.25rem, 2.5vw, 2.5rem) !important;
+        padding-right: clamp(2rem, 3.5vw, 4rem) !important;
+        max-width: none !important;
     }
 
-    #text-container .chunk-text {
-        width: min(100%, 86ch) !important;
+    #text-container .chunk-text,
+    .reader-copy {
+        width: 100% !important;
+        max-width: 100% !important;
         margin-bottom: 0.8rem !important;
         padding-top: 0.45rem !important;
         padding-bottom: 0.45rem !important;
-    }
-}
-
-@media (min-width: 1440px) {
-    #text-container .chunk-text {
-        width: min(100%, 92ch) !important;
     }
 }
 
@@ -307,10 +304,49 @@ nav {
     border-radius: 1.2rem !important;
 }
 
-@media (min-width: 1024px) {
-    #media-player {
-        max-width: min(100%, 72rem) !important;
-    }
+/* Floating centered luxury player bar */
+#media-player-shell:not(.player-discovery-dock) {
+    position: absolute !important;
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    pointer-events: none !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    bottom: max(0.75rem, env(safe-area-inset-bottom)) !important;
+    padding-inline: 1rem !important;
+    z-index: 70 !important;
+}
+
+#media-player-shell:not(.player-discovery-dock) #media-player:not(.minimized-player) {
+    pointer-events: auto !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    width: 100% !important;
+    max-width: min(100%, 72rem) !important;
+    border-radius: 1.25rem !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.65), 0 0 20px -2px color-mix(in srgb, var(--theme-primary, #D4AF37) 15%, transparent) !important;
+}
+
+#media-player-shell:not(.player-discovery-dock) #media-player.minimized-player {
+    pointer-events: auto !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
+
+/* Hide redundant scrollbar inside text reading area */
+#text-container,
+.hide-scrollbar {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+}
+#text-container::-webkit-scrollbar,
+.hide-scrollbar::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
 }
 
 /* Motion guardrails: keep state cues, remove decorative infinite glow. */

@@ -139,6 +139,57 @@ export function toggleVoiceSettings(expand = true) {
     voiceBody.style.marginTop = '';
 }
 
+export function switchSidebarTab(tabName) {
+    const tabs = document.querySelectorAll('.sidebar-tab');
+    const panels = {
+        'library': document.getElementById('panel-library'),
+        'toc': document.getElementById('panel-toc'),
+        'voice': document.getElementById('panel-voice')
+    };
+
+    tabs.forEach(tab => {
+        const isTarget = tab.dataset.tab === tabName;
+        tab.classList.toggle('active', isTarget);
+        tab.setAttribute('aria-selected', isTarget ? 'true' : 'false');
+    });
+
+    Object.entries(panels).forEach(([name, panel]) => {
+        if (!panel) return;
+        if (name === tabName) {
+            panel.removeAttribute('hidden');
+        } else {
+            panel.setAttribute('hidden', '');
+        }
+    });
+
+    if (tabName === 'toc') {
+        if (typeof window.renderTOC === 'function') {
+            window.renderTOC();
+        }
+        if (typeof window.scrollTOCCurrentChapter === 'function') {
+            setTimeout(window.scrollTOCCurrentChapter, 100);
+        }
+    }
+}
+
+export function openQuickTOC() {
+    const discoveryMode = document.getElementById('discovery-mode');
+    if (discoveryMode && !discoveryMode.classList.contains('hidden')) {
+        if (typeof window.MPW_BRIDGE?.toggleDiscoveryMode === 'function') {
+            window.MPW_BRIDGE.toggleDiscoveryMode(false);
+        }
+    }
+
+    const sidebar = document.getElementById('sidebar-container');
+    if (sidebar) {
+        sidebar.classList.remove('hidden');
+        if (window.innerWidth < 1024) {
+            toggleSidebar(true);
+        }
+    }
+    switchSidebarTab('toc');
+}
+
 export function toggleVisualSettings(expand = true) {
     const visualBody = document.getElementById('visual-settings-body');
     if (!visualBody) return;
@@ -713,4 +764,65 @@ export function initUIInteractions() {
     document.querySelectorAll(".ripple-btn").forEach(button => {
         button.addEventListener("click", createRipple);
     });
+
+    // Segmented Sidebar Tabs
+    document.querySelectorAll('.sidebar-tab').forEach(tab => {
+        tab.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const tabName = tab.dataset.tab;
+            if (tabName) switchSidebarTab(tabName);
+        });
+    });
+
+    // Quick TOC Access Triggers
+    const readerTocBtn = document.getElementById('reader-toc-toggle-btn');
+    const playerTocBtn = document.getElementById('player-toc-btn');
+    readerTocBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openQuickTOC();
+    });
+    playerTocBtn?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openQuickTOC();
+    });
+
+    // Reader Utilities Dropdown (Consolidated 3-dot Menu)
+    initReaderMoreMenu();
 }
+
+export function initReaderMoreMenu() {
+    const moreBtn = document.getElementById('reader-more-menu-btn');
+    const dropdown = document.getElementById('reader-more-menu-dropdown');
+    const container = document.getElementById('reader-more-menu-container');
+
+    if (!moreBtn || !dropdown) return;
+
+    function toggleMenu(force) {
+        const isShow = typeof force === 'boolean' ? force : dropdown.classList.contains('hidden');
+        dropdown.classList.toggle('hidden', !isShow);
+        moreBtn.setAttribute('aria-expanded', isShow ? 'true' : 'false');
+    }
+
+    moreBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        toggleMenu();
+    });
+
+    document.addEventListener('click', (e) => {
+        if (!dropdown.classList.contains('hidden') && container && !container.contains(e.target)) {
+            toggleMenu(false);
+        }
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !dropdown.classList.contains('hidden')) {
+            toggleMenu(false);
+        }
+    });
+}
+
+// Global window exposure for inter-module communication
+window.switchSidebarTab = switchSidebarTab;
+window.openQuickTOC = openQuickTOC;
+window.initReaderMoreMenu = initReaderMoreMenu;
+

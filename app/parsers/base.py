@@ -149,6 +149,11 @@ def segment_blob_path(user_id: str, story_id: str, segment_index: int, format_ve
     return f"users/{user_id}/stories/{story_id}/segments/seg_{segment_index}.json"
 
 
+def toc_blob_path(user_id: str, story_id: str) -> str:
+    """Generate canonical Storage blob path for a story's lightweight TOC manifest."""
+    return f"users/{user_id}/stories/{story_id}/toc.json"
+
+
 def reconstruct_text_from_segments(user_id: str, story_id: str, segments_count: int, format_version: int = 0) -> Optional[str]:
     """Rebuild full text from stored JSON segments as a fallback."""
     import json
