@@ -1019,57 +1019,90 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
     position: relative !important;
 }
 
-/* Lite / Performance Mode */
+/* Lite / Performance Mode (Tiết kiệm CPU & Tối ưu năng lượng) */
 body.lite-mode * {
     animation: none !important;
-    transition: none !important;
+    transition-duration: 0s !important;
+    will-change: auto !important;
+}
+
+body.lite-mode *:not(input):not(button):not(.peer) {
     box-shadow: none !important;
     text-shadow: none !important;
-    will-change: auto !important;
-    transform: none !important;
 }
-body.lite-mode *:not(#minimap-container):not(#text-container) {
-    backdrop-filter: none !important;
-    -webkit-backdrop-filter: none !important;
-    filter: none !important;
-}
-body.lite-mode .glass,
+
+/* Tắt GPU backdrop filter (kính mờ) trên toàn bộ app để tiết kiệm tài nguyên */
+body.lite-mode [class*="backdrop-blur"],
 body.lite-mode nav,
 body.lite-mode footer,
 body.lite-mode #media-player,
-body.lite-mode #reader-header {
-    background: #0b1326 !important;
-    border-color: rgba(255,255,255,0.05) !important;
+body.lite-mode #reader-header,
+body.lite-mode #sidebar-container,
+body.lite-mode #reader-more-menu-dropdown,
+body.lite-mode .modal-box,
+body.lite-mode .glass {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
 }
+
+/* Áp dụng nền solid tối ưu nhưng giữ nguyên cấu trúc và màu sắc theo theme */
+body.lite-mode nav,
+body.lite-mode footer,
+body.lite-mode #media-player,
+body.lite-mode #reader-header,
+body.lite-mode #sidebar-container,
+body.lite-mode #reader-more-menu-dropdown,
+body.lite-mode .glass {
+    background-color: var(--theme-surface-low, #0b1326) !important;
+    border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Tắt các hiệu ứng đồ họa trang trí gây hao tổn CPU/GPU (KHÔNG tắt container chính) */
 body.lite-mode .glow-pulse,
 body.lite-mode .animate-pulse,
-body.lite-mode #sidebar-overlay,
-body.lite-mode .minimap-node,
-body.lite-mode #minimap-viewport,
+body.lite-mode .animate-spin-slow,
 body.lite-mode .theme-swatch.active::before,
-body.lite-mode .ripple,
-body.lite-mode [class*="blur"] {
+body.lite-mode .ripple {
+    animation: none !important;
+    box-shadow: none !important;
+}
+
+/* Chỉ ẩn các thẻ đốm sáng trang trí mờ thuần túy (không ẩn container backdrop-blur) */
+body.lite-mode div[class*="blur-"]:not([class*="backdrop-blur"]),
+body.lite-mode .blur-orb {
     display: none !important;
 }
-body.lite-mode #text-container {
-    opacity: 0 !important;
-    pointer-events: none !important;
-    visibility: hidden !important;
-}
+
+/* Ẩn minimap desktop để loại bỏ hoàn toàn tính toán layout DOM nodes khi scroll */
 body.lite-mode #minimap-container {
     display: none !important;
 }
-body.lite-mode main {
-    background: transparent !important;
+
+/* Văn bản reader: Tuyệt đối giữ nguyên hiển thị 100%, cuộn mượt tức thì không giật lag */
+body.lite-mode #text-container {
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: auto !important;
+    scroll-behavior: auto !important;
 }
-body.lite-mode #reader-container {
-    border-radius: 0 !important;
+
+/* Tắt karaoke shimmer gradient sweep chuyển động nặng, giữ highlight tĩnh sắc nét */
+body.lite-mode .chunk-active.karaoke-flow {
+    animation: none !important;
+    background: color-mix(in srgb, var(--theme-primary, #00E5FF) 18%, transparent) !important;
+    border-left: 3px solid var(--theme-primary, #00E5FF) !important;
 }
-body.lite-mode .bg-clip-text,
-body.lite-mode [class*="bg-gradient"] {
-    background: transparent !important;
-    -webkit-text-fill-color: unset !important;
-    color: #aaa !important;
+
+/* Audio wave bars: dừng nhảy sóng âm, giữ trạng thái tĩnh */
+body.lite-mode .audio-wave-bar {
+    animation: none !important;
+    height: 8px !important;
+    opacity: 0.6 !important;
+}
+
+/* Biểu tượng đĩa xoay: dừng xoay */
+body.lite-mode #player-info-layer i.fa-compact-disc {
+    animation: none !important;
 }
 
 /* View Transitions API */

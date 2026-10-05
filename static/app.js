@@ -4147,21 +4147,6 @@ async function renderChapter(index, expectedLoadGeneration = STATE.loadGeneratio
     document.getElementById('current-chapter').innerText = chapter.title;
     document.getElementById('current-chapter').title = chapter.title;
 
-    // In lite-mode: text-container is hidden, skip heavy DOM build
-    // Only fetch sentences data (needed for audio engine / prefetch)
-    if (STATE.isLiteMode) {
-        if (!chapter.sentences) {
-            document.getElementById('status-indicator').innerText = "Loading Chapter...";
-            try {
-                await fetchChapterSentences(index, expectedLoadGeneration, expectedBookId);
-            } catch (e) {
-                document.getElementById('status-indicator').innerText = `Error: ${e.message}`;
-            }
-            if (!isCurrentChapterRender()) return false;
-        }
-        return true; // Skip all DOM rendering — no spans, no minimap
-    }
-
     // Lazy load sentences if missing
     if (!chapter.sentences) {
         textContainer.innerHTML = `
@@ -4207,6 +4192,7 @@ async function renderChapter(index, expectedLoadGeneration = STATE.loadGeneratio
 }
 
 function renderMinimap(index) {
+    if (STATE.isLiteMode) return;
     const nodesContainer = document.getElementById('minimap-nodes');
     if (!nodesContainer) return;
 
@@ -5063,16 +5049,12 @@ function highlightSentence(index) {
         }
     }
 
-    // In lite-mode, text-container is hidden — no need to highlight or scroll
-    if (STATE.isLiteMode) {
-        STATE.lastHighlightedIndex = index;
-        return;
-    }
-
     const cur = document.getElementById(`sentence-${index}`);
     if (cur) {
         cur.classList.add('chunk-active');
-        cur.classList.add('karaoke-flow');
+        if (!STATE.isLiteMode) {
+            cur.classList.add('karaoke-flow');
+        }
         STATE.lastHighlightedIndex = index;
 
         const container = document.getElementById('text-container');
@@ -5087,10 +5069,12 @@ function highlightSentence(index) {
 
             // Comfort Zone Logic: Sweet-spot auto scroll when text is outside 18% - 58%
             if (relativePercent < 0.18 || relativePercent > 0.58) {
-                if (window.MotionLayer?.smoothScrollToSweetSpot) {
+                const targetScroll = Math.max(0, offsetTop - (containerHeight * 0.28));
+                if (STATE.isLiteMode) {
+                    container.scrollTop = targetScroll;
+                } else if (window.MotionLayer?.smoothScrollToSweetSpot) {
                     window.MotionLayer.smoothScrollToSweetSpot(container, cur, 0.28, 0.42);
                 } else {
-                    const targetScroll = Math.max(0, offsetTop - (containerHeight * 0.28));
                     container.scrollTo({
                         top: targetScroll,
                         behavior: 'smooth'
@@ -5100,11 +5084,13 @@ function highlightSentence(index) {
         }
     }
 
-    // Minimap sync
-    const miniNode = document.getElementById(`minimap-node-${index}`);
-    if (miniNode) {
-        miniNode.classList.add('minimap-active');
-        miniNode.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    // Minimap sync (skip in lite-mode)
+    if (!STATE.isLiteMode) {
+        const miniNode = document.getElementById(`minimap-node-${index}`);
+        if (miniNode) {
+            miniNode.classList.add('minimap-active');
+            miniNode.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
     }
 }
 
@@ -5344,8 +5330,8 @@ audio.ontimeupdate = async () => {
         }
     }
 
-    // --- Progress Bar & Time Sync (skip in lite-mode: elements are hidden/unnecessary) ---
-    if (!STATE.isLiteMode && STATE.currentBook) {
+    // --- Progress Bar & Time Sync ---
+    if (STATE.currentBook) {
         const chapter = STATE.currentBook.chapters[STATE.currentChapterIndex];
         const total = chapter.count || (chapter.sentences ? chapter.sentences.length : 0);
         const current = STATE.currentSentenceIndex + 1;
@@ -5598,56 +5584,60 @@ if (fullscreenBtn) {
     fullscreenBtn.onclick = toggleFullscreen;
 }
 
-// Performance / Lite Mode
+// Performance / Lite Mode (Giảm animation & CPU tiêu thụ)
 const liteModeToggle = document.getElementById('lite-mode-toggle');
 
 /**
  * Applies or removes lite-mode optimizations at both CSS and JS levels.
- * CSS-level: body.lite-mode class (disables animations, hides heavy elements)
- * JS-level: STATE.isLiteMode flag (skips scroll, minimap, DOM renders)
+ * CSS-level: body.lite-mode class (disables heavy GPU filters/animations, keeps UI & text intact)
+ * JS-level: STATE.isLiteMode flag (throttles updates, skips heavy layout computations)
  */
 function applyLiteMode(isLite) {
-    STATE.isLiteMode = isLite;
-    localStorage.setItem('lite-mode-enabled', isLite);
+    STATE.isLiteMode = !!isLite;
+    try {
+        localStorage.setItem('lite-mode-enabled', STATE.isLiteMode ? 'true' : 'false');
+    } catch (_) {}
 
     // Only apply visual effects if reader is active (not discovery mode)
     const discoveryMode = document.getElementById('discovery-mode');
     const isDiscovery = discoveryMode && !discoveryMode.classList.contains('hidden');
 
-    if (isLite && !isDiscovery) {
+    if (STATE.isLiteMode && !isDiscovery) {
         document.body.classList.add('lite-mode');
     } else {
         document.body.classList.remove('lite-mode');
     }
 
-    if (isLite) {
-        // Freeze any pending smooth scrolls by forcing instant snap
-        const textContainer = document.getElementById('text-container');
-        if (textContainer) textContainer.style.scrollBehavior = 'auto';
+    // Sync all toggle switches across desktop, mobile and quick settings
+    const desktopToggle = document.getElementById('lite-mode-toggle');
+    if (desktopToggle && desktopToggle.checked !== STATE.isLiteMode) {
+        desktopToggle.checked = STATE.isLiteMode;
+    }
 
+    const mobileToggle = document.getElementById('lite-mode-toggle-mobile');
+    if (mobileToggle && mobileToggle.checked !== STATE.isLiteMode) {
+        mobileToggle.checked = STATE.isLiteMode;
+    }
+
+    const quickToggle = document.getElementById('quick-lite-mode-toggle');
+    if (quickToggle && quickToggle.checked !== STATE.isLiteMode) {
+        quickToggle.checked = STATE.isLiteMode;
+    }
+
+    const textContainer = document.getElementById('text-container');
+    if (textContainer) {
+        textContainer.style.scrollBehavior = STATE.isLiteMode ? 'auto' : '';
+    }
+
+    if (STATE.isLiteMode) {
         // Clear minimap DOM to free up memory & layout cost
         const minimap = document.getElementById('minimap-container');
         if (minimap) minimap.innerHTML = '';
-
-        // Sync mobile toggle if it exists
-        const mobileToggle = document.getElementById('lite-mode-toggle-mobile');
-        if (mobileToggle) mobileToggle.checked = true;
     } else {
-        // Restore smooth scrolling
-        const textContainer = document.getElementById('text-container');
-        if (textContainer) textContainer.style.scrollBehavior = '';
-
-        // Sync mobile toggle
-        const mobileToggle = document.getElementById('lite-mode-toggle-mobile');
-        if (mobileToggle) mobileToggle.checked = false;
-
-        // Re-render full chapter view (text spans + minimap were skipped in lite-mode)
-        if (STATE.currentBook) {
-            renderChapter(STATE.currentChapterIndex).then(() => {
-                // Restore highlight and scroll position after rebuild
-                highlightSentence(STATE.currentSentenceIndex);
-                syncMinimapScroll();
-            });
+        // Re-render minimap if currentBook is loaded
+        if (STATE.currentBook && STATE.currentChapterIndex !== undefined) {
+            renderMinimap(STATE.currentChapterIndex);
+            syncMinimapScroll();
         }
 
         // Reset throttle tick to force immediate UI refresh
@@ -5657,8 +5647,9 @@ function applyLiteMode(isLite) {
         STATE.lastTimeStr = null;
     }
 
-    console.log(`[LiteMode] ${isLite ? 'ON — UI computations minimized' : 'OFF — Full UI restored'}`);
+    console.log(`[LiteMode] ${STATE.isLiteMode ? 'ON — UI computations minimized' : 'OFF — Full UI restored'}`);
 }
+window.applyLiteMode = applyLiteMode;
 
 if (liteModeToggle) {
     // Restore saved state on page load
@@ -5675,11 +5666,43 @@ if (liteModeToggle) {
 // Mobile toggle: override the inline onchange with a proper listener for symmetry
 const liteModeToggleMobile = document.getElementById('lite-mode-toggle-mobile');
 if (liteModeToggleMobile) {
-    // Remove inline onchange to prevent double-fire
     liteModeToggleMobile.removeAttribute('onchange');
     liteModeToggleMobile.addEventListener('change', (e) => {
-        if (liteModeToggle) liteModeToggle.checked = e.target.checked;
         applyLiteMode(e.target.checked);
+    });
+}
+
+// Quick Speed Cycle for Player Chip
+const speedChip = document.getElementById('speak-speed-chip');
+if (speedChip) {
+    speedChip.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const speeds = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+        const currentSpeed = (STATE.settings && STATE.settings.speed) ? Number(STATE.settings.speed) : 1.0;
+        let nextIndex = speeds.findIndex(s => Math.abs(s - currentSpeed) < 0.05);
+        if (nextIndex === -1) {
+            nextIndex = speeds.findIndex(s => s > currentSpeed);
+            if (nextIndex === -1) nextIndex = 0;
+        } else {
+            nextIndex = (nextIndex + 1) % speeds.length;
+        }
+        const nextSpeed = speeds[nextIndex];
+        if (window.QuickSettingsController && typeof window.QuickSettingsController.setSpeed === 'function') {
+            window.QuickSettingsController.setSpeed(nextSpeed);
+        } else {
+            if (STATE.settings) STATE.settings.speed = nextSpeed;
+            speedChip.innerText = `${nextSpeed.toFixed(1)}X`;
+            const sRange = document.getElementById('speed-range');
+            if (sRange) sRange.value = nextSpeed;
+            const sVal = document.getElementById('speed-val');
+            if (sVal) sVal.innerText = `${nextSpeed.toFixed(1)}x`;
+            const qRange = document.getElementById('quick-speed-range');
+            if (qRange) qRange.value = nextSpeed;
+            const qVal = document.getElementById('quick-speed-val');
+            if (qVal) qVal.innerText = `${nextSpeed.toFixed(1)}x`;
+        }
+        if (window.AudioHapticFX) AudioHapticFX.trigger(10);
+        if (window.APP_STATUS) APP_STATUS.toast(`Tốc độ đọc: ${nextSpeed.toFixed(2)}x`, 'info');
     });
 }
 
@@ -6020,18 +6043,28 @@ function updateWakeLockUI(isActive) {
             ? "text-[10px] font-bold px-2 py-0.5 rounded-md bg-yellow-400/20 text-yellow-300" 
             : "text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 text-slate-400";
     }
+
+    const qWake = document.getElementById('quick-wakelock-toggle') || document.getElementById('quick-wakeLockEnabled');
+    if (qWake && qWake.checked !== !!isActive) {
+        qWake.checked = !!isActive;
+    }
+
     updateReaderMoreActiveDot();
 }
+window.updateWakeLockUI = updateWakeLockUI;
+window.requestWakeLock = requestWakeLock;
+window.releaseWakeLock = releaseWakeLock;
 
 // --- Sleep Timer & Manual Save Logic ---
 function toggleSleepTimerDropdown() {
     const dropdown = document.getElementById('sleep-timer-dropdown');
+    if (!dropdown) return;
     dropdown.classList.toggle('hidden');
 
     // Close dropdown when clicking outside
     if (!dropdown.classList.contains('hidden')) {
         const closeDropdown = (e) => {
-            if (!dropdown.contains(e.target) && !document.getElementById('sleep-timer-btn').contains(e.target)) {
+            if (!dropdown.contains(e.target) && !document.getElementById('sleep-timer-btn')?.contains(e.target)) {
                 dropdown.classList.add('hidden');
                 document.removeEventListener('click', closeDropdown);
             }
@@ -6063,7 +6096,8 @@ function startSleepTimer(seconds) {
 
     STATE.sleepTimerEnd = Date.now() + seconds * 1000;
     updateSleepTimerUI(true, seconds);
-    document.getElementById('sleep-timer-dropdown').classList.add('hidden');
+    const sleepDropdown = document.getElementById('sleep-timer-dropdown');
+    if (sleepDropdown) sleepDropdown.classList.add('hidden');
 
     STATE.sleepTimer = setInterval(() => {
         const remaining = Math.max(0, Math.round((STATE.sleepTimerEnd - Date.now()) / 1000));
@@ -6119,7 +6153,8 @@ function cancelSleepTimer() {
         STATE.sleepTimer = null;
     }
     updateSleepTimerUI(false);
-    document.getElementById('sleep-timer-dropdown').classList.add('hidden');
+    const sleepDropdown = document.getElementById('sleep-timer-dropdown');
+    if (sleepDropdown) sleepDropdown.classList.add('hidden');
 }
 
 function formatTime(seconds) {
@@ -6869,6 +6904,10 @@ function setZenMode(enabled, persist = true) {
         zenPill.className = STATE.zenModeEnabled 
             ? "text-[10px] font-bold px-2 py-0.5 rounded-md bg-primary/20 text-primary" 
             : "text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 text-slate-400";
+    }
+    const qZenToggle = document.getElementById('quick-zen-mode-toggle');
+    if (qZenToggle && qZenToggle.checked !== STATE.zenModeEnabled) {
+        qZenToggle.checked = STATE.zenModeEnabled;
     }
     updateReaderMoreActiveDot();
     if (persist) {
