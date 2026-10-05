@@ -616,20 +616,28 @@ export const QuickSettingsController = {
     },
 
     setLiteMode(enabled) {
-        try { localStorage.setItem('lite-mode-enabled', String(enabled)); } catch (_) {}
-        document.body.classList.toggle('lite-mode', enabled);
-        const sLiteToggle = document.getElementById('lite-mode-toggle');
-        if (sLiteToggle) sLiteToggle.checked = enabled;
-        if (window.STATE) window.STATE.isLiteMode = enabled;
+        if (typeof window.applyLiteMode === 'function') {
+            window.applyLiteMode(enabled);
+        } else {
+            try { localStorage.setItem('lite-mode-enabled', String(enabled)); } catch (_) {}
+            document.body.classList.toggle('lite-mode', enabled);
+            const sLiteToggle = document.getElementById('lite-mode-toggle');
+            if (sLiteToggle) sLiteToggle.checked = enabled;
+            const mToggle = document.getElementById('lite-mode-toggle-mobile');
+            if (mToggle) mToggle.checked = enabled;
+            const qToggle = document.getElementById('quick-lite-mode-toggle');
+            if (qToggle) qToggle.checked = enabled;
+            if (window.STATE) window.STATE.isLiteMode = enabled;
+        }
     },
 
     setZenMode(enabled) {
-        try { localStorage.setItem('zen-mode-enabled', String(enabled)); } catch (_) {}
-        if (window.STATE) window.STATE.zenModeEnabled = enabled;
-        if (typeof window.toggleZenMode === 'function') {
-            window.toggleZenMode(enabled);
+        if (typeof window.setZenMode === 'function') {
+            window.setZenMode(enabled, true);
         } else {
-            document.body.classList.toggle('zen-mode', enabled);
+            try { localStorage.setItem('zen-mode-enabled', String(enabled)); } catch (_) {}
+            if (window.STATE) window.STATE.zenModeEnabled = enabled;
+            document.body.classList.toggle('zen-focus-mode', enabled);
         }
     },
 
@@ -640,6 +648,8 @@ export const QuickSettingsController = {
             window.requestWakeLock();
         } else if (typeof window.releaseWakeLock === 'function' && !enabled) {
             window.releaseWakeLock();
+        } else if (typeof window.updateWakeLockUI === 'function') {
+            window.updateWakeLockUI(enabled);
         }
     },
 
