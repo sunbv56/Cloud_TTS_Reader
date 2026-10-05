@@ -958,7 +958,7 @@
                                 class="text-[9px] sm:text-[10px] font-mono font-bold text-primary min-w-[3rem] text-right">0:00</span>
                             <!-- Mobile Performance/Lite Mode Toggle -->
                             <label class="flex md:hidden items-center gap-2 cursor-pointer group"
-                                title="Toggle Lite Mode (Improves Performance)">
+                                title="Chế độ chỉ nghe (Pocket Mode) - Tối đen màn hình tiết kiệm pin khi bỏ túi">
                                 <div class="relative">
                                     <input type="checkbox" id="lite-mode-toggle-mobile" class="sr-only peer"
                                         onchange="document.getElementById('lite-mode-toggle').click();">
@@ -998,7 +998,7 @@
 
                         <!-- Performance/Lite Mode Toggle -->
                         <label class="flex items-center gap-2 cursor-pointer group"
-                            title="Toggle Lite Mode (Improves Performance)">
+                            title="Chế độ chỉ nghe (Pocket Mode) - Tối đen màn hình tiết kiệm pin khi bỏ túi">
                             <div class="relative">
                                 <input type="checkbox" id="lite-mode-toggle" class="sr-only peer">
                                 <div
@@ -1653,6 +1653,46 @@ Nội dung chương hai...</pre>
                     Hoàn tất
                 </button>
             </div>
+        </div>
+    <!-- Audio-Only / Pocket Mode Overlay (AMOLED Battery Saver) -->
+    <div id="pocket-mode-overlay" class="fixed inset-0 bg-black z-[999] hidden flex-col items-center justify-between p-6 sm:p-10 select-none cursor-pointer transition-opacity duration-300">
+        <!-- Top Hint -->
+        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-white/70 text-xs font-medium border border-white/10 animate-pulse pointer-events-none">
+            <i class="fas fa-moon text-primary"></i>
+            <span data-i18n="pocket-mode-active">Chế độ chỉ nghe (Tiết kiệm pin tối đa)</span>
+        </div>
+
+        <!-- Center Minimal Controls -->
+        <div class="flex flex-col items-center gap-6 text-center max-w-sm w-full pointer-events-auto" onclick="event.stopPropagation()">
+            <div class="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-primary/80 shadow-inner">
+                <i class="fas fa-headphones text-2xl"></i>
+            </div>
+            <div class="flex flex-col gap-1 w-full px-2">
+                <p id="pocket-book-title" class="text-sm sm:text-base font-bold text-white/90 truncate"></p>
+                <p id="pocket-chapter-title" class="text-xs text-primary/80 truncate"></p>
+                <p id="pocket-sentence-preview" class="text-[11px] text-white/50 italic line-clamp-2 mt-2 px-2"></p>
+            </div>
+            <!-- Minimal Playback Controls -->
+            <div class="flex items-center gap-5 sm:gap-6 mt-1">
+                <button id="pocket-prev-chunk-btn" type="button" class="w-11 h-11 rounded-full bg-white/5 border border-white/10 text-white/80 hover:text-primary flex items-center justify-center cursor-pointer active:scale-90 transition-transform" title="Câu trước">
+                    <i class="fas fa-step-backward text-sm"></i>
+                </button>
+                <button id="pocket-play-btn" type="button" class="w-16 h-16 rounded-full bg-primary text-black flex items-center justify-center text-2xl shadow-lg active:scale-95 transition-transform cursor-pointer" title="Phát / Tạm dừng">
+                    <i id="pocket-play-icon" class="fas fa-play ml-1"></i>
+                </button>
+                <button id="pocket-next-chunk-btn" type="button" class="w-11 h-11 rounded-full bg-white/5 border border-white/10 text-white/80 hover:text-primary flex items-center justify-center cursor-pointer active:scale-90 transition-transform" title="Câu kế">
+                    <i class="fas fa-step-forward text-sm"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Bottom Wake Button & Hint -->
+        <div class="flex flex-col items-center gap-2 pointer-events-auto">
+            <button id="pocket-exit-btn" type="button" class="px-6 py-2.5 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 text-white font-semibold text-xs sm:text-sm border border-white/20 shadow-lg flex items-center gap-2 transition-all cursor-pointer">
+                <i class="fas fa-eye text-primary"></i>
+                <span data-i18n="pocket-mode-exit">Chạm để mở lại màn hình</span>
+            </button>
+            <span class="text-[10px] text-white/40 pointer-events-none">Hoặc chạm bất kỳ đâu vào nền đen</span>
         </div>
     </div>
 
