@@ -629,6 +629,9 @@ export const QuickSettingsController = {
             if (qToggle) qToggle.checked = enabled;
             if (window.STATE) window.STATE.isLiteMode = enabled;
         }
+        if (enabled && typeof this.close === 'function') {
+            this.close();
+        }
     },
 
     setZenMode(enabled) {
