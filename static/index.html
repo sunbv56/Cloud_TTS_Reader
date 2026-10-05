@@ -1654,16 +1654,23 @@ Nội dung chương hai...</pre>
                 </button>
             </div>
         </div>
-    <!-- Audio-Only / Pocket Mode Overlay (AMOLED Battery Saver) -->
-    <div id="pocket-mode-overlay" class="fixed inset-0 bg-black z-[999] hidden flex-col items-center justify-between p-6 sm:p-10 select-none cursor-pointer transition-opacity duration-300">
-        <!-- Top Hint -->
-        <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-white/70 text-xs font-medium border border-white/10 animate-pulse pointer-events-none">
-            <i class="fas fa-moon text-primary"></i>
-            <span data-i18n="pocket-mode-active">Chế độ chỉ nghe (Tiết kiệm pin tối đa)</span>
+    <!-- Audio-Only / Pocket Mode Overlay (AMOLED Battery Saver with Pocket Protection) -->
+    <div id="pocket-mode-overlay" class="fixed inset-0 bg-black z-[999] hidden flex-col items-center justify-between p-6 sm:p-10 select-none cursor-pointer transition-all duration-300">
+        <!-- Top Hint & Accidental Touch Badge -->
+        <div class="flex flex-col items-center gap-2 pointer-events-none">
+            <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-white/70 text-xs font-medium border border-white/10">
+                <i class="fas fa-shield-alt text-primary text-xs"></i>
+                <span data-i18n="pocket-mode-active">Chế độ chỉ nghe (Khóa chống chạm nhầm)</span>
+            </div>
+            <!-- Unlock Prompt Pill (Appears on first tap) -->
+            <div id="pocket-wake-prompt" class="opacity-0 transition-opacity duration-200 px-4 py-1.5 rounded-full bg-primary/20 border border-primary/40 text-primary text-xs font-bold flex items-center gap-1.5 shadow-lg">
+                <i class="fas fa-fingerprint animate-bounce"></i>
+                <span id="pocket-wake-prompt-text" data-i18n="pocket-double-tap-hint">Chạm thêm lần nữa để mở khóa</span>
+            </div>
         </div>
 
-        <!-- Center Minimal Controls -->
-        <div class="flex flex-col items-center gap-6 text-center max-w-sm w-full pointer-events-auto" onclick="event.stopPropagation()">
+        <!-- Center Minimal Controls (Dimmed when idle, brightened on tap) -->
+        <div id="pocket-controls-container" class="flex flex-col items-center gap-6 text-center max-w-sm w-full pointer-events-auto opacity-40 transition-opacity duration-300" onclick="event.stopPropagation()">
             <div class="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-primary/80 shadow-inner">
                 <i class="fas fa-headphones text-2xl"></i>
             </div>
@@ -1686,13 +1693,13 @@ Nội dung chương hai...</pre>
             </div>
         </div>
 
-        <!-- Bottom Wake Button & Hint -->
+        <!-- Bottom Wake Button & Protection Hint -->
         <div class="flex flex-col items-center gap-2 pointer-events-auto">
             <button id="pocket-exit-btn" type="button" class="px-6 py-2.5 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 text-white font-semibold text-xs sm:text-sm border border-white/20 shadow-lg flex items-center gap-2 transition-all cursor-pointer">
-                <i class="fas fa-eye text-primary"></i>
-                <span data-i18n="pocket-mode-exit">Chạm để mở lại màn hình</span>
+                <i id="pocket-exit-icon" class="fas fa-lock text-primary"></i>
+                <span id="pocket-exit-label" data-i18n="pocket-mode-exit">Chạm 2 lần để mở màn hình</span>
             </button>
-            <span class="text-[10px] text-white/40 pointer-events-none">Hoặc chạm bất kỳ đâu vào nền đen</span>
+            <span class="text-[10px] text-white/40 pointer-events-none" data-i18n="pocket-anti-accidental-hint">Chống chạm nhầm khi để trong túi quần</span>
         </div>
     </div>
 

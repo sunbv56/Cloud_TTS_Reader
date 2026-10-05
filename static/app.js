@@ -5623,25 +5623,87 @@ function updatePocketModeInfo() {
 }
 window.updatePocketModeInfo = updatePocketModeInfo;
 
+// --- Anti-Accidental Touch Protection State (Chống chạm nhầm khi bỏ túi quần) ---
+let pocketWakeTapCount = 0;
+let pocketWakeTapTimer = null;
+let pocketActiveDimTimer = null;
+
+function brightenPocketOverlay() {
+    const controls = document.getElementById('pocket-controls-container');
+    const prompt = document.getElementById('pocket-wake-prompt');
+    const exitBtn = document.getElementById('pocket-exit-btn');
+    const exitIcon = document.getElementById('pocket-exit-icon');
+    const exitLabel = document.getElementById('pocket-exit-label');
+
+    if (controls) controls.classList.remove('opacity-40');
+    if (prompt) prompt.classList.remove('opacity-0');
+    if (exitBtn) {
+        exitBtn.classList.add('ring-2', 'ring-primary', 'bg-primary/25');
+        if (exitIcon) exitIcon.className = 'fas fa-unlock text-primary animate-pulse';
+        if (exitLabel) exitLabel.innerText = 'Chạm lần nữa để mở khóa';
+    }
+
+    if (pocketActiveDimTimer) clearTimeout(pocketActiveDimTimer);
+    pocketActiveDimTimer = setTimeout(dimPocketOverlay, 2400);
+}
+
+function dimPocketOverlay() {
+    const controls = document.getElementById('pocket-controls-container');
+    const prompt = document.getElementById('pocket-wake-prompt');
+    const exitBtn = document.getElementById('pocket-exit-btn');
+    const exitIcon = document.getElementById('pocket-exit-icon');
+    const exitLabel = document.getElementById('pocket-exit-label');
+
+    if (controls) controls.classList.add('opacity-40');
+    if (prompt) prompt.classList.add('opacity-0');
+    if (exitBtn) {
+        exitBtn.classList.remove('ring-2', 'ring-primary', 'bg-primary/25');
+        if (exitIcon) exitIcon.className = 'fas fa-lock text-primary';
+        if (exitLabel) exitLabel.innerText = 'Chạm 2 lần để mở màn hình';
+    }
+    pocketWakeTapCount = 0;
+}
+
+function handlePocketWakeRequest(e) {
+    if (e) e.stopPropagation();
+    pocketWakeTapCount++;
+
+    if (pocketWakeTapCount === 1) {
+        // Cú chạm đầu tiên (hoặc vải cọ vào): Đánh thức tạm thời & chờ cú chạm thứ 2
+        brightenPocketOverlay();
+        if (window.AudioHapticFX) AudioHapticFX.trigger(5);
+
+        if (pocketWakeTapTimer) clearTimeout(pocketWakeTapTimer);
+        pocketWakeTapTimer = setTimeout(() => {
+            dimPocketOverlay();
+        }, 2200);
+    } else if (pocketWakeTapCount >= 2) {
+        // Cú chạm thứ 2 trong vòng 2.2s: Xác nhận người dùng chủ động mở khóa!
+        if (pocketWakeTapTimer) clearTimeout(pocketWakeTapTimer);
+        if (pocketActiveDimTimer) clearTimeout(pocketActiveDimTimer);
+        pocketWakeTapCount = 0;
+        dimPocketOverlay();
+        applyLiteMode(false);
+        if (window.APP_STATUS) APP_STATUS.toast('Đã mở lại màn hình đọc sách.', 'info');
+        if (window.AudioHapticFX) AudioHapticFX.trigger(12);
+    }
+}
+
 function initPocketModeControls() {
-    // Exit on Wake Button click
+    // Double tap on Wake button
     document.getElementById('pocket-exit-btn')?.addEventListener('click', (e) => {
-        e.stopPropagation();
-        applyLiteMode(false);
-        if (window.APP_STATUS) APP_STATUS.toast('Đã mở lại màn hình đọc sách.', 'info');
-        if (window.AudioHapticFX) AudioHapticFX.trigger(10);
+        handlePocketWakeRequest(e);
     });
 
-    // Exit on tapping anywhere on the dark backdrop
-    document.getElementById('pocket-mode-overlay')?.addEventListener('click', () => {
-        applyLiteMode(false);
-        if (window.APP_STATUS) APP_STATUS.toast('Đã mở lại màn hình đọc sách.', 'info');
-        if (window.AudioHapticFX) AudioHapticFX.trigger(10);
+    // Double tap anywhere on backdrop
+    document.getElementById('pocket-mode-overlay')?.addEventListener('click', (e) => {
+        handlePocketWakeRequest(e);
     });
 
-    // Pocket Play / Pause Button
+    // Pocket Play / Pause Button with active check
     document.getElementById('pocket-play-btn')?.addEventListener('click', (e) => {
         e.stopPropagation();
+        brightenPocketOverlay();
         togglePlayback();
         setTimeout(updatePocketModeInfo, 50);
     });
@@ -5649,6 +5711,7 @@ function initPocketModeControls() {
     // Pocket Prev Chunk Button
     document.getElementById('pocket-prev-chunk-btn')?.addEventListener('click', (e) => {
         e.stopPropagation();
+        brightenPocketOverlay();
         playPrevChunk();
         setTimeout(updatePocketModeInfo, 50);
     });
@@ -5656,13 +5719,15 @@ function initPocketModeControls() {
     // Pocket Next Chunk Button
     document.getElementById('pocket-next-chunk-btn')?.addEventListener('click', (e) => {
         e.stopPropagation();
+        brightenPocketOverlay();
         playNextChunk();
         setTimeout(updatePocketModeInfo, 50);
     });
 
-    // Keyboard shortcut Escape to exit Pocket Mode
+    // Keyboard shortcut Escape to immediately exit Pocket Mode
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && STATE.isLiteMode) {
+            dimPocketOverlay();
             applyLiteMode(false);
             if (window.APP_STATUS) APP_STATUS.toast('Đã mở lại màn hình đọc sách.', 'info');
         }
@@ -5694,6 +5759,7 @@ function applyLiteMode(isLite) {
         } else {
             pocketOverlay.classList.add('hidden');
             pocketOverlay.classList.remove('flex');
+            dimPocketOverlay();
         }
     }
 
