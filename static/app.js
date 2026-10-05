@@ -5092,6 +5092,10 @@ function highlightSentence(index) {
             miniNode.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
     }
+
+    if (STATE.isLiteMode) {
+        updatePocketModeInfo();
+    }
 }
 
 async function togglePlayback() {
@@ -5584,13 +5588,92 @@ if (fullscreenBtn) {
     fullscreenBtn.onclick = toggleFullscreen;
 }
 
-// Performance / Lite Mode (Giảm animation & CPU tiêu thụ)
+// Performance / Lite Mode (Chế độ Chỉ Nghe Audio / Pocket Mode)
 const liteModeToggle = document.getElementById('lite-mode-toggle');
 
 /**
- * Applies or removes lite-mode optimizations at both CSS and JS levels.
- * CSS-level: body.lite-mode class (disables heavy GPU filters/animations, keeps UI & text intact)
- * JS-level: STATE.isLiteMode flag (throttles updates, skips heavy layout computations)
+ * Updates Pocket Mode track info, current sentence preview and play/pause icon.
+ */
+function updatePocketModeInfo() {
+    const pocketOverlay = document.getElementById('pocket-mode-overlay');
+    if (!pocketOverlay || pocketOverlay.classList.contains('hidden')) return;
+
+    const bookTitleEl = document.getElementById('pocket-book-title');
+    const chapterTitleEl = document.getElementById('pocket-chapter-title');
+    const sentenceEl = document.getElementById('pocket-sentence-preview');
+    const playIcon = document.getElementById('pocket-play-icon');
+
+    if (STATE.currentBook) {
+        if (bookTitleEl) bookTitleEl.innerText = STATE.currentBook.title || 'Cloud TTS Reader';
+        const chap = STATE.currentBook.chapters?.[STATE.currentChapterIndex];
+        if (chapterTitleEl) chapterTitleEl.innerText = chap?.title || `Chương ${STATE.currentChapterIndex + 1}`;
+        if (sentenceEl) {
+            const curSentence = chap?.sentences?.[STATE.currentSentenceIndex];
+            sentenceEl.innerText = curSentence ? `"${curSentence}"` : '';
+        }
+    } else {
+        if (bookTitleEl) bookTitleEl.innerText = 'Chưa chọn sách';
+        if (chapterTitleEl) chapterTitleEl.innerText = 'Sẵn sàng phát';
+        if (sentenceEl) sentenceEl.innerText = '';
+    }
+
+    if (playIcon) {
+        playIcon.className = STATE.isPlaying ? 'fas fa-pause text-black text-xl' : 'fas fa-play ml-1 text-black text-xl';
+    }
+}
+window.updatePocketModeInfo = updatePocketModeInfo;
+
+function initPocketModeControls() {
+    // Exit on Wake Button click
+    document.getElementById('pocket-exit-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        applyLiteMode(false);
+        if (window.APP_STATUS) APP_STATUS.toast('Đã mở lại màn hình đọc sách.', 'info');
+        if (window.AudioHapticFX) AudioHapticFX.trigger(10);
+    });
+
+    // Exit on tapping anywhere on the dark backdrop
+    document.getElementById('pocket-mode-overlay')?.addEventListener('click', () => {
+        applyLiteMode(false);
+        if (window.APP_STATUS) APP_STATUS.toast('Đã mở lại màn hình đọc sách.', 'info');
+        if (window.AudioHapticFX) AudioHapticFX.trigger(10);
+    });
+
+    // Pocket Play / Pause Button
+    document.getElementById('pocket-play-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        togglePlayback();
+        setTimeout(updatePocketModeInfo, 50);
+    });
+
+    // Pocket Prev Chunk Button
+    document.getElementById('pocket-prev-chunk-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        playPrevChunk();
+        setTimeout(updatePocketModeInfo, 50);
+    });
+
+    // Pocket Next Chunk Button
+    document.getElementById('pocket-next-chunk-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        playNextChunk();
+        setTimeout(updatePocketModeInfo, 50);
+    });
+
+    // Keyboard shortcut Escape to exit Pocket Mode
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && STATE.isLiteMode) {
+            applyLiteMode(false);
+            if (window.APP_STATUS) APP_STATUS.toast('Đã mở lại màn hình đọc sách.', 'info');
+        }
+    });
+}
+initPocketModeControls();
+
+/**
+ * Applies or removes Audio-Only Pocket Mode optimizations.
+ * When ON: Activates blackout OLED overlay with tap-to-wake, pauses heavy layout/motion.
+ * When OFF: Dismisses overlay, restores full reading view and scrolls to current sentence.
  */
 function applyLiteMode(isLite) {
     STATE.isLiteMode = !!isLite;
@@ -5601,6 +5684,18 @@ function applyLiteMode(isLite) {
     // Only apply visual effects if reader is active (not discovery mode)
     const discoveryMode = document.getElementById('discovery-mode');
     const isDiscovery = discoveryMode && !discoveryMode.classList.contains('hidden');
+
+    const pocketOverlay = document.getElementById('pocket-mode-overlay');
+    if (pocketOverlay) {
+        if (STATE.isLiteMode && !isDiscovery) {
+            pocketOverlay.classList.remove('hidden');
+            pocketOverlay.classList.add('flex');
+            updatePocketModeInfo();
+        } else {
+            pocketOverlay.classList.add('hidden');
+            pocketOverlay.classList.remove('flex');
+        }
+    }
 
     if (STATE.isLiteMode && !isDiscovery) {
         document.body.classList.add('lite-mode');
@@ -5638,6 +5733,7 @@ function applyLiteMode(isLite) {
         if (STATE.currentBook && STATE.currentChapterIndex !== undefined) {
             renderMinimap(STATE.currentChapterIndex);
             syncMinimapScroll();
+            highlightSentence(STATE.currentSentenceIndex);
         }
 
         // Reset throttle tick to force immediate UI refresh
@@ -5647,7 +5743,7 @@ function applyLiteMode(isLite) {
         STATE.lastTimeStr = null;
     }
 
-    console.log(`[LiteMode] ${STATE.isLiteMode ? 'ON — UI computations minimized' : 'OFF — Full UI restored'}`);
+    console.log(`[PocketMode] ${STATE.isLiteMode ? 'ON — Audio-only battery saver' : 'OFF — Full UI restored'}`);
 }
 window.applyLiteMode = applyLiteMode;
 
@@ -5719,6 +5815,9 @@ function updateUI() {
         authorEl.title = STATE.currentBook.title;
     }
     updatePipUI();
+    if (STATE.isLiteMode) {
+        updatePocketModeInfo();
+    }
 }
 
 function updatePipUI() {
