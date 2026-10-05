@@ -5746,13 +5746,9 @@ function applyLiteMode(isLite) {
         localStorage.setItem('lite-mode-enabled', STATE.isLiteMode ? 'true' : 'false');
     } catch (_) {}
 
-    // Only apply visual effects if reader is active (not discovery mode)
-    const discoveryMode = document.getElementById('discovery-mode');
-    const isDiscovery = discoveryMode && !discoveryMode.classList.contains('hidden');
-
     const pocketOverlay = document.getElementById('pocket-mode-overlay');
     if (pocketOverlay) {
-        if (STATE.isLiteMode && !isDiscovery) {
+        if (STATE.isLiteMode) {
             pocketOverlay.classList.remove('hidden');
             pocketOverlay.classList.add('flex');
             updatePocketModeInfo();
@@ -5763,7 +5759,7 @@ function applyLiteMode(isLite) {
         }
     }
 
-    if (STATE.isLiteMode && !isDiscovery) {
+    if (STATE.isLiteMode) {
         document.body.classList.add('lite-mode');
     } else {
         document.body.classList.remove('lite-mode');
@@ -5814,10 +5810,10 @@ function applyLiteMode(isLite) {
 window.applyLiteMode = applyLiteMode;
 
 if (liteModeToggle) {
-    // Restore saved state on page load
-    const savedLiteMode = localStorage.getItem('lite-mode-enabled') === 'true';
-    liteModeToggle.checked = savedLiteMode;
-    applyLiteMode(savedLiteMode);
+    // Luôn khởi động ở trạng thái hiển thị bình thường khi tải trang
+    STATE.isLiteMode = false;
+    liteModeToggle.checked = false;
+    applyLiteMode(false);
 
     // Desktop toggle
     liteModeToggle.addEventListener('change', (e) => {
