@@ -5092,6 +5092,10 @@ function highlightSentence(index) {
             miniNode.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         }
     }
+
+    if (STATE.isLiteMode) {
+        updatePocketModeInfo();
+    }
 }
 
 async function togglePlayback() {
@@ -5584,13 +5588,157 @@ if (fullscreenBtn) {
     fullscreenBtn.onclick = toggleFullscreen;
 }
 
-// Performance / Lite Mode (Giảm animation & CPU tiêu thụ)
+// Performance / Lite Mode (Chế độ Chỉ Nghe Audio / Pocket Mode)
 const liteModeToggle = document.getElementById('lite-mode-toggle');
 
 /**
- * Applies or removes lite-mode optimizations at both CSS and JS levels.
- * CSS-level: body.lite-mode class (disables heavy GPU filters/animations, keeps UI & text intact)
- * JS-level: STATE.isLiteMode flag (throttles updates, skips heavy layout computations)
+ * Updates Pocket Mode track info, current sentence preview and play/pause icon.
+ */
+function updatePocketModeInfo() {
+    const pocketOverlay = document.getElementById('pocket-mode-overlay');
+    if (!pocketOverlay || pocketOverlay.classList.contains('hidden')) return;
+
+    const bookTitleEl = document.getElementById('pocket-book-title');
+    const chapterTitleEl = document.getElementById('pocket-chapter-title');
+    const sentenceEl = document.getElementById('pocket-sentence-preview');
+    const playIcon = document.getElementById('pocket-play-icon');
+
+    if (STATE.currentBook) {
+        if (bookTitleEl) bookTitleEl.innerText = STATE.currentBook.title || 'Cloud TTS Reader';
+        const chap = STATE.currentBook.chapters?.[STATE.currentChapterIndex];
+        if (chapterTitleEl) chapterTitleEl.innerText = chap?.title || `Chương ${STATE.currentChapterIndex + 1}`;
+        if (sentenceEl) {
+            const curSentence = chap?.sentences?.[STATE.currentSentenceIndex];
+            sentenceEl.innerText = curSentence ? `"${curSentence}"` : '';
+        }
+    } else {
+        if (bookTitleEl) bookTitleEl.innerText = 'Chưa chọn sách';
+        if (chapterTitleEl) chapterTitleEl.innerText = 'Sẵn sàng phát';
+        if (sentenceEl) sentenceEl.innerText = '';
+    }
+
+    if (playIcon) {
+        playIcon.className = STATE.isPlaying ? 'fas fa-pause text-black text-xl' : 'fas fa-play ml-1 text-black text-xl';
+    }
+}
+window.updatePocketModeInfo = updatePocketModeInfo;
+
+// --- Anti-Accidental Touch Protection State (Chống chạm nhầm khi bỏ túi quần) ---
+let pocketWakeTapCount = 0;
+let pocketWakeTapTimer = null;
+let pocketActiveDimTimer = null;
+
+function brightenPocketOverlay() {
+    const controls = document.getElementById('pocket-controls-container');
+    const prompt = document.getElementById('pocket-wake-prompt');
+    const exitBtn = document.getElementById('pocket-exit-btn');
+    const exitIcon = document.getElementById('pocket-exit-icon');
+    const exitLabel = document.getElementById('pocket-exit-label');
+
+    if (controls) controls.classList.remove('opacity-40');
+    if (prompt) prompt.classList.remove('opacity-0');
+    if (exitBtn) {
+        exitBtn.classList.add('ring-2', 'ring-primary', 'bg-primary/25');
+        if (exitIcon) exitIcon.className = 'fas fa-unlock text-primary animate-pulse';
+        if (exitLabel) exitLabel.innerText = 'Chạm lần nữa để mở khóa';
+    }
+
+    if (pocketActiveDimTimer) clearTimeout(pocketActiveDimTimer);
+    pocketActiveDimTimer = setTimeout(dimPocketOverlay, 2400);
+}
+
+function dimPocketOverlay() {
+    const controls = document.getElementById('pocket-controls-container');
+    const prompt = document.getElementById('pocket-wake-prompt');
+    const exitBtn = document.getElementById('pocket-exit-btn');
+    const exitIcon = document.getElementById('pocket-exit-icon');
+    const exitLabel = document.getElementById('pocket-exit-label');
+
+    if (controls) controls.classList.add('opacity-40');
+    if (prompt) prompt.classList.add('opacity-0');
+    if (exitBtn) {
+        exitBtn.classList.remove('ring-2', 'ring-primary', 'bg-primary/25');
+        if (exitIcon) exitIcon.className = 'fas fa-lock text-primary';
+        if (exitLabel) exitLabel.innerText = 'Chạm 2 lần để mở màn hình';
+    }
+    pocketWakeTapCount = 0;
+}
+
+function handlePocketWakeRequest(e) {
+    if (e) e.stopPropagation();
+    pocketWakeTapCount++;
+
+    if (pocketWakeTapCount === 1) {
+        // Cú chạm đầu tiên (hoặc vải cọ vào): Đánh thức tạm thời & chờ cú chạm thứ 2
+        brightenPocketOverlay();
+        if (window.AudioHapticFX) AudioHapticFX.trigger(5);
+
+        if (pocketWakeTapTimer) clearTimeout(pocketWakeTapTimer);
+        pocketWakeTapTimer = setTimeout(() => {
+            dimPocketOverlay();
+        }, 2200);
+    } else if (pocketWakeTapCount >= 2) {
+        // Cú chạm thứ 2 trong vòng 2.2s: Xác nhận người dùng chủ động mở khóa!
+        if (pocketWakeTapTimer) clearTimeout(pocketWakeTapTimer);
+        if (pocketActiveDimTimer) clearTimeout(pocketActiveDimTimer);
+        pocketWakeTapCount = 0;
+        dimPocketOverlay();
+        applyLiteMode(false);
+        if (window.APP_STATUS) APP_STATUS.toast('Đã mở lại màn hình đọc sách.', 'info');
+        if (window.AudioHapticFX) AudioHapticFX.trigger(12);
+    }
+}
+
+function initPocketModeControls() {
+    // Double tap on Wake button
+    document.getElementById('pocket-exit-btn')?.addEventListener('click', (e) => {
+        handlePocketWakeRequest(e);
+    });
+
+    // Double tap anywhere on backdrop
+    document.getElementById('pocket-mode-overlay')?.addEventListener('click', (e) => {
+        handlePocketWakeRequest(e);
+    });
+
+    // Pocket Play / Pause Button with active check
+    document.getElementById('pocket-play-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        brightenPocketOverlay();
+        togglePlayback();
+        setTimeout(updatePocketModeInfo, 50);
+    });
+
+    // Pocket Prev Chunk Button
+    document.getElementById('pocket-prev-chunk-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        brightenPocketOverlay();
+        playPrevChunk();
+        setTimeout(updatePocketModeInfo, 50);
+    });
+
+    // Pocket Next Chunk Button
+    document.getElementById('pocket-next-chunk-btn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        brightenPocketOverlay();
+        playNextChunk();
+        setTimeout(updatePocketModeInfo, 50);
+    });
+
+    // Keyboard shortcut Escape to immediately exit Pocket Mode
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && STATE.isLiteMode) {
+            dimPocketOverlay();
+            applyLiteMode(false);
+            if (window.APP_STATUS) APP_STATUS.toast('Đã mở lại màn hình đọc sách.', 'info');
+        }
+    });
+}
+initPocketModeControls();
+
+/**
+ * Applies or removes Audio-Only Pocket Mode optimizations.
+ * When ON: Activates blackout OLED overlay with tap-to-wake, pauses heavy layout/motion.
+ * When OFF: Dismisses overlay, restores full reading view and scrolls to current sentence.
  */
 function applyLiteMode(isLite) {
     STATE.isLiteMode = !!isLite;
@@ -5601,6 +5749,19 @@ function applyLiteMode(isLite) {
     // Only apply visual effects if reader is active (not discovery mode)
     const discoveryMode = document.getElementById('discovery-mode');
     const isDiscovery = discoveryMode && !discoveryMode.classList.contains('hidden');
+
+    const pocketOverlay = document.getElementById('pocket-mode-overlay');
+    if (pocketOverlay) {
+        if (STATE.isLiteMode && !isDiscovery) {
+            pocketOverlay.classList.remove('hidden');
+            pocketOverlay.classList.add('flex');
+            updatePocketModeInfo();
+        } else {
+            pocketOverlay.classList.add('hidden');
+            pocketOverlay.classList.remove('flex');
+            dimPocketOverlay();
+        }
+    }
 
     if (STATE.isLiteMode && !isDiscovery) {
         document.body.classList.add('lite-mode');
@@ -5638,6 +5799,7 @@ function applyLiteMode(isLite) {
         if (STATE.currentBook && STATE.currentChapterIndex !== undefined) {
             renderMinimap(STATE.currentChapterIndex);
             syncMinimapScroll();
+            highlightSentence(STATE.currentSentenceIndex);
         }
 
         // Reset throttle tick to force immediate UI refresh
@@ -5647,7 +5809,7 @@ function applyLiteMode(isLite) {
         STATE.lastTimeStr = null;
     }
 
-    console.log(`[LiteMode] ${STATE.isLiteMode ? 'ON — UI computations minimized' : 'OFF — Full UI restored'}`);
+    console.log(`[PocketMode] ${STATE.isLiteMode ? 'ON — Audio-only battery saver' : 'OFF — Full UI restored'}`);
 }
 window.applyLiteMode = applyLiteMode;
 
@@ -5719,6 +5881,9 @@ function updateUI() {
         authorEl.title = STATE.currentBook.title;
     }
     updatePipUI();
+    if (STATE.isLiteMode) {
+        updatePocketModeInfo();
+    }
 }
 
 function updatePipUI() {

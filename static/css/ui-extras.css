@@ -1078,6 +1078,18 @@ body.lite-mode #minimap-container {
     display: none !important;
 }
 
+/* AMOLED Audio-Only Pocket Mode Overlay */
+#pocket-mode-overlay {
+    background-color: #000000 !important;
+    touch-action: manipulation;
+}
+#pocket-mode-overlay button {
+    touch-action: manipulation;
+}
+#pocket-mode-overlay .animate-pulse {
+    animation: pulse 2.5s cubic-bezier(0.4, 0, 0.6, 1) infinite !important;
+}
+
 /* Văn bản reader: Tuyệt đối giữ nguyên hiển thị 100%, cuộn mượt tức thì không giật lag */
 body.lite-mode #text-container {
     opacity: 1 !important;
