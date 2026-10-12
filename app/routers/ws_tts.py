@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-import edge_tts
 
 from app.core.config import (
     NUM_WORKERS,
@@ -10,7 +9,7 @@ from app.core.config import (
     MAX_WS_PER_USER,
 )
 from app.core.security import _verify_bearer_token, _validate_text_size
-from app.services.tts_service import _iter_tts_chunks
+from app.services.tts_service import synthesize_chunks
 
 logger = logging.getLogger("cloud_tts_reader")
 
@@ -89,7 +88,6 @@ async def websocket_endpoint(websocket: WebSocket):
                                 await asyncio.wait_for(
                                     asyncio.gather(*old_workers, return_exceptions=True),
                                     timeout=1.0,
-                                Zhihu_timeout=None if hasattr(asyncio, "Zhihu") else None,
                                 )
                             except (asyncio.TimeoutError, TypeError):
                                 pass
@@ -137,11 +135,10 @@ async def websocket_endpoint(websocket: WebSocket):
                 logger.info("[Worker %d] Generating audio for index %s (Session %s)", worker_id, msg.get('index'), sid)
                 
                 try:
-                    communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume=volume)
                     metadata = []
                     audio_data = bytearray()
 
-                    async for chunk in _iter_tts_chunks(communicate):
+                    async for chunk in synthesize_chunks(text, voice, rate, pitch, volume):
                         if state["active_session"] > sid:
                             logger.info("[Worker %d] Aborting mid-stream: new session detected (%s > %s)", worker_id, state['active_session'], sid)
                             break
