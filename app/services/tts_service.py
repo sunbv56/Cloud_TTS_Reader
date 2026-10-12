@@ -5,11 +5,12 @@ from typing import List, AsyncGenerator
 from pydantic import BaseModel
 import edge_tts
 from gtts import gTTS
-from app.core.config import TTS_CHUNK_TIMEOUT_SECONDS, EDGE_TTS_PROXY
+from app.core.config import TTS_CHUNK_TIMEOUT_SECONDS, EDGE_TTS_PROXY, GTTS_FALLBACK
 
 logger = logging.getLogger("cloud_tts_reader")
 
-EDGE_TTS_ATTEMPTS = 2
+EDGE_TTS_ATTEMPTS = 3
+EDGE_TTS_RETRY_DELAY_SECONDS = 0.5
 
 
 class ChapterDownloadItem(BaseModel):
@@ -54,11 +55,15 @@ def _gtts_bytes(text: str, lang: str) -> bytes:
 async def synthesize_chunks(
     text: str, voice: str, rate: str = "+0%", pitch: str = "+0Hz", volume: str = "+0%"
 ) -> AsyncGenerator[dict, None]:
-    """Yield Edge TTS chunks; if Edge fails before any audio (403 / No audio
-    when Microsoft blocks the datacenter IP), fall back to gTTS. The fallback
-    yields a single audio chunk and no WordBoundary metadata."""
+    """Yield Edge TTS chunks, retrying failures that happen before any audio.
+    gTTS is only used when GTTS_FALLBACK is enabled: mixing its voice into an
+    Edge reading sounds jarring, so by default the error reaches the client,
+    which retries the sentence itself."""
     got_audio = False
+    last_error: Exception | None = None
     for attempt in range(EDGE_TTS_ATTEMPTS):
+        if attempt:
+            await asyncio.sleep(EDGE_TTS_RETRY_DELAY_SECONDS * attempt)
         try:
             communicate = edge_tts.Communicate(
                 text, voice, rate=rate, pitch=pitch, volume=volume,
@@ -72,9 +77,12 @@ async def synthesize_chunks(
         except Exception as e:
             if got_audio:
                 raise
+            last_error = e
             logger.warning(
                 "[TTS] Edge TTS attempt %d/%d failed (%s)", attempt + 1, EDGE_TTS_ATTEMPTS, e
             )
+    if not GTTS_FALLBACK:
+        raise last_error
     logger.warning("[TTS] Edge TTS unavailable, falling back to gTTS")
     data = await asyncio.to_thread(_gtts_bytes, text, _gtts_lang(voice))
     yield {"type": "audio", "data": data}

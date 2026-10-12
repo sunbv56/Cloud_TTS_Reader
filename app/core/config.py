@@ -55,6 +55,7 @@ def _normalize_proxy(raw: str) -> str | None:
 
 
 EDGE_TTS_PROXY = _normalize_proxy(os.getenv("EDGE_TTS_PROXY", ""))
+GTTS_FALLBACK = os.getenv("GTTS_FALLBACK", "0").strip().lower() in ("1", "true", "yes")
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(150 * 1024)))
 
 # Segmentation settings
