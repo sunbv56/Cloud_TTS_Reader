@@ -2,11 +2,10 @@ import re
 import logging
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse, JSONResponse
-import edge_tts
 
 from app.core.config import MAX_DOWNLOAD_CHAPTERS, MAX_DOWNLOAD_SENTENCES
 from app.core.security import _verify_bearer_token, _validate_text_size
-from app.services.tts_service import _iter_tts_chunks, ChapterDownloadRequest
+from app.services.tts_service import synthesize_chunks, ChapterDownloadRequest
 
 logger = logging.getLogger("cloud_tts_reader")
 
@@ -21,10 +20,8 @@ async def stream_audio(request: Request, text: str, voice: str, rate: str = "+0%
     if text_error:
         return text_error
 
-    communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume=volume)
-    
     async def audio_generator():
-        async for chunk in _iter_tts_chunks(communicate):
+        async for chunk in synthesize_chunks(text, voice, rate, pitch, volume):
             if chunk["type"] == "audio":
                 yield chunk["data"]
     
@@ -39,9 +36,8 @@ async def stream_metadata(request: Request, text: str, voice: str, rate: str = "
     if text_error:
         return text_error
 
-    communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch, volume=volume)
     metadata = []
-    async for chunk in _iter_tts_chunks(communicate):
+    async for chunk in synthesize_chunks(text, voice, rate, pitch, volume):
         if chunk["type"] == "WordBoundary":
             metadata.append({
                 "start": chunk["offset"] / 10_000_000,
@@ -79,11 +75,9 @@ async def download_chapters(request: Request, req: ChapterDownloadRequest):
             full_text = "\n".join(chapter.sentences)
             logger.info("[Download] Generating chapter: %s (%d chars)", chapter.title, len(full_text))
             try:
-                communicate = edge_tts.Communicate(
-                    full_text, req.voice,
-                    rate=req.rate, pitch=req.pitch, volume=req.volume
-                )
-                async for chunk in _iter_tts_chunks(communicate):
+                async for chunk in synthesize_chunks(
+                    full_text, req.voice, req.rate, req.pitch, req.volume
+                ):
                     if chunk["type"] == "audio":
                         yield chunk["data"]
             except Exception as e:

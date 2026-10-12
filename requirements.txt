@@ -1,6 +1,7 @@
 fastapi
 uvicorn[standard]
 edge-tts
+gTTS
 firebase-admin
 python-multipart
 aiofiles

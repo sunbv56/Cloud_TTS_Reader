@@ -35,6 +35,27 @@ except (TypeError, ValueError):
 MAX_WS_PER_USER = 1
 MAX_NEW_CONTENT_CHARS = int(os.getenv("MAX_NEW_CONTENT_CHARS", "1000000"))
 TTS_CHUNK_TIMEOUT_SECONDS = float(os.getenv("TTS_CHUNK_TIMEOUT_SECONDS", "30"))
+
+
+def _normalize_proxy(raw: str) -> str | None:
+    """Accept a full proxy URL or the vendor format ip:port[:user:pass]."""
+    raw = (raw or "").strip()
+    if not raw:
+        return None
+    if "://" in raw:
+        return raw
+    parts = raw.split(":")
+    if len(parts) == 4:
+        ip, port, user, password = parts
+        return f"http://{user}:{password}@{ip}:{port}"
+    if len(parts) == 2:
+        return f"http://{raw}"
+    logger.warning("[Config] EDGE_TTS_PROXY has an unrecognized format; ignoring it")
+    return None
+
+
+EDGE_TTS_PROXY = _normalize_proxy(os.getenv("EDGE_TTS_PROXY", ""))
+GTTS_FALLBACK = os.getenv("GTTS_FALLBACK", "0").strip().lower() in ("1", "true", "yes")
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(150 * 1024)))
 
 # Segmentation settings
