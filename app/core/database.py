@@ -18,7 +18,12 @@ try:
         firebase_admin_initialized = True
         logger.info("Firebase credentials loaded from FIREBASE_SERVICE_ACCOUNT.")
     else:
-        logger.warning("FIREBASE_SERVICE_ACCOUNT is not set; Firebase features are disabled (local dev?).")
+        # Same as firebase_admin.initialize_app() without credentials, which
+        # succeeded and only failed when a call needed them: routes still
+        # answer 401/400 for bad requests, and Firestore raises on first use.
+        google_lite.configure_auth(os.getenv("FIREBASE_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT"))
+        firebase_admin_initialized = True
+        logger.warning("FIREBASE_SERVICE_ACCOUNT is not set; Firestore calls will fail (local dev?).")
 except Exception as e:
     logger.error(f"Error loading Firebase service account: {e}")
 
