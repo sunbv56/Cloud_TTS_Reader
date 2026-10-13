@@ -2,11 +2,11 @@ fastapi
 uvicorn[standard]
 edge-tts
 gTTS
-firebase-admin
 python-multipart
 aiofiles
 python-dotenv
 EbookLib
 beautifulsoup4
 pypdf
-boto3
+google-auth
+cryptography

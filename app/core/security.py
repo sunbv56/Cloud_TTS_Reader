@@ -7,7 +7,7 @@ import logging
 from functools import wraps
 from fastapi import Request, UploadFile
 from fastapi.responses import JSONResponse
-from firebase_admin import auth
+from app.core import google_lite as auth  # verify_id_token without firebase-admin
 
 from app.core.config import (
     FIREBASE_CLOCK_SKEW_SECONDS,

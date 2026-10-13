@@ -5,15 +5,302 @@ module intentionally preserves that interface so the book/segment code can be
 migrated without changing its storage paths or Firestore metadata.
 """
 
+import base64
+import datetime
+import hashlib
+import hmac
+import http.client
 import logging
 import os
+import re
 import tempfile
+import threading
 import time
+import urllib.parse
 import uuid
+import xml.etree.ElementTree as ET
 from typing import Optional
+from xml.sax.saxutils import escape as _xml_escape
 
 
 logger = logging.getLogger("cloud_tts_reader.storage")
+
+
+class S3Error(Exception):
+    """S3 error response; `response` mirrors botocore's ClientError so the
+    existing not-found checks keep working."""
+
+    def __init__(self, status: int, code: str, message: str = ""):
+        super().__init__(f"{status} {code}: {message}"[:300])
+        self.response = {"ResponseMetadata": {"HTTPStatusCode": status}, "Error": {"Code": code, "Message": message}}
+
+
+class _StreamingBody:
+    """Response body that hands its keep-alive connection back once fully read."""
+
+    def __init__(self, response, conn, release):
+        self._response = response
+        self._conn = conn
+        self._release = release
+        self._done = False
+
+    def read(self, size=-1):
+        data = self._response.read() if size is None or size < 0 else self._response.read(size)
+        if not data:
+            self._done = True
+        return data
+
+    def close(self):
+        if self._conn is None:
+            return
+        conn, self._conn = self._conn, None
+        if self._done and not self._response.will_close:
+            self._release(conn)
+        else:
+            conn.close()
+
+
+class S3LiteClient:
+    """The handful of S3 calls the app makes, signed with AWS SigV4 over
+    http.client. boto3/botocore cost ~21 MB of RSS on a 256 MB VM; this is a
+    few hundred KB. Method names and return shapes follow boto3's client."""
+
+    _RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+    _NS = "{http://s3.amazonaws.com/doc/2006-03-01/}"
+
+    def __init__(self, endpoint: str, region: str, key_id: str, secret: str,
+                 connect_timeout: int = 10, read_timeout: int = 60, max_attempts: int = 3):
+        parsed = urllib.parse.urlparse(endpoint)
+        self._https = parsed.scheme != "http"
+        self._host = parsed.netloc
+        self.region = region or self._region_from_host(self._host)
+        self._key_id = key_id
+        self._secret = secret
+        self.connect_timeout = connect_timeout
+        self.read_timeout = read_timeout
+        self.max_attempts = max_attempts
+        self._local = threading.local()
+
+    @staticmethod
+    def _region_from_host(host: str) -> str:
+        match = re.match(r"s3\.([a-z0-9-]+)\.backblazeb2\.com", host)
+        return match.group(1) if match else "us-east-1"
+
+    # -- connections -------------------------------------------------------
+    def _new_conn(self):
+        cls = http.client.HTTPSConnection if self._https else http.client.HTTPConnection
+        conn = cls(self._host, timeout=self.connect_timeout)
+        conn.connect()
+        conn.sock.settimeout(self.read_timeout)
+        return conn
+
+    _IDLE_SECONDS = 15  # B2 drops idle keep-alive connections; don't reuse older ones
+
+    def _take_conn(self):
+        """Return (connection, reused). Idle pooled connections are dropped."""
+        pooled = getattr(self._local, "conn", None)
+        self._local.conn = None
+        if pooled is not None:
+            conn, last_used = pooled
+            if time.monotonic() - last_used < self._IDLE_SECONDS:
+                return conn, True
+            conn.close()
+        return self._new_conn(), False
+
+    def _release_conn(self, conn):
+        old = getattr(self._local, "conn", None)
+        if old is not None:
+            old[0].close()
+        self._local.conn = (conn, time.monotonic())
+
+    # -- signing -----------------------------------------------------------
+    @staticmethod
+    def _quote(value: str, safe: str = "-_.~") -> str:
+        return urllib.parse.quote(value, safe=safe)
+
+    def _sign(self, method: str, path: str, query: dict, headers: dict, payload_hash: str) -> dict:
+        now = datetime.datetime.now(datetime.timezone.utc)
+        amz_date = now.strftime("%Y%m%dT%H%M%SZ")
+        date = now.strftime("%Y%m%d")
+        headers = dict(headers)
+        headers["host"] = self._host
+        headers["x-amz-date"] = amz_date
+        headers["x-amz-content-sha256"] = payload_hash
+        lowered = {k.lower(): str(v).strip() for k, v in headers.items()}
+        signed = sorted(lowered)
+        canonical_headers = "".join(f"{k}:{lowered[k]}\n" for k in signed)
+        canonical_query = "&".join(
+            f"{self._quote(k)}={self._quote(str(v))}" for k, v in sorted(query.items())
+        )
+        canonical = "\n".join([method, path, canonical_query, canonical_headers, ";".join(signed), payload_hash])
+        scope = f"{date}/{self.region}/s3/aws4_request"
+        to_sign = "\n".join(["AWS4-HMAC-SHA256", amz_date, scope, hashlib.sha256(canonical.encode()).hexdigest()])
+        key = ("AWS4" + self._secret).encode()
+        for part in (date, self.region, "s3", "aws4_request"):
+            key = hmac.new(key, part.encode(), hashlib.sha256).digest()
+        signature = hmac.new(key, to_sign.encode(), hashlib.sha256).hexdigest()
+        headers["Authorization"] = (
+            f"AWS4-HMAC-SHA256 Credential={self._key_id}/{scope}, "
+            f"SignedHeaders={';'.join(signed)}, Signature={signature}"
+        )
+        return headers
+
+    def _path(self, bucket: str, key: Optional[str] = None) -> str:
+        path = "/" + self._quote(bucket)
+        if key is not None:
+            path += "/" + self._quote(key, safe="-_.~/")
+        return path
+
+    # -- request core ------------------------------------------------------
+    def _request(self, method, bucket, key=None, query=None, headers=None, body=b"", body_file=None,
+                 payload_hash=None, stream=False):
+        query = query or {}
+        path = self._path(bucket, key)
+        url = path + ("?" + "&".join(
+            f"{self._quote(k)}={self._quote(str(v))}" if v != "" else self._quote(k)
+            for k, v in sorted(query.items())) if query else "")
+        if payload_hash is None:
+            payload_hash = hashlib.sha256(body).hexdigest()
+        attempt = 0
+        while attempt < self.max_attempts:
+            attempt += 1
+            conn = None
+            reused = False
+            got_response = False
+            try:
+                send_headers = self._sign(method, path, query, headers or {}, payload_hash)
+                conn, reused = self._take_conn()
+                if body_file is not None:
+                    send_headers["Content-Length"] = str(os.path.getsize(body_file))
+                    with open(body_file, "rb") as source:
+                        conn.request(method, url, body=source, headers=send_headers)
+                else:
+                    if body or method in ("PUT", "POST"):
+                        send_headers["Content-Length"] = str(len(body))
+                    conn.request(method, url, body=body or None, headers=send_headers)
+                response = conn.getresponse()
+                got_response = True
+                if response.status >= 300:
+                    data = response.read()
+                    if response.will_close:
+                        conn.close()
+                    else:
+                        self._release_conn(conn)
+                    conn = None
+                    if response.status in self._RETRYABLE_STATUS and attempt < self.max_attempts:
+                        time.sleep(0.5 * (2 ** (attempt - 1)))
+                        continue
+                    raise self._error(response.status, data)
+                if stream:
+                    return response, _StreamingBody(response, conn, self._release_conn)
+                data = response.read()
+                if response.will_close:
+                    conn.close()
+                else:
+                    self._release_conn(conn)
+                return response, data
+            except (OSError, http.client.HTTPException) as exc:
+                if conn is not None:
+                    conn.close()
+                if reused and not got_response:
+                    # The server closed a pooled keep-alive connection before
+                    # answering: retry at once on a fresh one, free of charge.
+                    attempt -= 1
+                    continue
+                if attempt >= self.max_attempts:
+                    raise
+                logger.warning("s3_request_retry method=%s attempt=%s error=%s", method, attempt, type(exc).__name__)
+                time.sleep(0.5 * (2 ** (attempt - 1)))
+
+    def _error(self, status: int, data: bytes) -> S3Error:
+        code, message = str(status), ""
+        try:
+            root = ET.fromstring(data)
+            code = root.findtext("Code") or code
+            message = root.findtext("Message") or ""
+        except ET.ParseError:
+            pass
+        if status == 404 and code == "404":
+            code = "NotFound"
+        return S3Error(status, code, message)
+
+    # -- boto3-compatible surface used by the app --------------------------
+    def head_object(self, Bucket, Key):
+        response, _ = self._request("HEAD", Bucket, Key)
+        return {"ContentLength": int(response.getheader("Content-Length") or 0)}
+
+    def head_bucket(self, Bucket):
+        self._request("HEAD", Bucket)
+        return {}
+
+    def get_object(self, Bucket, Key):
+        response, body = self._request("GET", Bucket, Key, stream=True)
+        length = response.getheader("Content-Length")
+        return {"Body": body, "ContentLength": int(length) if length is not None else None}
+
+    def put_object(self, Bucket, Key, Body, ContentType=None):
+        if isinstance(Body, str):
+            Body = Body.encode("utf-8")
+        headers = {"Content-Type": ContentType} if ContentType else {}
+        self._request("PUT", Bucket, Key, headers=headers, body=Body)
+        return {}
+
+    def upload_file(self, Filename, Bucket, Key, ExtraArgs=None, Config=None):
+        digest = hashlib.sha256()
+        with open(Filename, "rb") as source:
+            while chunk := source.read(1024 * 1024):
+                digest.update(chunk)
+        content_type = (ExtraArgs or {}).get("ContentType")
+        headers = {"Content-Type": content_type} if content_type else {}
+        self._request("PUT", Bucket, Key, headers=headers, body_file=Filename, payload_hash=digest.hexdigest())
+
+    def delete_object(self, Bucket, Key):
+        self._request("DELETE", Bucket, Key)
+        return {}
+
+    def delete_objects(self, Bucket, Delete):
+        objects = "".join(f"<Object><Key>{_xml_escape(o['Key'])}</Key></Object>" for o in Delete["Objects"])
+        quiet = "<Quiet>true</Quiet>" if Delete.get("Quiet") else ""
+        body = f'<?xml version="1.0" encoding="UTF-8"?><Delete>{quiet}{objects}</Delete>'.encode("utf-8")
+        headers = {
+            "Content-Type": "application/xml",
+            "Content-MD5": base64.b64encode(hashlib.md5(body).digest()).decode("ascii"),
+        }
+        self._request("POST", Bucket, query={"delete": ""}, headers=headers, body=body)
+        return {}
+
+    def list_objects_v2(self, Bucket, Prefix="", ContinuationToken=None):
+        query = {"list-type": "2", "prefix": Prefix}
+        if ContinuationToken:
+            query["continuation-token"] = ContinuationToken
+        _, data = self._request("GET", Bucket, query=query)
+        root = ET.fromstring(data)
+        ns = self._NS if root.tag.startswith(self._NS) else ""
+        page = {
+            "Contents": [{"Key": item.findtext(f"{ns}Key")} for item in root.findall(f"{ns}Contents")],
+            "IsTruncated": (root.findtext(f"{ns}IsTruncated") or "false") == "true",
+        }
+        token = root.findtext(f"{ns}NextContinuationToken")
+        if token:
+            page["NextContinuationToken"] = token
+        return page
+
+    def get_paginator(self, operation):
+        if operation != "list_objects_v2":
+            raise ValueError(f"Unsupported paginator: {operation}")
+        client = self
+
+        class _Paginator:
+            def paginate(self, Bucket, Prefix=""):
+                token = None
+                while True:
+                    page = client.list_objects_v2(Bucket=Bucket, Prefix=Prefix, ContinuationToken=token)
+                    yield page
+                    token = page.get("NextContinuationToken")
+                    if not page.get("IsTruncated") or not token:
+                        return
+
+        return _Paginator()
 
 
 def _int_env(name: str, default: int, minimum: int = 1, maximum: int = 300) -> int:
@@ -291,14 +578,6 @@ class B2StorageBackend:
     def _ensure_client(self):
         if self._initialized:
             return
-        try:
-            import boto3
-            from botocore.config import Config
-            from botocore.exceptions import ClientError
-            from boto3.s3.transfer import TransferConfig
-        except ImportError as exc:  # pragma: no cover - production dependency
-            raise RuntimeError("boto3 is required when STORAGE_BACKEND=b2") from exc
-
         endpoint = os.getenv("B2_ENDPOINT_URL", "").strip()
         if endpoint and not endpoint.startswith(("http://", "https://")):
             endpoint = f"https://{endpoint}"
@@ -320,27 +599,19 @@ class B2StorageBackend:
             )
         except (TypeError, ValueError):
             self.download_retry_backoff = 0.5
-        self._client = boto3.client(
-            "s3",
-            endpoint_url=endpoint,
-            region_name=region,
-            aws_access_key_id=key_id,
-            aws_secret_access_key=application_key,
-            config=Config(
-                connect_timeout=_int_env("B2_CONNECT_TIMEOUT_SECONDS", 10, 1, 60),
-                read_timeout=_int_env("B2_READ_TIMEOUT_SECONDS", 60, 5, 300),
-                retries={"max_attempts": max_attempts, "mode": "standard"},
-            ),
+        self._client = S3LiteClient(
+            endpoint,
+            region,
+            key_id,
+            application_key,
+            connect_timeout=_int_env("B2_CONNECT_TIMEOUT_SECONDS", 10, 1, 60),
+            read_timeout=_int_env("B2_READ_TIMEOUT_SECONDS", 60, 5, 300),
+            max_attempts=max_attempts,
         )
-        # boto3's default S3Transfer uses 10 threads x 8 MiB parts. That is
-        # safe for a large host, but it can consume most of a 256 MB Fly VM.
-        self._transfer_config = TransferConfig(
-            multipart_threshold=16 * 1024 * 1024,
-            multipart_chunksize=4 * 1024 * 1024,
-            max_concurrency=1,
-            use_threads=False,
-        )
-        self._client_error = ClientError
+        # Uploads are single streamed PUTs (no multipart thread pool), which
+        # keeps memory flat on the 256 MB VM.
+        self._transfer_config = None
+        self._client_error = S3Error
         self._initialized = True
 
     @property
