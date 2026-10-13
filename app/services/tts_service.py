@@ -2,6 +2,7 @@ import asyncio
 import io
 import logging
 import re
+import time
 from typing import List, AsyncGenerator
 from pydantic import BaseModel
 import edge_tts
@@ -20,6 +21,7 @@ EDGE_TTS_ATTEMPTS = 4
 EDGE_TTS_PIECE_CONCURRENCY = 3
 EDGE_TTS_PIECE_ROUNDS = 3
 EDGE_TTS_MAX_CONNECTIONS = 4  # bounds connection/RAM spikes on the 256MB VM
+EDGE_ROUTE_BLOCK_SECONDS = 300  # how long a route answering 403 is skipped
 EDGE_TTS_BITRATE = 48_000  # edge_tts output: audio-24khz-48kbitrate-mono-mp3
 
 
@@ -136,21 +138,49 @@ async def _open_stream(text, voice, rate, pitch, volume, proxy):
     raise edge_tts.exceptions.NoAudioReceived("Stream ended without audio")
 
 
+_route_blocked_until: dict[str | None, float] = {}
+
+
+def _usable_routes() -> List[str | None]:
+    """Direct and proxy routes, minus any Microsoft is currently refusing.
+    If every route is refused, try them all rather than none."""
+    routes = [None, EDGE_TTS_PROXY] if EDGE_TTS_PROXY else [None]
+    now = time.monotonic()
+    usable = [r for r in routes if _route_blocked_until.get(r, 0) <= now]
+    return usable or routes
+
+
+def _note_route_failure(route: str | None, error: BaseException) -> None:
+    """A 403 on the websocket handshake means Microsoft blocks that egress IP
+    (e.g. Fly's US addresses); every further attempt on it is a guaranteed
+    failure, so bench the route for a while instead of alternating into it."""
+    if getattr(error, "status", None) != 403 or not EDGE_TTS_PROXY:
+        return
+    now = time.monotonic()
+    if _route_blocked_until.get(route, 0) <= now:
+        logger.warning(
+            "[TTS] Edge refused the %s route (403); using the other route for %ds",
+            "proxy" if route else "direct", EDGE_ROUTE_BLOCK_SECONDS,
+        )
+    _route_blocked_until[route] = now + EDGE_ROUTE_BLOCK_SECONDS
+
+
 async def _race_first_audio(text, voice, rate, pitch, volume):
     """Hedged start: Edge sometimes stalls ~10s or answers "No audio" after
     ~3s. Instead of waiting that out, launch another attempt when the current
     one has not produced audio within EDGE_TTS_HEDGE_SECONDS, alternating
-    direct and proxy routes, and keep whichever produces audio first."""
-    routes = [None, EDGE_TTS_PROXY] if EDGE_TTS_PROXY else [None]
-    pending: set[asyncio.Task] = set()
+    the usable direct/proxy routes, and keep whichever produces audio first."""
+    pending: dict[asyncio.Task, str | None] = {}
     launched = 0
     last_error: Exception | None = None
 
     def launch():
         nonlocal launched
+        routes = _usable_routes()
         proxy = routes[launched % len(routes)]
         launched += 1
-        pending.add(asyncio.create_task(_open_stream(text, voice, rate, pitch, volume, proxy)))
+        task = asyncio.create_task(_open_stream(text, voice, rate, pitch, volume, proxy))
+        pending[task] = proxy
 
     launch()
     try:
@@ -166,9 +196,10 @@ async def _race_first_audio(text, voice, rate, pitch, volume):
                 continue
             winner = None
             for task in done:
-                pending.discard(task)
+                route = pending.pop(task)
                 if task.exception() is not None:
                     last_error = task.exception()
+                    _note_route_failure(route, last_error)
                     logger.warning(
                         "[TTS] Edge TTS attempt failed (%d/%d launched): %s",
                         launched, EDGE_TTS_ATTEMPTS, last_error,
