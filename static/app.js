@@ -17,6 +17,11 @@ const BACKGROUND_PREFETCH_CHUNKS = 16;
 // Keep the MSE forward buffer bounded. Browser SourceBuffer quotas are
 // implementation-dependent, so a time budget is safer than a chunk count.
 const MAX_BUFFER_AHEAD_SECONDS = 180;
+// Prefetch window is sized in audio time: ~15 chars/s for the Vietnamese
+// voices at +0%, capped at PREFETCH_MAX_COUNT_FACTOR x the sentence count.
+const PREFETCH_AHEAD_SECONDS = 130;
+const EST_CHARS_PER_SECOND = 15;
+const PREFETCH_MAX_COUNT_FACTOR = 4;
 const BUFFER_HISTORY_SECONDS = 10;
 
 // App State
@@ -3548,23 +3553,14 @@ async function loadBookFromStorage(bookId, bookData) {
                 selectedFilename: filename,
                 objectKey: `users/${STATE.user.uid}/files/${filename}`
             });
-            const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/file?filename=${encodeURIComponent(filename)}`, {
+            // The server parses the stored file itself; downloading it here only
+            // to upload it back to /api/parse-book cost seconds on every open.
+            const parseRes = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/parsed?filename=${encodeURIComponent(filename)}`, {
                 signal: loadController.signal,
-                timeoutMs: 30_000
+                timeoutMs: 60_000
             });
             if (!isCurrentSelection()) return;
             markLoad('legacy_file');
-            if (!response.ok) throw new Error(`Book file HTTP ${response.status}`);
-            const blob = await response.blob();
-            const file = new File([blob], filename, { type: "text/plain" });
-
-            const formData = new FormData();
-            formData.append('file', file);
-
-            const parseRes = await fetchWithTimeout('/api/parse-book', { method: 'POST', body: formData, signal: loadController.signal }, {
-                timeoutMs: 60_000,
-                retries: 0
-            });
             if (!parseRes.ok) throw new Error(`Parse book HTTP ${parseRes.status}`);
             const data = await parseRes.json();
             if (!isCurrentSelection()) return;
@@ -4924,7 +4920,14 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
         let currentChapIdx = startChapter;
         let currentSentIdx = startSentence + 1;
 
-        for (let i = 0; i < count; i++) {
+        // Keep roughly PREFETCH_AHEAD_SECONDS of audio requested ahead rather
+        // than a fixed sentence count: in dialogue a dozen sentences can be
+        // ~20s, shorter than one slow Edge request, which drained the buffer.
+        const charBudget = PREFETCH_AHEAD_SECONDS * EST_CHARS_PER_SECOND * (STATE.settings.speed || 1);
+        const maxSentences = count * PREFETCH_MAX_COUNT_FACTOR;
+        let aheadChars = 0;
+
+        for (let i = 0; i < maxSentences && (i < count || aheadChars < charBudget); i++) {
             // Check if we reached the end of the chapter
             const currentChapter = STATE.currentBook.chapters[currentChapIdx];
             const chapSentencesCount = currentChapter.count || (currentChapter.sentences ? currentChapter.sentences.length : 0);
@@ -4944,6 +4947,7 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
                 // Let's trigger a lazy load so prefetching continues smoothly.
                 await fetchChapterSentences(currentChapIdx);
             }
+            aheadChars += (STATE.currentBook.chapters[currentChapIdx].sentences?.[currentSentIdx] || '').length;
 
             const key = `${currentChapIdx}_${currentSentIdx}`;
             if (busyIndices.has(key)) {
