@@ -77,6 +77,13 @@ let STATE = {
     sessionId: 0,
     lastAppendedIndex: -1,
     lastAppendedChapter: 0,
+    // Progressive sentences arrive as parts 0..n-1. lastAppendedPartKey/Part
+    // track the sentence currently being filled; completedParts holds the part
+    // count reported by PREFETCH_DONE, partialAudio the parts for offline cache.
+    lastAppendedPartKey: null,
+    lastAppendedPart: -1,
+    completedParts: new Map(),
+    partialAudio: new Map(),
     isFirstChunkOfSession: false,
     prefetchTimeout: null,
     appendRetryTimeout: null,
@@ -1253,6 +1260,10 @@ async function resetAudioEngine() {
     // 4. Reset Session markers
     STATE.lastAppendedIndex = -1;
     STATE.lastAppendedChapter = 0;
+    STATE.lastAppendedPartKey = null;
+    STATE.lastAppendedPart = -1;
+    STATE.completedParts.clear();
+    STATE.partialAudio.clear();
     STATE.isFirstChunkOfSession = true;
     STATE.lastOntimeUpdateTick = 0;
     STATE.lastProgressWidth = null;
@@ -1614,6 +1625,18 @@ async function initWebSocket() {
                 if (data.sessionId && data.sessionId !== STATE.sessionId) return;
                 const failKey = `${data.chapterIndex}_${data.index}`;
                 STATE.fetchingSet.delete(failKey);
+                if (data.type === "PREFETCH_DONE") STATE.streamingRetryCount.delete(failKey);
+                if (data.type === "PREFETCH_DONE" && data.parts !== undefined) {
+                    STATE.completedParts.set(failKey, data.parts);
+                    const parts = STATE.partialAudio.get(failKey);
+                    STATE.partialAudio.delete(failKey);
+                    if (parts && parts.filter(Boolean).length === data.parts) {
+                        const blob = new Blob(parts, { type: 'audio/mpeg' });
+                        OFFLINE_MANAGER.saveBlob(STATE.currentBookId, data.chapterIndex, data.index, blob);
+                    }
+                    // The sentence is complete: the next one may now be appended.
+                    processAppendQueue();
+                }
 
                 if (data.type === "PREFETCH_FAILED") {
                     console.error(`Chunk fetch failed: ${data.chapterIndex}-${data.index} - ${data.error || "Unknown"}`);
@@ -1622,19 +1645,31 @@ async function initWebSocket() {
 
                     // --- [TASK 2] Streaming Mode Retry Logic ---
                     if (!STATE.isDownloading && STATE.currentBook) {
-                        const MAX_RETRIES = 3;
+                        // Edge outages come in bursts of ~10-30s where every attempt
+                        // fails. Giving up after a few quick retries left a permanent
+                        // hole that ended in a stall reset, so keep retrying with a
+                        // capped backoff long enough to ride out such a burst.
+                        const MAX_RETRIES = 20;
                         const retries = (STATE.streamingRetryCount.get(failKey) || 0) + 1;
                         STATE.streamingRetryCount.set(failKey, retries);
 
                         if (retries <= MAX_RETRIES) {
-                            const delay = retries * 2000;
+                            const delay = Math.min(400 * 2 ** (retries - 1), 5000);
+                            const retrySession = STATE.sessionId;
                             console.warn(`[Streaming] Retrying chunk ${failKey} (attempt ${retries}/${MAX_RETRIES}) in ${delay}ms...`);
                             document.getElementById('status-indicator').innerText = `Retrying chunk... (${retries})`;
 
                             setTimeout(() => {
+                                if (retrySession !== STATE.sessionId) {
+                                    STATE.streamingRetryCount.delete(failKey);
+                                    return;
+                                }
                                 if (STATE.isDownloading || !STATE.ws || STATE.ws.readyState !== WebSocket.OPEN) return;
                                 const chapter = STATE.currentBook.chapters[data.chapterIndex];
-                                if (!chapter || !chapter.sentences) return;
+                                if (!chapter || !chapter.sentences) {
+                                    STATE.streamingRetryCount.delete(failKey);
+                                    return;
+                                }
 
                                 const text = applySkipDictionary(chapter.sentences[data.index]);
                                 const { voice, speed, pitch, volume } = STATE.settings;
@@ -1643,6 +1678,7 @@ async function initWebSocket() {
                                 STATE.fetchingSet.add(failKey);
                                 STATE.ws.send(JSON.stringify({
                                     type: "PREFETCH",
+                                    parts: true, // progressive delivery: play the first piece without waiting for the rest
                                     index: data.index,
                                     chapterIndex: data.chapterIndex,
                                     text: text,
@@ -1656,6 +1692,7 @@ async function initWebSocket() {
                             }, delay);
                             return; // Wait for the retry
                         }
+                        STATE.streamingRetryCount.delete(failKey);
                     }
 
                     // --- Download Mode Retry Logic with Backoff & Sliding Window ---
@@ -1760,13 +1797,24 @@ async function initWebSocket() {
             }
 
             // --- Normal Streaming Mode: append to MSE ---
-            const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
-            OFFLINE_MANAGER.saveBlob(STATE.currentBookId, currentMetadata.chapterIndex, currentMetadata.index, blob);
+            const hasParts = currentMetadata.part !== undefined;
+            if (hasParts) {
+                // Progressive sentence: cache only once every part has arrived
+                // (see PREFETCH_DONE), otherwise offline replay would be cut short.
+                const key = `${currentMetadata.chapterIndex}_${currentMetadata.index}`;
+                const parts = STATE.partialAudio.get(key) || [];
+                parts[currentMetadata.part] = arrayBuffer;
+                STATE.partialAudio.set(key, parts);
+            } else {
+                const blob = new Blob([arrayBuffer], { type: 'audio/mpeg' });
+                OFFLINE_MANAGER.saveBlob(STATE.currentBookId, currentMetadata.chapterIndex, currentMetadata.index, blob);
+            }
 
             STATE.appendQueue.push({
                 index: currentMetadata.index,
                 chapterIndex: currentMetadata.chapterIndex,
                 sessionId: currentMetadata.sessionId,
+                part: hasParts ? currentMetadata.part : undefined,
                 data: arrayBuffer,
                 metadata: currentMetadata.metadata
             });
@@ -1928,7 +1976,8 @@ function processAppendQueue() {
     // 1. Thay đổi logic sắp xếp: Ưu tiên Chapter trước, rồi mới tới Index
     STATE.appendQueue.sort((a, b) => {
         if (a.chapterIndex !== b.chapterIndex) return a.chapterIndex - b.chapterIndex;
-        return a.index - b.index;
+        if (a.index !== b.index) return a.index - b.index;
+        return (a.part || 0) - (b.part || 0);
     });
 
     // 2. Thay đổi logic tìm chunk dự kiến tiếp theo
@@ -1943,10 +1992,24 @@ function processAppendQueue() {
         }
     }
 
+    // A progressive sentence still being filled comes first: its next part is
+    // expected, and later sentences wait until PREFETCH_DONE reports the count.
+    let expectedPart = 0;
+    const lastKey = `${STATE.lastAppendedChapter}_${STATE.lastAppendedIndex}`;
+    if (STATE.lastAppendedPartKey === lastKey) {
+        const totalParts = STATE.completedParts.get(lastKey);
+        if (totalParts === undefined || STATE.lastAppendedPart + 1 < totalParts) {
+            expectedChap = STATE.lastAppendedChapter;
+            expectedIdx = STATE.lastAppendedIndex;
+            expectedPart = STATE.lastAppendedPart + 1;
+        }
+    }
+
     // [HOTFIX] Discard any chunks that are older than our expected chunk to prevent queue blocking
     while (STATE.appendQueue.length > 0) {
         const check = STATE.appendQueue[0];
-        if (check.chapterIndex < expectedChap || (check.chapterIndex === expectedChap && check.index < expectedIdx)) {
+        if (check.chapterIndex < expectedChap || (check.chapterIndex === expectedChap && check.index < expectedIdx)
+            || (check.chapterIndex === expectedChap && check.index === expectedIdx && (check.part || 0) < expectedPart)) {
             console.log(`Discarding obsolete/orphaned chunk ${check.chapterIndex}-${check.index} (Expected ${expectedChap}-${expectedIdx})`);
             STATE.appendQueue.shift();
         } else {
@@ -1957,8 +2020,9 @@ function processAppendQueue() {
     if (STATE.appendQueue.length === 0) return;
 
     const chunkToCheck = STATE.appendQueue[0];
-    if (chunkToCheck.chapterIndex !== expectedChap || chunkToCheck.index !== expectedIdx) {
-        console.log(`Waiting for chunk ${expectedChap}-${expectedIdx} (Queue has ${chunkToCheck.chapterIndex}-${chunkToCheck.index})`);
+    if (chunkToCheck.chapterIndex !== expectedChap || chunkToCheck.index !== expectedIdx
+        || (chunkToCheck.part || 0) !== expectedPart) {
+        console.log(`Waiting for chunk ${expectedChap}-${expectedIdx}.${expectedPart} (Queue has ${chunkToCheck.chapterIndex}-${chunkToCheck.index}.${chunkToCheck.part || 0})`);
         return;
     }
 
@@ -2028,17 +2092,35 @@ function processAppendQueue() {
             console.log("First chunk of session, forcing startTime 0");
         }
 
-        STATE.chunkTimings.push({
-            index: chunk.index,
-            chapterIndex: chunk.chapterIndex,
-            startTime: startTime,
-            metadata: chunk.metadata
-        });
+        const chunkKey = `${chunk.chapterIndex}_${chunk.index}`;
+        const sentenceTiming = STATE.chunkTimings[STATE.chunkTimings.length - 1];
+        if (chunk.part > 0 && sentenceTiming && sentenceTiming.index === chunk.index
+            && sentenceTiming.chapterIndex === chunk.chapterIndex) {
+            // Later part of the same sentence: keep one timing entry per sentence
+            // (next/prev/highlight rely on that) and shift the part's word
+            // offsets onto the sentence's timeline.
+            const shift = startTime - sentenceTiming.startTime;
+            sentenceTiming.metadata = (sentenceTiming.metadata || []).concat(
+                (chunk.metadata || []).map(w => ({ ...w, start: w.start + shift }))
+            );
+        } else {
+            STATE.chunkTimings.push({
+                index: chunk.index,
+                chapterIndex: chunk.chapterIndex,
+                startTime: startTime,
+                metadata: chunk.metadata
+            });
+        }
 
         STATE.sourceBuffer.timestampOffset = startTime;
         STATE.sourceBuffer.appendBuffer(chunk.data);
+        if (STATE.lastAppendedPartKey && STATE.lastAppendedPartKey !== chunkKey) {
+            STATE.completedParts.delete(STATE.lastAppendedPartKey);
+        }
         STATE.lastAppendedIndex = chunk.index;
         STATE.lastAppendedChapter = chunk.chapterIndex;
+        STATE.lastAppendedPartKey = chunk.part !== undefined ? chunkKey : null;
+        STATE.lastAppendedPart = chunk.part !== undefined ? chunk.part : -1;
         console.log(`Appended chunk ${chunk.index} (bytes: ${chunk.data.byteLength}) at ${startTime.toFixed(2)}s. Current audio time: ${audio.currentTime.toFixed(2)}s`);
     } catch (e) {
         if (e?.name === 'QuotaExceededError') {
@@ -4898,6 +4980,7 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
 
             STATE.ws.send(JSON.stringify({
                 type: "PREFETCH",
+                parts: true, // progressive delivery: play the first piece without waiting for the rest
                 index: currentSentIdx,
                 chapterIndex: currentChapIdx,
                 text: text,
@@ -4956,6 +5039,8 @@ async function playFromSentence(index, expectedLoadGeneration = STATE.loadGenera
     // Use the sessionId incremented by resetAudioEngine
     const currentSessionId = STATE.sessionId;
     STATE.lastAppendedIndex = index - 1; // Restart sequence from the target index
+    STATE.lastAppendedPartKey = null;
+    STATE.lastAppendedPart = -1;
     STATE.lastAppendedChapter = STATE.currentChapterIndex;
     console.log(`Starting new audio session: ${currentSessionId} (Jump to chunk ${index})`);
 
@@ -4983,6 +5068,7 @@ async function playFromSentence(index, expectedLoadGeneration = STATE.loadGenera
         // Request the new starting sentence
         STATE.ws.send(JSON.stringify({
             type: "PREFETCH",
+            parts: true, // progressive delivery: play the first piece without waiting for the rest
             index: index,
             chapterIndex: STATE.currentChapterIndex,
             text: applySkipDictionary(sentences[index]),
@@ -4997,11 +5083,17 @@ async function playFromSentence(index, expectedLoadGeneration = STATE.loadGenera
 
     // Wait for the first chunk to be appended so we can start playback
     console.log(`Waiting for first chunk of session ${currentSessionId}...`);
+    // Edge has outage bursts of ~10-30s; the chunk retry loop rides them out,
+    // so wait long enough for it instead of silently giving up after 10s.
     let attempts = 0;
-    while (STATE.chunkTimings.length === 0 && attempts < 100) {
+    while (STATE.chunkTimings.length === 0 && attempts < 300) {
         if (STATE.sessionId !== currentSessionId || !isCurrentPlayback()) return; // User jumped or loaded another book
         await new Promise(r => setTimeout(r, 100));
         attempts++;
+        if (attempts === 50) document.getElementById('status-indicator').innerText = "Đang chờ máy chủ TTS...";
+    }
+    if (STATE.chunkTimings.length === 0 && STATE.sessionId === currentSessionId && isCurrentPlayback()) {
+        document.getElementById('status-indicator').innerText = "Máy chủ TTS không phản hồi — bấm Play để thử lại";
     }
 
     if (STATE.chunkTimings.length > 0 && STATE.sessionId === currentSessionId && isCurrentPlayback()) {
@@ -5028,7 +5120,10 @@ async function playFromSentence(index, expectedLoadGeneration = STATE.loadGenera
             updateMediaSession();
         }
 
-        prefetchNext(STATE.currentChapterIndex, index);
+        // Immediate: in a hidden, previously silent tab Chrome can defer the
+        // 15ms debounce timer for up to a minute, leaving only one sentence
+        // buffered and stalling playback right after it.
+        prefetchNext(STATE.currentChapterIndex, index, null, true);
         saveProgress(false);
     }
 }
@@ -5131,6 +5226,7 @@ audio.onplay = async () => {
 
     // [TASK 3] Reset stall recovery counters on successful play
     STATE._stallRecoveryCount = 0;
+    STATE._stallWaitCount = 0;
     STATE.streamingRetryCount.clear();
 
     playBtn.innerHTML = '<i class="fas fa-pause"></i>';
@@ -6433,6 +6529,7 @@ setInterval(() => {
         console.warn(`Stall Warning: ${STATE.stallCount}s at ${audio.currentTime}`);
     } else {
         STATE.stallCount = 0;
+        STATE._stallWaitCount = 0;
     }
 
     STATE.lastPlaybackTime = audio.currentTime;
@@ -6475,6 +6572,29 @@ async function handlePauseTimeout() {
 
 async function handlePlaybackStall() {
     STATE.stallCount = 0;
+
+    // On a healthy socket a stall almost always means Edge is slow or failing
+    // (requests in flight, chunks being retried, or a jump / chapter switch
+    // still waiting for its first sentence). Reconnecting would cancel exactly
+    // that work on the server, so wait; only a stall lasting ~60s (12 checks
+    // of 5s) escalates to the reset stages below.
+    const wsOpen = STATE.ws && STATE.ws.readyState === WebSocket.OPEN;
+    STATE._stallWaitCount = (STATE._stallWaitCount || 0) + 1;
+    if (wsOpen && STATE._stallWaitCount < 12) {
+        const waitingForFirstChunk = STATE.chunkTimings.length === 0;
+        if (STATE.fetchingSet.size === 0 && STATE.streamingRetryCount.size === 0 && !waitingForFirstChunk) {
+            // Nothing in flight: the buffer ran dry because prefetch never ran
+            // (e.g. throttled timers in a hidden tab). Refill it directly.
+            console.warn("[Stall] Buffer dry, re-prefetching...");
+            prefetchNext(STATE.lastAppendedChapter, STATE.lastAppendedIndex, null, true);
+        } else {
+            console.warn("[Stall] Waiting for TTS, skipping reset");
+        }
+        document.getElementById('status-indicator').innerText = "Đang chờ máy chủ TTS...";
+        return;
+    }
+    STATE._stallWaitCount = 0;
+
     const currentAttempt = (STATE._stallRecoveryCount || 0) + 1;
     STATE._stallRecoveryCount = currentAttempt;
 

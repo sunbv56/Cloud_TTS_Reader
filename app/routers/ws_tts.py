@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -9,7 +10,7 @@ from app.core.config import (
     MAX_WS_PER_USER,
 )
 from app.core.security import _verify_bearer_token, _validate_text_size
-from app.services.tts_service import synthesize_chunks
+from app.services.tts_service import synthesize_chunks, synthesize_pieces
 
 logger = logging.getLogger("cloud_tts_reader")
 
@@ -22,7 +23,10 @@ _active_ws_lock = asyncio.Lock()
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
-    queue = asyncio.Queue(maxsize=MAX_WS_QUEUE)
+    # Ordered by reading position so the sentence the listener needs next (or a
+    # retried one) is never stuck behind sentences queued further ahead.
+    queue = asyncio.PriorityQueue(maxsize=MAX_WS_QUEUE)
+    queue_seq = itertools.count()
     state = {"active_session": -1, "current_workers": 0, "authenticated": False, "uid": None}
     worker_pool = {}
     ws_lock = asyncio.Lock()
@@ -106,7 +110,8 @@ async def websocket_endpoint(websocket: WebSocket):
                                 "error": "TTS queue is full; try again shortly"
                             })
                     else:
-                        await queue.put(msg)
+                        position = (msg.get("chapterIndex", 0), msg.get("index", 0))
+                        await queue.put((position, next(queue_seq), msg))
                 elif msg["type"] == "PING":
                     async with ws_lock:
                         await websocket.send_json({"type": "PONG"})
@@ -115,10 +120,54 @@ async def websocket_endpoint(websocket: WebSocket):
         except Exception as e:
             logger.error("WS Receiver Error: %s", e)
 
+    async def send_parts(msg, sid, text, voice, rate, pitch, volume) -> bool:
+        """Stream a sentence piece by piece. Returns False once the socket is
+        gone so the worker can stop; synthesis errors propagate to the caller."""
+        part = 0
+        async for piece_chunks in synthesize_pieces(text, voice, rate, pitch, volume):
+            if state["active_session"] > sid:
+                return True
+            metadata = [
+                {
+                    "start": c["offset"] / 10_000_000,
+                    "duration": c["duration"] / 10_000_000,
+                    "text": c["text"],
+                }
+                for c in piece_chunks if c["type"] == "WordBoundary"
+            ]
+            audio = b"".join(c["data"] for c in piece_chunks if c["type"] == "audio")
+            try:
+                async with ws_lock:
+                    await websocket.send_json({
+                        "type": "METADATA",
+                        "index": msg["index"],
+                        "chapterIndex": msg.get("chapterIndex", 0),
+                        "sessionId": sid,
+                        "part": part,
+                        "metadata": metadata,
+                    })
+                    await websocket.send_bytes(audio)
+            except (WebSocketDisconnect, RuntimeError):
+                return False
+            part += 1
+        if state["active_session"] <= sid:
+            try:
+                async with ws_lock:
+                    await websocket.send_json({
+                        "type": "PREFETCH_DONE",
+                        "index": msg["index"],
+                        "chapterIndex": msg.get("chapterIndex", 0),
+                        "sessionId": sid,
+                        "parts": part,
+                    })
+            except (WebSocketDisconnect, RuntimeError):
+                return False
+        return True
+
     async def worker(worker_id: int):
         try:
             while True:
-                msg = await queue.get()
+                _, _, msg = await queue.get()
                 sid = msg.get("sessionId", -1)
                 
                 if sid < state["active_session"]:
@@ -135,6 +184,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 logger.info("[Worker %d] Generating audio for index %s (Session %s)", worker_id, msg.get('index'), sid)
                 
                 try:
+                    if msg.get("parts"):
+                        # Progressive delivery: each piece is sent as soon as it is
+                        # ready, so playback after a jump starts on the first piece
+                        # instead of waiting for the whole paragraph.
+                        if not await send_parts(msg, sid, text, voice, rate, pitch, volume):
+                            break
+                        continue
+
                     metadata = []
                     audio_data = bytearray()
 
@@ -201,12 +258,10 @@ async def websocket_endpoint(websocket: WebSocket):
     )
 
     receiver_task.cancel()
-    remaining_workers = list(worker_pool.values())
-    for w_task in remaining_workers:
-        w_task.cancel()
-    if remaining_workers:
-        await asyncio.gather(*remaining_workers, return_exceptions=True)
 
+    # Free the per-user slot before the slow worker teardown (cancelling
+    # in-flight Edge streams can take seconds); otherwise the client's
+    # immediate reconnect is refused with 1013 and loops into a stall reset.
     if state["uid"]:
         async with _active_ws_lock:
             remaining = _active_ws_by_uid.get(state["uid"], 0) - 1
@@ -214,6 +269,12 @@ async def websocket_endpoint(websocket: WebSocket):
                 _active_ws_by_uid[state["uid"]] = remaining
             else:
                 _active_ws_by_uid.pop(state["uid"], None)
+
+    remaining_workers = list(worker_pool.values())
+    for w_task in remaining_workers:
+        w_task.cancel()
+    if remaining_workers:
+        await asyncio.gather(*remaining_workers, return_exceptions=True)
 
     for task in pending:
         task.cancel()
