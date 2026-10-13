@@ -780,6 +780,52 @@ async def get_story_file(request: Request, userId: str, storyId: str, filename: 
     return StreamingResponse(_iter_temp_file(tmp_path), media_type="text/plain")
 
 
+@router.get("/api/stories/{userId}/{storyId}/parsed")
+async def get_parsed_story(request: Request, userId: str, storyId: str, filename: str = Query(...)):
+    """Parse a legacy book straight from storage. Opening one used to download
+    the whole file to the client and upload it back to /api/parse-book; this
+    skips both transfers and warms the disk cache used by per-chapter reads."""
+    auth_error = await _authorization_error_async(request, userId)
+    if auth_error:
+        return auth_error
+    if storage is None:
+        return JSONResponse({"error": "Storage backend is not configured"}, status_code=503)
+    request_id = _request_id(request)
+    blob = storage.bucket().blob(f"users/{userId}/files/{filename}")
+    cached_path, is_cached = None, False
+    try:
+        try:
+            cached_path, is_cached = await _run_storage(
+                "storage.cache_legacy_book_source", _get_or_download_legacy_source,
+                blob.download_to_filename, userId, filename, request_id=request_id,
+            )
+        except Exception as exc:
+            if is_storage_not_found(exc):
+                return JSONResponse({"error": "File not found"}, status_code=404)
+            logger.exception("legacy_parse_download_failed story_id=%s", storyId)
+            return JSONResponse({"error": "File storage unavailable", "retryable": True}, status_code=503)
+        if filename.lower().endswith(".txt"):
+            encoding_error = _validate_supported_text_encoding(cached_path)
+            if encoding_error:
+                return encoding_error
+        try:
+            chapters = await _run_blocking(
+                "parse_book_file", parse_book_file, cached_path, filename, request_id=request_id
+            )
+        except ValueError as exc:
+            return JSONResponse({"error": str(exc)}, status_code=422)
+        chapters_metadata = await _run_blocking(
+            "build_chapters_summary", build_chapters_summary, chapters, request_id=request_id
+        )
+        return JSONResponse({
+            "title": os.path.splitext(filename)[0],
+            "chapters": chapters_metadata,
+        })
+    finally:
+        if cached_path and not is_cached and os.path.exists(cached_path):
+            os.remove(cached_path)
+
+
 @router.delete("/api/stories/{userId}/{storyId}/storage")
 async def delete_story_storage(request: Request, userId: str, storyId: str, filename: Optional[str] = Query(None)):
     auth_error = _authorization_error(request, userId)

@@ -199,17 +199,12 @@ class ImportRuntimeTest(unittest.IsolatedAsyncioTestCase):
             "B2_READ_TIMEOUT_SECONDS": "42",
             "B2_MAX_ATTEMPTS": "2",
         }
-        with patch.dict(os.environ, settings, clear=False), patch("boto3.client") as client:
+        with patch.dict(os.environ, settings, clear=False):
             backend = B2StorageBackend()
-            _ = backend.client
-        config = client.call_args.kwargs["config"]
-        self.assertEqual(config.connect_timeout, 7)
-        self.assertEqual(config.read_timeout, 42)
-        self.assertEqual(config.retries["max_attempts"], 2)
-        self.assertEqual(config.retries["mode"], "standard")
-        self.assertEqual(backend.transfer_config.multipart_chunksize, 4 * 1024 * 1024)
-        self.assertEqual(backend.transfer_config.max_concurrency, 1)
-        self.assertFalse(backend.transfer_config.use_threads)
+            client = backend.client
+        self.assertEqual(client.connect_timeout, 7)
+        self.assertEqual(client.read_timeout, 42)
+        self.assertEqual(client.max_attempts, 2)
 
     def test_b2_diagnostic_info(self):
         settings = {
@@ -218,9 +213,8 @@ class ImportRuntimeTest(unittest.IsolatedAsyncioTestCase):
             "B2_KEY_ID": "00583c8ddd791a90000000002",
             "B2_APPLICATION_KEY": "secret-key",
         }
-        with patch.dict(os.environ, settings, clear=False), patch("boto3.client") as mock_boto:
-            mock_client = types.SimpleNamespace(head_bucket=lambda **kwargs: {})
-            mock_boto.return_value = mock_client
+        with patch.dict(os.environ, settings, clear=False), \
+                patch("storage_adapter.S3LiteClient.head_bucket", lambda self, **kwargs: {}):
             backend = B2StorageBackend()
             info = backend.get_diagnostic_info()
             self.assertEqual(info["provider"], "b2")

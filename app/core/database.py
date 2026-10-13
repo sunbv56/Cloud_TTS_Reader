@@ -1,52 +1,55 @@
 import os
-import json
 import logging
-import firebase_admin
-from firebase_admin import credentials, auth
+from app.core import google_lite
 from storage_adapter import get_storage_backend
 
 logger = logging.getLogger("cloud_tts_reader")
 
+# Firebase Auth and Firestore go through app.core.google_lite (REST) instead
+# of firebase-admin, whose gRPC Firestore stack cost ~32 MB of RSS. The name
+# `firebase_admin_initialized` is kept: it means "service account loaded".
 firebase_admin_initialized = False
-firebase_creds_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
+_service_account = None
 
-if firebase_creds_json:
-    try:
-        # Strip potential single/double quotes from the beginning and end (common in Fly.io/Docker secrets)
-        firebase_creds_json = firebase_creds_json.strip().strip("'").strip('"')
-        creds_dict = json.loads(firebase_creds_json)
-        cred = credentials.Certificate(creds_dict)
-        firebase_admin.initialize_app(cred, {
-            'storageBucket': os.getenv("FIREBASE_STORAGE_BUCKET")
-        })
-        logger.info("Firebase Admin initialized via environment variable.")
+try:
+    _service_account = google_lite.load_service_account(os.getenv("FIREBASE_SERVICE_ACCOUNT"))
+    if _service_account is not None:
+        google_lite.configure_auth(_service_account.project_id)
         firebase_admin_initialized = True
-    except Exception as e:
-        logger.error(f"Error initializing Firebase Admin with service account: {e}")
-        if firebase_creds_json:
-            logger.debug(f"Creds JSON starts with: {firebase_creds_json[:20]}...")
-else:
-    # Try default initialization (e.g. if running on GCP/GCE)
-    try:
-        firebase_admin.initialize_app(options={
-            'storageBucket': os.getenv("FIREBASE_STORAGE_BUCKET")
-        })
-        logger.info("Firebase Admin initialized via default credentials.")
+        logger.info("Firebase credentials loaded from FIREBASE_SERVICE_ACCOUNT.")
+    else:
+        # Same as firebase_admin.initialize_app() without credentials, which
+        # succeeded and only failed when a call needed them: routes still
+        # answer 401/400 for bad requests, and Firestore raises on first use.
+        google_lite.configure_auth(os.getenv("FIREBASE_PROJECT_ID") or os.getenv("GOOGLE_CLOUD_PROJECT"))
         firebase_admin_initialized = True
-    except Exception as e:
-        logger.warning(f"Warning: Firebase Admin could not be initialized (local dev?). Storage features will be limited: {e}")
+        logger.warning("FIREBASE_SERVICE_ACCOUNT is not set; Firestore calls will fail (local dev?).")
+except Exception as e:
+    logger.error(f"Error loading Firebase service account: {e}")
+
+
+def _init_firebase_admin_for_storage():
+    """Only the legacy Firebase Storage backend still needs firebase-admin; it
+    is imported lazily so B2 deployments never pay for it."""
+    import firebase_admin
+    from firebase_admin import credentials, storage as firebase_storage
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(
+            credentials.Certificate(_service_account.info) if _service_account else None,
+            {"storageBucket": os.getenv("FIREBASE_STORAGE_BUCKET")},
+        )
+    return firebase_storage
 
 
 class _LazyFirestoreProxy:
-    """Lazy proxy that defers Firestore gRPC client connection until first access."""
+    """Lazy proxy that creates the REST Firestore client on first access."""
     def __init__(self):
         self._client = None
 
     def _get_client(self):
-        if self._client is None and firebase_admin_initialized:
+        if self._client is None and _service_account is not None:
             try:
-                from firebase_admin import firestore as _firestore
-                self._client = _firestore.client()
+                self._client = google_lite.FirestoreClient(_service_account)
             except Exception as e:
                 logger.error(f"Firestore client could not be initialized: {e}")
                 self._client = None
@@ -98,10 +101,12 @@ class _LazyStorageProxy:
     def _get_backend(self):
         if self._backend is None:
             try:
-                try:
-                    from firebase_admin import storage as firebase_storage
-                except Exception:
-                    firebase_storage = None
+                firebase_storage = None
+                if os.getenv("STORAGE_BACKEND", "firebase").strip().lower() != "b2":
+                    try:
+                        firebase_storage = _init_firebase_admin_for_storage()
+                    except Exception as e:
+                        logger.error(f"Firebase Storage could not be initialized: {e}")
                 self._backend = get_storage_backend(firebase_storage)
                 backend_type = getattr(self._backend, "provider_name", "unknown")
                 bucket_name = getattr(self._backend, "bucket_name", None) or os.getenv("FIREBASE_STORAGE_BUCKET") or "(default)"
@@ -177,15 +182,8 @@ class _LazyStorageProxy:
 
 
 class _FirestoreProxy:
-    """Proxy providing firestore constants like SERVER_TIMESTAMP without eager import."""
-    @property
-    def SERVER_TIMESTAMP(self):
-        from firebase_admin import firestore as _fs
-        return _fs.SERVER_TIMESTAMP
-
-    def __getattr__(self, name):
-        from firebase_admin import firestore as _fs
-        return getattr(_fs, name)
+    """Firestore constants used by the app (SERVER_TIMESTAMP)."""
+    SERVER_TIMESTAMP = google_lite.SERVER_TIMESTAMP
 
 
 firestore = _FirestoreProxy()

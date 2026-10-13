@@ -142,3 +142,33 @@ def test_edge_connections_are_capped_and_released(fake_edge, monkeypatch):
 
     assert asyncio.run(run()) == 2  # every slot was given back
     assert live["peak"] == 2
+
+
+class _Forbidden(Exception):
+    status = 403
+
+
+def test_route_refused_with_403_is_benched(fake_edge, monkeypatch):
+    monkeypatch.setattr(tts_service, "_route_blocked_until", {})
+    monkeypatch.setattr(tts_service, "EDGE_TTS_HEDGE_SECONDS", 10)
+
+    class DirectBlocked(_FakeCommunicate):
+        async def stream(self):
+            if _FakeCommunicate.proxies[-1] is None:
+                raise _Forbidden("403, message='Invalid response status'")
+            yield {"type": "audio", "data": b"via-proxy"}
+
+    monkeypatch.setattr(tts_service.edge_tts, "Communicate", DirectBlocked)
+    fake_edge.behaviours = [("ok", 0)] * 10
+
+    asyncio.run(_collect())  # direct 403 -> proxy
+    fake_edge.proxies = []
+    asyncio.run(_collect())  # direct is benched now: straight to proxy
+    assert fake_edge.proxies == ["http://proxy:1"]
+
+
+def test_no_audio_failures_do_not_bench_a_route(fake_edge, monkeypatch):
+    monkeypatch.setattr(tts_service, "_route_blocked_until", {})
+    fake_edge.behaviours = [("fail", 0), ("ok", 0)]
+    asyncio.run(_collect())
+    assert tts_service._usable_routes() == [None, "http://proxy:1"]
