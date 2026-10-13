@@ -1221,7 +1221,12 @@ function debounce(func, wait) {
  * @param {Function} callback 
  */
 function safeViewTransition(callback) {
-    if (document.startViewTransition) {
+    // View-transition snapshots of #text-container (view-transition-name:
+    // reader-content) are painted in the ::view-transition layer, above every
+    // element, so in lite mode the chapter text flashed through the black
+    // pocket overlay on each auto chapter change. Skip the animation there,
+    // and in hidden tabs where it only aborts with "Document hidden".
+    if (document.startViewTransition && !STATE.isLiteMode && document.visibilityState !== 'hidden') {
         return document.startViewTransition(callback);
     } else {
         return callback();
