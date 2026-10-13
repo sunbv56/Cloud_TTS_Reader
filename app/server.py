@@ -30,9 +30,22 @@ async def lifespan(application: FastAPI):
     _reclaim_memory()
 
 
+class _RevalidatedStaticFiles(StaticFiles):
+    """App-shell files carry no version in their URL, so without Cache-Control
+    browsers heuristically keep serving the previous deploy. no-cache still
+    allows caching but revalidates via ETag (a cheap 304 when unchanged)."""
+    _REVALIDATE_SUFFIXES = (".js", ".css", ".html", ".json")
+
+    def file_response(self, full_path, *args, **kwargs):
+        response = super().file_response(full_path, *args, **kwargs)
+        if str(full_path).endswith(self._REVALIDATE_SUFFIXES):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 def create_app() -> FastAPI:
     application = FastAPI(lifespan=lifespan)
-    application.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+    application.mount("/static", _RevalidatedStaticFiles(directory=STATIC_DIR), name="static")
     application.include_router(system.router)
     application.include_router(tts.router)
     application.include_router(books.router)

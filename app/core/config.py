@@ -55,6 +55,13 @@ def _normalize_proxy(raw: str) -> str | None:
 
 
 EDGE_TTS_PROXY = _normalize_proxy(os.getenv("EDGE_TTS_PROXY", ""))
+# Start a parallel Edge attempt (alternating direct/proxy) when the current one
+# has produced no audio after this many seconds.
+EDGE_TTS_HEDGE_SECONDS = float(os.getenv("EDGE_TTS_HEDGE_SECONDS", "1.5"))
+# Paragraphs longer than this are synthesized as parallel sentence pieces.
+EDGE_TTS_PIECE_CHARS = int(os.getenv("EDGE_TTS_PIECE_CHARS", "180"))
+# The first piece is kept shorter so streamed playback starts sooner.
+EDGE_TTS_FIRST_PIECE_CHARS = int(os.getenv("EDGE_TTS_FIRST_PIECE_CHARS", "100"))
 GTTS_FALLBACK = os.getenv("GTTS_FALLBACK", "0").strip().lower() in ("1", "true", "yes")
 MAX_IMAGE_BYTES = int(os.getenv("MAX_IMAGE_BYTES", str(150 * 1024)))
 
