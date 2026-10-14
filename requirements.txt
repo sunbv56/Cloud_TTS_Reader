@@ -1,6 +1,6 @@
 fastapi
 uvicorn[standard]
-edge-tts
+edge-tts>=7.3.1
 gTTS
 python-multipart
 aiofiles

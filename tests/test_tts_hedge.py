@@ -172,3 +172,27 @@ def test_no_audio_failures_do_not_bench_a_route(fake_edge, monkeypatch):
     fake_edge.behaviours = [("fail", 0), ("ok", 0)]
     asyncio.run(_collect())
     assert tts_service._usable_routes() == [None, "http://proxy:1"]
+
+
+def test_proxy_toggle_off_keeps_every_attempt_direct(fake_edge):
+    fake_edge.behaviours = [("slow", 5), ("fast", 0)]
+
+    async def run():
+        tts_service.set_tts_options(use_proxy=False)
+        return await _collect()
+
+    asyncio.run(asyncio.wait_for(run(), 2))
+    assert fake_edge.proxies == [None, None]
+
+
+def test_gtts_toggle_overrides_server_default(fake_edge, monkeypatch):
+    monkeypatch.setattr(tts_service, "GTTS_FALLBACK", False)
+    monkeypatch.setattr(tts_service, "_gtts_bytes", lambda text, lang: b"gtts")
+    fake_edge.behaviours = [("fail", 0)] * tts_service.EDGE_TTS_ATTEMPTS
+
+    async def run():
+        tts_service.set_tts_options(gtts_fallback=True)
+        return await _collect()
+
+    chunks = asyncio.run(run())
+    assert [c["data"] for c in chunks if c["type"] == "audio"] == [b"gtts"]

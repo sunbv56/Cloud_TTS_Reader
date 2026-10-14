@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse, JSONResponse
 
 from app.core.config import MAX_DOWNLOAD_CHAPTERS, MAX_DOWNLOAD_SENTENCES
 from app.core.security import _verify_bearer_token, _validate_text_size
-from app.services.tts_service import synthesize_chunks, ChapterDownloadRequest
+from app.services.tts_service import synthesize_chunks, set_tts_options, ChapterDownloadRequest
 
 logger = logging.getLogger("cloud_tts_reader")
 
@@ -71,6 +71,7 @@ async def download_chapters(request: Request, req: ChapterDownloadRequest):
     filename = f"{safe_title}_{xx:02d}_{yy:02d}.mp3"
     
     async def generate_audio():
+        set_tts_options(req.useProxy, req.gttsFallback)
         for chapter in req.chapters:
             full_text = "\n".join(chapter.sentences)
             logger.info("[Download] Generating chapter: %s (%d chars)", chapter.title, len(full_text))

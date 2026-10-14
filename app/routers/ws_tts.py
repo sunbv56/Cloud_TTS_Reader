@@ -10,7 +10,7 @@ from app.core.config import (
     MAX_WS_PER_USER,
 )
 from app.core.security import _verify_bearer_token, _validate_text_size
-from app.services.tts_service import synthesize_chunks, synthesize_pieces
+from app.services.tts_service import synthesize_chunks, synthesize_pieces, set_tts_options
 
 logger = logging.getLogger("cloud_tts_reader")
 
@@ -180,6 +180,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 rate = msg.get("rate", "+0%")
                 pitch = msg.get("pitch", "+0Hz")
                 volume = msg.get("volume", "+0%")
+                set_tts_options(msg.get("useProxy"), msg.get("gttsFallback"))
                 
                 logger.info("[Worker %d] Generating audio for index %s (Session %s)", worker_id, msg.get('index'), sid)
                 

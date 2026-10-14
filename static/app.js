@@ -56,6 +56,8 @@ let STATE = {
         pitch: "+0Hz",
         volume: "+0%",
         numWorkers: 2,
+        useProxy: true, // allow the server's Edge proxy route
+        gttsFallback: false, // use Google TTS when Edge fails
         fontSize: (function () {
             const saved = localStorage.getItem('reader-font-size');
             if (saved) return parseInt(saved, 10);
@@ -1697,6 +1699,7 @@ async function initWebSocket() {
                                     pitch: pitch,
                                     volume: volume,
                                     numWorkers: STATE.settings.numWorkers,
+                                    ...ttsToggles(),
                                     sessionId: STATE.sessionId
                                 }));
                             }, delay);
@@ -4540,6 +4543,7 @@ function dispatchDownloadQueue() {
             pitch: task.pitch,
             volume: task.volume,
             numWorkers: 50,
+            ...ttsToggles(),
             sessionId: STATE.sessionId
         }));
     }
@@ -4998,6 +5002,7 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
                 pitch: pitch,
                 volume: volume,
                 numWorkers: STATE.settings.numWorkers,
+                ...ttsToggles(),
                 sessionId: STATE.sessionId
             }));
 
@@ -5086,6 +5091,7 @@ async function playFromSentence(index, expectedLoadGeneration = STATE.loadGenera
             pitch: pitch,
             volume: volume,
             numWorkers: STATE.settings.numWorkers,
+            ...ttsToggles(),
             sessionId: currentSessionId
         }));
     }
@@ -5482,6 +5488,22 @@ function persistLocalSettings() {
 }
 
 const scheduleBookSettingsSave = debounce(persistLocalSettings, 300);
+
+// Server-side TTS toggles sent with every PREFETCH request.
+function ttsToggles() {
+    return {
+        useProxy: STATE.settings.useProxy !== false,
+        gttsFallback: STATE.settings.gttsFallback === true,
+    };
+}
+
+for (const [id, key] of [['proxy-toggle', 'useProxy'], ['gtts-toggle', 'gttsFallback']]) {
+    const toggle = document.getElementById(id);
+    if (toggle) toggle.onchange = (e) => {
+        STATE.settings[key] = e.target.checked;
+        scheduleBookSettingsSave();
+    };
+}
 
 document.getElementById('voice-select').onchange = (e) => {
     STATE.settings.voice = e.target.value;
@@ -6039,6 +6061,13 @@ function applySettingsToUI() {
             document.getElementById('prefetch-range').value = idx;
             document.getElementById('prefetch-val').innerText = `${s.numWorkers} Workers`;
         }
+    }
+
+    if (document.getElementById('proxy-toggle')) {
+        document.getElementById('proxy-toggle').checked = s.useProxy !== false;
+    }
+    if (document.getElementById('gtts-toggle')) {
+        document.getElementById('gtts-toggle').checked = s.gttsFallback === true;
     }
 
     if (document.getElementById('font-size-range')) {
