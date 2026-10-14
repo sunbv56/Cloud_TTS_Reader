@@ -3,6 +3,7 @@ import io
 import logging
 import re
 import time
+from contextvars import ContextVar
 from typing import List, AsyncGenerator
 from pydantic import BaseModel
 import edge_tts
@@ -38,6 +39,30 @@ class ChapterDownloadRequest(BaseModel):
     rate: str = "+0%"
     pitch: str = "+0Hz"
     volume: str = "+0%"
+    useProxy: bool | None = None
+    gttsFallback: bool | None = None
+
+
+# Per-request reader toggles; None means "use the server default". Tasks
+# spawned while synthesizing copy the context, so the hedges and parallel
+# pieces of one request all see that request's choice.
+_use_proxy: ContextVar[bool | None] = ContextVar("tts_use_proxy", default=None)
+_gtts_fallback: ContextVar[bool | None] = ContextVar("tts_gtts_fallback", default=None)
+
+
+def set_tts_options(use_proxy=None, gtts_fallback=None) -> None:
+    """Apply the client's proxy/gTTS toggles to the current request context."""
+    _use_proxy.set(use_proxy if isinstance(use_proxy, bool) else None)
+    _gtts_fallback.set(gtts_fallback if isinstance(gtts_fallback, bool) else None)
+
+
+def _proxy_route() -> str | None:
+    return EDGE_TTS_PROXY if _use_proxy.get() is not False else None
+
+
+def _gtts_enabled() -> bool:
+    choice = _gtts_fallback.get()
+    return GTTS_FALLBACK if choice is None else choice
 
 
 async def _iter_tts_chunks(communicate) -> AsyncGenerator[dict, None]:
@@ -144,7 +169,8 @@ _route_blocked_until: dict[str | None, float] = {}
 def _usable_routes() -> List[str | None]:
     """Direct and proxy routes, minus any Microsoft is currently refusing.
     If every route is refused, try them all rather than none."""
-    routes = [None, EDGE_TTS_PROXY] if EDGE_TTS_PROXY else [None]
+    proxy = _proxy_route()
+    routes = [None, proxy] if proxy else [None]
     now = time.monotonic()
     usable = [r for r in routes if _route_blocked_until.get(r, 0) <= now]
     return usable or routes
@@ -154,7 +180,7 @@ def _note_route_failure(route: str | None, error: BaseException) -> None:
     """A 403 on the websocket handshake means Microsoft blocks that egress IP
     (e.g. Fly's US addresses); every further attempt on it is a guaranteed
     failure, so bench the route for a while instead of alternating into it."""
-    if getattr(error, "status", None) != 403 or not EDGE_TTS_PROXY:
+    if getattr(error, "status", None) != 403 or not _proxy_route():
         return
     now = time.monotonic()
     if _route_blocked_until.get(route, 0) <= now:
@@ -332,13 +358,14 @@ async def _synthesize_piece(
     text: str, voice: str, rate: str = "+0%", pitch: str = "+0Hz", volume: str = "+0%"
 ) -> AsyncGenerator[dict, None]:
     """Yield Edge TTS chunks, retrying failures that happen before any audio.
-    gTTS is only used when GTTS_FALLBACK is enabled: mixing its voice into an
+    gTTS is only used when the fallback is enabled (GTTS_FALLBACK or the
+    reader's toggle): mixing its voice into an
     Edge reading sounds jarring, so by default the error reaches the client,
     which retries the sentence itself."""
     try:
         head, stream = await _race_first_audio(text, voice, rate, pitch, volume)
     except Exception:
-        if not GTTS_FALLBACK:
+        if not _gtts_enabled():
             raise
     else:
         try:

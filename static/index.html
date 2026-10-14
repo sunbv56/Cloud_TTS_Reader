@@ -440,6 +440,28 @@
                             <input type="range" id="prefetch-range" min="0" max="2" step="1" value="1"
                                 class="w-full accent-primary h-1.5 cursor-pointer">
                         </div>
+                        <label class="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center justify-between gap-3 cursor-pointer">
+                            <span class="flex flex-col">
+                                <span class="text-xs font-bold text-slate-400">EDGE PROXY</span>
+                                <span class="text-[11px] text-slate-500">Thử thêm qua proxy khi kết nối thẳng chậm hoặc bị chặn</span>
+                            </span>
+                            <span class="relative shrink-0">
+                                <input type="checkbox" id="proxy-toggle" class="sr-only peer">
+                                <span class="block w-9 h-5 bg-white/10 rounded-full peer-checked:bg-primary/80 transition-colors border border-white/5"></span>
+                                <span class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4 shadow-sm"></span>
+                            </span>
+                        </label>
+                        <label class="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center justify-between gap-3 cursor-pointer">
+                            <span class="flex flex-col">
+                                <span class="text-xs font-bold text-slate-400">GOOGLE TTS DỰ PHÒNG</span>
+                                <span class="text-[11px] text-slate-500">Đọc bằng Google khi Edge lỗi (giọng khác)</span>
+                            </span>
+                            <span class="relative shrink-0">
+                                <input type="checkbox" id="gtts-toggle" class="sr-only peer">
+                                <span class="block w-9 h-5 bg-white/10 rounded-full peer-checked:bg-primary/80 transition-colors border border-white/5"></span>
+                                <span class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4 shadow-sm"></span>
+                            </span>
+                        </label>
                     </div>
                 </div>
 
