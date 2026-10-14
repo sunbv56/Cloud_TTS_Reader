@@ -5497,12 +5497,31 @@ function ttsToggles() {
     };
 }
 
-for (const [id, key] of [['proxy-toggle', 'useProxy'], ['gtts-toggle', 'gttsFallback']]) {
-    const toggle = document.getElementById(id);
-    if (toggle) toggle.onchange = (e) => {
-        STATE.settings[key] = e.target.checked;
-        scheduleBookSettingsSave();
-    };
+// Each toggle exists in the sidebar and in the Quick Settings hub; keep both in sync.
+const TTS_TOGGLE_IDS = {
+    useProxy: ['proxy-toggle', 'quick-proxy-toggle'],
+    gttsFallback: ['gtts-toggle', 'quick-gtts-toggle'],
+};
+
+function syncTtsToggles() {
+    const values = ttsToggles();
+    for (const [key, ids] of Object.entries(TTS_TOGGLE_IDS)) {
+        for (const id of ids) {
+            const toggle = document.getElementById(id);
+            if (toggle) toggle.checked = values[key];
+        }
+    }
+}
+
+for (const [key, ids] of Object.entries(TTS_TOGGLE_IDS)) {
+    for (const id of ids) {
+        const toggle = document.getElementById(id);
+        if (toggle) toggle.onchange = (e) => {
+            STATE.settings[key] = e.target.checked;
+            syncTtsToggles();
+            scheduleBookSettingsSave();
+        };
+    }
 }
 
 document.getElementById('voice-select').onchange = (e) => {
@@ -6063,12 +6082,7 @@ function applySettingsToUI() {
         }
     }
 
-    if (document.getElementById('proxy-toggle')) {
-        document.getElementById('proxy-toggle').checked = s.useProxy !== false;
-    }
-    if (document.getElementById('gtts-toggle')) {
-        document.getElementById('gtts-toggle').checked = s.gttsFallback === true;
-    }
+    syncTtsToggles();
 
     if (document.getElementById('font-size-range')) {
         document.getElementById('font-size-range').value = s.fontSize;
