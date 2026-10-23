@@ -3,6 +3,7 @@ import re
 import uuid
 import time
 import asyncio
+import hmac
 import logging
 from functools import wraps
 from fastapi import Request, UploadFile
@@ -37,6 +38,30 @@ def _request_id(request: Request) -> str:
     return uuid.uuid4().hex[:16]
 
 
+def _parse_automation_keys(raw: str) -> dict:
+    """Parse AUTOMATION_KEYS="key1:uid1,key2:uid2" into {key: uid}."""
+    keys = {}
+    for pair in (raw or "").split(","):
+        key, sep, uid = pair.strip().partition(":")
+        if sep and key.strip() and uid.strip():
+            keys[key.strip()] = uid.strip()
+    return keys
+
+
+_AUTOMATION_KEYS = _parse_automation_keys(os.getenv("AUTOMATION_KEYS", ""))
+
+
+def _automation_key_uid(request: Request):
+    """Return the uid bound to the X-API-Key header, or None."""
+    supplied = (request.headers.get("x-api-key") or "").strip()
+    if not supplied:
+        return None
+    for key, uid in _AUTOMATION_KEYS.items():
+        if hmac.compare_digest(supplied.encode(), key.encode()):
+            return uid
+    return None
+
+
 def _verify_bearer_token(authorization: str):
     """Return decoded Firebase claims or None for an invalid token."""
     if not firebase_admin_initialized or not (authorization or "").lower().startswith("bearer "):
@@ -54,6 +79,14 @@ def _authorization_error(request: Request, user_id: str):
     """Verify that the Firebase ID token belongs to the requested user."""
     if not firebase_admin_initialized:
         return JSONResponse({"error": "Firebase Admin not initialized"}, status_code=500)
+
+    if request.headers.get("x-api-key"):
+        key_uid = _automation_key_uid(request)
+        if key_uid is None:
+            return JSONResponse({"error": "Invalid API key"}, status_code=401)
+        if key_uid != user_id:
+            return JSONResponse({"error": "Forbidden"}, status_code=403)
+        return None
 
     authorization = request.headers.get("authorization", "")
     if not authorization.lower().startswith("bearer "):
