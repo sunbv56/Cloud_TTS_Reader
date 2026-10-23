@@ -235,6 +235,22 @@ async def upload_story(
             request_id=request_id,
         )
 
+        if request.headers.get("x-api-key"):
+            # The web client creates the library entry when it opens the book;
+            # automation uploads never open it, so register it here instead.
+            await _run_blocking(
+                "firestore.write_library_entry",
+                db_admin.collection("users").document(userId).collection("progress").document(story_id).set,
+                {
+                    "title": story_title,
+                    "filename": canonical_filename,
+                    "last_listened_at": firestore.SERVER_TIMESTAMP,
+                    "updated_at": firestore.SERVER_TIMESTAMP,
+                },
+                merge=True,
+                request_id=request_id,
+            )
+
         logger.info("import_completed request_id=%s story_id=%s chapters=%s", request_id, story_id, total_chapters)
 
         return JSONResponse({

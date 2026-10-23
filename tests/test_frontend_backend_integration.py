@@ -256,6 +256,20 @@ class TestBookAndChapterLifecycle:
         assert len(data["chapters"]) == 2
         assert data["chapters"][0]["title"] == "Chương 1: Mở đầu"
 
+    def test_upload_story_via_api_key_registers_library_entry(self, client, monkeypatch):
+        import app.routers.books as books_mod
+        monkeypatch.setattr(security, "_AUTOMATION_KEYS", {"ctr_test": TEST_UID})
+        content = "Chương 1: Khởi đầu\nCâu 1.\n===\nChương 2: Tiếp theo\nCâu 2."
+        files = {"file": ("n8n_story.txt", io.BytesIO(content.encode("utf-8")), "text/plain")}
+        res = client.post("/api/upload-story", data={"userId": TEST_UID}, files=files,
+                          headers={"X-API-Key": "ctr_test"})
+        assert res.status_code == 200
+        body = res.json()
+        progress = books_mod.db_admin._store[f"users/{TEST_UID}/progress/{body['storyId']}"]
+        assert progress["title"] == "n8n_story"
+        assert progress["filename"] == body["filename"]
+        assert "last_read_chunk" not in progress
+
     def test_upload_story_lifecycle_unsegmented(self, client):
         content = "Chương 1: Khởi đầu\nCâu 1. Câu 2.\n===\nChương 2: Tiếp theo\nCâu 3. Câu 4."
         files = {"file": ("demo_novel.txt", io.BytesIO(content.encode("utf-8")), "text/plain")}
