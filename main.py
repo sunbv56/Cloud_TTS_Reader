@@ -142,4 +142,7 @@ __all__ = [
 ]
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8008)
+    import os
+
+    # Pterodactyl hosts (Botkeep) assign the port via SERVER_PORT; Fly uses the CMD in Dockerfile.
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.getenv("SERVER_PORT") or os.getenv("PORT") or 8008))
