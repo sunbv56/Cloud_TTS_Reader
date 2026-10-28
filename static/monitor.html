@@ -48,6 +48,14 @@
   .empty { color: var(--muted); text-align: center; padding: 70px 0; }
   footer { color: var(--muted); font-size: 12px; }
   .err { color: var(--limit); }
+  .chart { position: relative; touch-action: pan-y; }
+  .tip {
+    position: absolute; top: 6px; pointer-events: none; z-index: 2;
+    background: rgba(10, 12, 16, .92); border: 1px solid var(--border); border-radius: 10px;
+    padding: 6px 9px; font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums;
+  }
+  .tip b { display: block; color: var(--muted); font-weight: 600; margin-bottom: 2px; }
+  .tip i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 </style>
 </head>
 <body>
@@ -76,7 +84,7 @@
       <span><i style="background:var(--rss)"></i>Tiến trình</span>
       <span><i class="dash"></i>Giới hạn</span>
     </div>
-    <div id="chart-mem"></div>
+    <div id="chart-mem" class="chart"></div>
   </section>
 
   <section class="card">
@@ -85,7 +93,7 @@
       <span><i style="background:var(--primary)"></i>CPU</span>
       <span><i class="dash"></i>Giới hạn</span>
     </div>
-    <div id="chart-cpu"></div>
+    <div id="chart-cpu" class="chart"></div>
   </section>
 
   <footer id="footer">Đang tải…</footer>
@@ -96,6 +104,7 @@
   const NS = 'http://www.w3.org/2000/svg';
   let minutes = 60;
   let timer = null;
+  const hover = {};
 
   function el(tag, attrs) {
     const node = document.createElementNS(NS, tag);
@@ -118,7 +127,12 @@
     return 10 * p;
   }
 
-  // series: [{key, color}], limitKey: field for dashed limit line
+  function fmtFull(t) {
+    const d = new Date(t * 1000);
+    return d.toLocaleTimeString('vi-VN') + ' · ' + d.toLocaleDateString('vi-VN');
+  }
+
+  // series: [{key, color, name}], limitKey: field for dashed limit line
   function drawChart(container, samples, series, limitKey, unit) {
     container.innerHTML = '';
     if (!samples.length) {
@@ -177,8 +191,70 @@
         d, fill: 'none', stroke: sr.color, 'stroke-width': 1.8,
         'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke'
       }));
+      // With few samples a bare line hides where the readings are; mark them.
+      if (samples.length <= 120) {
+        for (const s of samples) {
+          if (s[sr.key] != null) svg.appendChild(el('circle', { cx: x(s.t), cy: y(s[sr.key]), r: 2, fill: sr.color }));
+        }
+      }
     }
+
+    // Hover / touch: crosshair at the nearest sample + tooltip with its values.
+    const cross = el('line', { y1: pad.t, y2: H - pad.b, stroke: 'var(--muted)', 'stroke-dasharray': '3 3', visibility: 'hidden' });
+    svg.appendChild(cross);
+    const dots = series.map(sr => {
+      const c = el('circle', { r: 4, fill: sr.color, stroke: 'var(--bg)', 'stroke-width': 2, visibility: 'hidden' });
+      svg.appendChild(c);
+      return c;
+    });
+    const tip = document.createElement('div');
+    tip.className = 'tip';
+    tip.hidden = true;
     container.appendChild(svg);
+    container.appendChild(tip);
+
+    function show(clientX) {
+      const rect = svg.getBoundingClientRect();
+      const px = (clientX - rect.left) / rect.width * W;
+      const t = t0 + (px - pad.l) / (W - pad.l - pad.r) * span;
+      let best = samples[0];
+      for (const s of samples) if (Math.abs(s.t - t) < Math.abs(best.t - t)) best = s;
+      const bx = x(best.t);
+      cross.setAttribute('x1', bx); cross.setAttribute('x2', bx);
+      cross.setAttribute('visibility', 'visible');
+      let rows = '';
+      series.forEach((sr, i) => {
+        const v = best[sr.key];
+        if (v == null) { dots[i].setAttribute('visibility', 'hidden'); return; }
+        dots[i].setAttribute('cx', bx); dots[i].setAttribute('cy', y(v));
+        dots[i].setAttribute('visibility', 'visible');
+        rows += `<div><i style="background:${sr.color}"></i>${sr.name}: <strong>${v}${unit}</strong></div>`;
+      });
+      const lim = best[limitKey];
+      if (lim != null) rows += `<div><i style="background:var(--limit)"></i>Giới hạn: ${lim}${unit}</div>`;
+      tip.innerHTML = `<b>${fmtFull(best.t)}</b>${rows}`;
+      tip.hidden = false;
+      const left = bx / W * rect.width;
+      const tw = tip.offsetWidth;
+      tip.style.left = (left + 12 + tw > rect.width ? Math.max(0, left - 12 - tw) : left + 12) + 'px';
+      hover[container.id] = clientX;
+    }
+    function hide() {
+      cross.setAttribute('visibility', 'hidden');
+      dots.forEach(d => d.setAttribute('visibility', 'hidden'));
+      tip.hidden = true;
+      delete hover[container.id];
+    }
+    svg.addEventListener('mousemove', e => show(e.clientX));
+    svg.addEventListener('mouseleave', hide);
+    svg.addEventListener('touchstart', e => show(e.touches[0].clientX), { passive: true });
+    svg.addEventListener('touchmove', e => show(e.touches[0].clientX), { passive: true });
+    // Keep the tooltip in place across the 15 s auto-refresh.
+    // The old svg is replaced before it can fire mouseleave, so check :hover.
+    if (hover[container.id] != null) {
+      if (container.matches(':hover')) show(hover[container.id]);
+      else delete hover[container.id];
+    }
   }
 
   function setText(id, text) { document.getElementById(id).textContent = text; }
@@ -203,9 +279,9 @@
       setText('s-peak-sub', `CPU cao nhất ${peakCpu.toFixed(1)}%`);
     }
     drawChart(document.getElementById('chart-mem'), samples,
-      [{ key: 'mem_mb', color: 'var(--primary)' }, { key: 'rss_mb', color: 'var(--rss)' }], 'mem_limit_mb', ' MB');
+      [{ key: 'mem_mb', color: 'var(--primary)', name: 'Container' }, { key: 'rss_mb', color: 'var(--rss)', name: 'Tiến trình' }], 'mem_limit_mb', ' MB');
     drawChart(document.getElementById('chart-cpu'), samples,
-      [{ key: 'cpu_pct', color: 'var(--primary)' }], 'cpu_limit_pct', '%');
+      [{ key: 'cpu_pct', color: 'var(--primary)', name: 'CPU' }], 'cpu_limit_pct', '%');
     const footer = document.getElementById('footer');
     footer.className = '';
     footer.textContent = `${samples.length} mẫu · lấy mẫu mỗi ${data.sample_seconds}s · lưu ${data.history_hours} giờ (mất khi server khởi động lại) · cập nhật ${new Date().toLocaleTimeString('vi-VN')}`;
