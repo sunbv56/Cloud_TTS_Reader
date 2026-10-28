@@ -52,11 +52,11 @@ let STATE = {
     metadataQueue: [], // Temporary store for metadata before binary arrive
     settings: {
         voice: "vi-VN-HoaiMyNeural",
-        speed: 1.0,
+        speed: 1.3,
         pitch: "+0Hz",
         volume: "+0%",
-        numWorkers: 2,
-        useProxy: true, // allow the server's Edge proxy route
+        numWorkers: 3,
+        useProxy: false, // allow the server's Edge proxy route
         gttsFallback: false, // use Google TTS when Edge fails
         fontSize: (function () {
             const saved = localStorage.getItem('reader-font-size');
@@ -3922,7 +3922,7 @@ async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
         const savedWorkers = Number(STATE.settings.numWorkers);
         STATE.settings.numWorkers = Number.isFinite(savedWorkers)
             ? Math.max(1, Math.min(3, savedWorkers))
-            : 2;
+            : 3;
     } else {
         STATE.currentChapterIndex = 0;
         STATE.currentSentenceIndex = 0;
