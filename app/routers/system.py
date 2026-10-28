@@ -131,6 +131,24 @@ async def get_memory_stats():
     return JSONResponse(stats)
 
 
+@router.get("/api/system/metrics")
+async def get_metrics_history(minutes: int = 60):
+    """RAM/CPU samples collected in-process by app.core.metrics."""
+    from app.core import metrics
+    minutes = max(1, min(metrics.HISTORY_HOURS * 60, minutes))
+    return {
+        "sample_seconds": metrics.SAMPLE_SECONDS,
+        "history_hours": metrics.HISTORY_HOURS,
+        "latest": metrics.latest(),
+        "samples": metrics.history(minutes),
+    }
+
+
+@router.get("/monitor")
+async def get_monitor_page():
+    return FileResponse(os.path.join(STATIC_DIR, "monitor.html"))
+
+
 @router.post("/api/system/memory-trim")
 async def trigger_memory_trim():
     """Manually force garbage collection and return pages to OS."""

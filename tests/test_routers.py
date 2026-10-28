@@ -95,3 +95,27 @@ def test_lazy_proxies_representation():
 
 
 
+
+
+def test_metrics_history_endpoint():
+    response = client.get("/api/system/metrics?minutes=99999")
+    assert response.status_code == 200
+    data = response.json()
+    assert isinstance(data["samples"], list)
+    assert data["sample_seconds"] >= 5
+    assert "latest" in data
+
+
+def test_metrics_sample_shape():
+    from app.core import metrics
+    metrics.take_sample()
+    sample = dict(zip(metrics.FIELDS, metrics.take_sample()))
+    assert sample["t"] > 0
+    assert sample["cpu_pct"] is None or sample["cpu_pct"] >= 0
+
+
+def test_monitor_page_serves_html():
+    response = client.get("/monitor")
+    assert response.status_code == 200
+    assert "text/html" in response.headers["content-type"]
+    assert "Server Monitor" in response.text

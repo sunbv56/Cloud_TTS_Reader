@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from app.core.config import STATIC_DIR
 from app.core.memory import _reclaim_memory
+from app.core import metrics
 from app.routers import system, tts, books, ws_tts
 
 
@@ -25,7 +26,10 @@ async def lifespan(application: FastAPI):
         pass
     # Reclaim temporary import & compilation caches
     _reclaim_memory()
+    # RAM/CPU history for the /monitor page
+    metrics.start_sampler()
     yield
+    await metrics.stop_sampler()
     # Shutdown memory reclaim
     _reclaim_memory()
 

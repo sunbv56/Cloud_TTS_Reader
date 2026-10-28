@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Server Monitor</title>
+<style>
+  :root {
+    --bg: #0f1218;
+    --card: #171b23;
+    --border: rgba(255, 255, 255, 0.07);
+    --text: #e6e8ec;
+    --muted: #8a93a3;
+    --primary: #E5A93C;
+    --rss: #5aa9e6;
+    --limit: #e5534b;
+    --grid: rgba(255, 255, 255, 0.06);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 20px 16px 40px; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  h1 { margin: 0; font-size: 18px; letter-spacing: .02em; }
+  h1 span { color: var(--primary); }
+  .ranges { display: flex; gap: 6px; }
+  .ranges button {
+    background: var(--card); color: var(--muted); border: 1px solid var(--border);
+    border-radius: 999px; padding: 6px 12px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .ranges button.active { color: #111; background: var(--primary); border-color: var(--primary); font-weight: 600; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .stat { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; }
+  .stat .label { color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
+  .stat .value { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .stat .sub { color: var(--muted); font-size: 12px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 14px; margin-bottom: 14px; }
+  .card h2 { margin: 0 0 4px; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .legend i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 5px; }
+  .legend i.dash { background: repeating-linear-gradient(90deg, var(--limit) 0 4px, transparent 4px 7px); }
+  svg { display: block; width: 100%; height: 220px; }
+  svg text { fill: var(--muted); font-size: 11px; }
+  .empty { color: var(--muted); text-align: center; padding: 70px 0; }
+  footer { color: var(--muted); font-size: 12px; }
+  .err { color: var(--limit); }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Server <span>Monitor</span></h1>
+    <div class="ranges" id="ranges">
+      <button data-min="15">15 phút</button>
+      <button data-min="60" class="active">1 giờ</button>
+      <button data-min="360">6 giờ</button>
+      <button data-min="1440">24 giờ</button>
+    </div>
+  </header>
+
+  <section class="stats">
+    <div class="stat"><div class="label">RAM container</div><div class="value" id="s-mem">–</div><div class="sub" id="s-mem-sub"></div></div>
+    <div class="stat"><div class="label">RAM tiến trình</div><div class="value" id="s-rss">–</div><div class="sub">Python RSS</div></div>
+    <div class="stat"><div class="label">CPU</div><div class="value" id="s-cpu">–</div><div class="sub" id="s-cpu-sub"></div></div>
+    <div class="stat"><div class="label">Đỉnh trong khoảng</div><div class="value" id="s-peak">–</div><div class="sub" id="s-peak-sub"></div></div>
+  </section>
+
+  <section class="card">
+    <h2>RAM (MB)</h2>
+    <div class="legend">
+      <span><i style="background:var(--primary)"></i>Container</span>
+      <span><i style="background:var(--rss)"></i>Tiến trình</span>
+      <span><i class="dash"></i>Giới hạn</span>
+    </div>
+    <div id="chart-mem"></div>
+  </section>
+
+  <section class="card">
+    <h2>CPU (% của 1 core)</h2>
+    <div class="legend">
+      <span><i style="background:var(--primary)"></i>CPU</span>
+      <span><i class="dash"></i>Giới hạn</span>
+    </div>
+    <div id="chart-cpu"></div>
+  </section>
+
+  <footer id="footer">Đang tải…</footer>
+</main>
+
+<script>
+(function () {
+  const NS = 'http://www.w3.org/2000/svg';
+  let minutes = 60;
+  let timer = null;
+
+  function el(tag, attrs) {
+    const node = document.createElementNS(NS, tag);
+    for (const k in attrs) node.setAttribute(k, attrs[k]);
+    return node;
+  }
+
+  function fmtTime(t, spanMin) {
+    const d = new Date(t * 1000);
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    if (spanMin <= 60) return hh + ':' + mm + ':' + String(d.getSeconds()).padStart(2, '0');
+    return hh + ':' + mm;
+  }
+
+  function niceMax(v) {
+    if (v <= 0) return 1;
+    const p = Math.pow(10, Math.floor(Math.log10(v)));
+    for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= v) return m * p;
+    return 10 * p;
+  }
+
+  // series: [{key, color}], limitKey: field for dashed limit line
+  function drawChart(container, samples, series, limitKey, unit) {
+    container.innerHTML = '';
+    if (!samples.length) {
+      container.innerHTML = '<div class="empty">Đang thu thập số liệu, chờ ~15 giây…</div>';
+      return;
+    }
+    const W = Math.max(container.clientWidth, 280), H = 220;
+    const pad = { l: 44, r: 10, t: 10, b: 24 };
+    const svg = el('svg', { viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: 'none' });
+
+    const t0 = samples[0].t, t1 = samples[samples.length - 1].t;
+    const span = Math.max(t1 - t0, 1);
+    let maxV = 0;
+    for (const s of samples) {
+      for (const sr of series) if (s[sr.key] != null) maxV = Math.max(maxV, s[sr.key]);
+    }
+    const limit = samples[samples.length - 1][limitKey];
+    if (limit != null) maxV = Math.max(maxV, limit);
+    maxV = niceMax(maxV * 1.05);
+
+    const x = t => pad.l + (t - t0) / span * (W - pad.l - pad.r);
+    const y = v => pad.t + (1 - v / maxV) * (H - pad.t - pad.b);
+
+    for (let i = 0; i <= 4; i++) {
+      const v = maxV * i / 4, yy = y(v);
+      svg.appendChild(el('line', { x1: pad.l, x2: W - pad.r, y1: yy, y2: yy, stroke: 'var(--grid)' }));
+      const label = el('text', { x: pad.l - 6, y: yy + 4, 'text-anchor': 'end' });
+      label.textContent = (v >= 10 ? Math.round(v) : v.toFixed(1)) + (i === 4 ? unit : '');
+      svg.appendChild(label);
+    }
+    for (const [t, anchor] of [[t0, 'start'], [t1, 'end']]) {
+      const label = el('text', { x: x(t), y: H - 6, 'text-anchor': anchor });
+      label.textContent = fmtTime(t, minutes);
+      svg.appendChild(label);
+    }
+
+    if (limit != null) {
+      svg.appendChild(el('line', {
+        x1: pad.l, x2: W - pad.r, y1: y(limit), y2: y(limit),
+        stroke: 'var(--limit)', 'stroke-dasharray': '5 4', 'stroke-width': 1.5
+      }));
+    }
+
+    // Break the line where samples are missing or the app was restarted.
+    const gap = Math.max(60, (window.SAMPLE_SECONDS || 15) * 3);
+    for (const sr of series) {
+      let d = '', prevT = null;
+      for (const s of samples) {
+        const v = s[sr.key];
+        if (v == null) { prevT = null; continue; }
+        const cmd = prevT == null || s.t - prevT > gap ? 'M' : 'L';
+        d += `${cmd}${x(s.t).toFixed(1)},${y(v).toFixed(1)}`;
+        prevT = s.t;
+      }
+      if (d) svg.appendChild(el('path', {
+        d, fill: 'none', stroke: sr.color, 'stroke-width': 1.8,
+        'stroke-linejoin': 'round', 'vector-effect': 'non-scaling-stroke'
+      }));
+    }
+    container.appendChild(svg);
+  }
+
+  function setText(id, text) { document.getElementById(id).textContent = text; }
+
+  function render(data) {
+    window.SAMPLE_SECONDS = data.sample_seconds;
+    const samples = data.samples || [];
+    const last = data.latest;
+    if (last) {
+      setText('s-mem', last.mem_mb != null ? last.mem_mb + ' MB' : '–');
+      setText('s-mem-sub', last.mem_limit_mb != null
+        ? `/ ${last.mem_limit_mb} MB (${Math.round(last.mem_mb / last.mem_limit_mb * 100)}%)`
+        : 'không giới hạn');
+      setText('s-rss', last.rss_mb != null ? last.rss_mb + ' MB' : '–');
+      setText('s-cpu', last.cpu_pct != null ? last.cpu_pct.toFixed(1) + '%' : '–');
+      setText('s-cpu-sub', last.cpu_limit_pct != null ? `/ ${last.cpu_limit_pct}%` : 'không giới hạn');
+    }
+    if (samples.length) {
+      const peakMem = Math.max(...samples.map(s => s.mem_mb || 0));
+      const peakCpu = Math.max(...samples.map(s => s.cpu_pct || 0));
+      setText('s-peak', peakMem + ' MB');
+      setText('s-peak-sub', `CPU cao nhất ${peakCpu.toFixed(1)}%`);
+    }
+    drawChart(document.getElementById('chart-mem'), samples,
+      [{ key: 'mem_mb', color: 'var(--primary)' }, { key: 'rss_mb', color: 'var(--rss)' }], 'mem_limit_mb', ' MB');
+    drawChart(document.getElementById('chart-cpu'), samples,
+      [{ key: 'cpu_pct', color: 'var(--primary)' }], 'cpu_limit_pct', '%');
+    const footer = document.getElementById('footer');
+    footer.className = '';
+    footer.textContent = `${samples.length} mẫu · lấy mẫu mỗi ${data.sample_seconds}s · lưu ${data.history_hours} giờ (mất khi server khởi động lại) · cập nhật ${new Date().toLocaleTimeString('vi-VN')}`;
+  }
+
+  async function load() {
+    try {
+      const res = await fetch(`/api/system/metrics?minutes=${minutes}`, { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      render(await res.json());
+    } catch (e) {
+      const footer = document.getElementById('footer');
+      footer.className = 'err';
+      footer.textContent = 'Không tải được số liệu: ' + e.message;
+    }
+  }
+
+  document.getElementById('ranges').addEventListener('click', e => {
+    const btn = e.target.closest('button');
+    if (!btn) return;
+    minutes = Number(btn.dataset.min);
+    document.querySelectorAll('#ranges button').forEach(b => b.classList.toggle('active', b === btn));
+    load();
+  });
+
+  let resizeTimer;
+  window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(load, 200); });
+
+  load();
+  timer = setInterval(load, 15000);
+})();
+</script>
+</body>
+</html>
