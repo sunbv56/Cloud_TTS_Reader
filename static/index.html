@@ -93,6 +93,7 @@
         <symbol id="i-sync" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4.5M4 13a8 8 0 0 0 14.5 4.5M5 3v4h4M19 21v-4h-4"/></symbol>
         <symbol id="i-lang" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.5 2.5 14.5 0 17M12 3.5c-2.5 2.5-2.5 14.5 0 17"/></symbol>
         <symbol id="i-full" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+        <symbol id="i-full-exit" viewBox="0 0 24 24"><path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5"/></symbol>
         <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></symbol>
         <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
         <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3.5" y="14" width="4" height="6" rx="1.5"/><rect x="16.5" y="14" width="4" height="6" rx="1.5"/></symbol>
@@ -132,7 +133,7 @@
     </svg>
 
     <header class="app-header" id="app-header">
-        <button id="mobile-menu-btn" type="button" class="icon-btn" aria-label="Mở thư viện và mục lục" title="Thư viện & mục lục">
+        <button id="mobile-menu-btn" type="button" class="icon-btn" aria-expanded="false" aria-controls="sidebar-container" aria-label="Mở thư viện và mục lục" title="Thư viện & mục lục">
             <svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg>
         </button>
 
@@ -193,6 +194,10 @@
             <div id="account-menu" class="acct-menu" role="menu" aria-label="Account" data-i18n-aria="account" hidden></div>
         </div>
     </header>
+    <div id="network-status" class="network-banner hidden" role="status">
+        <svg class="ic ic--sm" aria-hidden="true"><use href="#i-wifi-off"/></svg>
+        <span data-i18n="offline-banner">Bạn đang ngoại tuyến. Các thay đổi mới chưa thể lưu.</span>
+    </div>
 
     <main id="app-main" class="app-main">
 
@@ -1008,10 +1013,6 @@
 
     <!-- Hidden Native Audio -->
     <audio id="main-audio" class="hidden"></audio>
-    <div id="network-status" class="network-banner hidden" role="status">
-        <svg class="ic ic--sm" aria-hidden="true"><use href="#i-wifi-off"/></svg>
-        <span data-i18n="offline-banner">Bạn đang ngoại tuyến. Các thay đổi mới chưa thể lưu.</span>
-    </div>
     <div id="app-toast-region" class="toast-region" aria-live="polite"></div>
 
     <!-- Import: one "Thêm truyện" dialog (TXT/EPUB/PDF, optional illustrations, drag & drop) -->

@@ -57,12 +57,12 @@ function setSpeed(value) {
     const next = Math.min(max, Math.max(min, Math.round(value * 20) / 20));
     range.value = String(next);
     range.dispatchEvent(new Event('input'));
-    paintSpeed();
+    paintSpeed(next);
     return next;
 }
 
-function paintSpeed() {
-    const speed = currentSpeed();
+function paintSpeed(value) {
+    const speed = Number(value) || currentSpeed();
     const label = formatSpeed(speed);
     const chip = $('speak-speed-chip');
     if (chip) {
@@ -179,7 +179,8 @@ function initSpeedChip() {
         event.stopPropagation();
         setSpeed(currentSpeed() + Number(step.dataset.speedStep));
     });
-    $('speed-range')?.addEventListener('input', paintSpeed);
+    // This listener can run before app.js updates STATE.settings.speed, so paint from the slider value itself.
+    $('speed-range')?.addEventListener('input', (event) => paintSpeed(event.target.value));
 }
 
 // ── Pitch & volume ───────────────────────────────────────────────────────────
