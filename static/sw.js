@@ -1,10 +1,16 @@
-const CACHE_NAME = 'cloud-tts-v14-discovery-light-fix';
+const CACHE_NAME = 'cloud-tts-v15-console-shell';
 const ASSETS = [
     '/',
     '/static/index.html',
     '/static/app.js',
-    '/static/js/mini-player-widget.js',
+    '/static/css/console.css',
     '/static/css/mini-player.css',
+    '/static/js/main.js',
+    '/static/js/modules/i18n.js',
+    '/static/js/modules/ui-interactions.js',
+    '/static/js/modules/account-menu.js',
+    '/static/js/modules/account-sessions.js',
+    '/static/js/mini-player-widget.js',
     '/static/js/image-manager.js',
     '/static/icon.svg',
     '/static/manifest.json'

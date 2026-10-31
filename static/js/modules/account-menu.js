@@ -66,7 +66,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
             trigger.removeAttribute('aria-haspopup');
             trigger.removeAttribute('aria-expanded');
             trigger.setAttribute('aria-label', t('sign-in'));
-            info?.replaceChildren(el('span', 'w-2 h-2 rounded-full bg-amber-500/70'), i18nText('span', 'text-slate-400', 'guest-mode'));
+            info?.replaceChildren(el('span', 'menu-who__guest'), i18nText('span', '', 'guest-mode'));
             return;
         }
         trigger.classList.remove('btn-primary');

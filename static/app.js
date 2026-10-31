@@ -1,7 +1,7 @@
 // Firebase Modules
 import { initializeFirestore, getFirestore, waitForPendingWrites, terminate, doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { compressImageForStorage, IMAGE_MAX_BYTES } from "./js/image-manager.js";
-import { toggleSidebar } from "./js/modules/ui-interactions.js";
+import { toggleSidebar, normalizeThemeId, applyTheme as applyThemeTokens, ensureReaderFont, readerFontStack, DEFAULT_READER_FONT } from "./js/modules/ui-interactions.js";
 import { AccountSessions } from "./js/modules/account-sessions.js";
 import { createAccountMenu } from "./js/modules/account-menu.js";
 
@@ -69,9 +69,9 @@ let STATE = {
     },
     theme: (function () {
         try {
-            return localStorage.getItem('reader-theme') || 'default';
+            return normalizeThemeId(localStorage.getItem('reader-theme'));
         } catch (_) {
-            return 'default';
+            return normalizeThemeId(null);
         }
     })(),
     isTransitioning: false,
@@ -646,10 +646,20 @@ const AudioHapticFX = {
     }
 };
 
+function setAudioWaveState(isPlaying) {
+    if (window.MotionLayer?.setAudioWaveState) {
+        window.MotionLayer.setAudioWaveState(isPlaying);
+        return;
+    }
+    document.querySelectorAll('.audio-wave-bars').forEach(el => el.classList.toggle('is-playing', !!isPlaying));
+}
+
 const APP_STATUS = {
     set(text) {
         const indicator = document.getElementById('status-indicator');
-        if (indicator) indicator.innerText = text;
+        if (!indicator) return;
+        indicator.innerText = text;
+        indicator.style.color = '';
     },
     toast(message, kind = 'error') {
         const region = document.getElementById('app-toast-region');
@@ -750,7 +760,6 @@ function toggleDiscoveryMode(isActive, options = {}) {
     const playerShell = document.getElementById('media-player-shell');
     const mediaPlayer = document.getElementById('media-player');
     const playerInfoLayer = document.getElementById('player-info-layer');
-    const main = document.querySelector('main');
 
     if (isActive) {
         // Keep the current audio/session context while browsing. Opening a
@@ -760,12 +769,14 @@ function toggleDiscoveryMode(isActive, options = {}) {
             resetAudioEngine();
         }
 
-        if (hasReaderContext && playerShell && mediaPlayer && main) {
+        // The console row stays in place; with a book it becomes Home's return
+        // dock, without one it is hidden like the reader it belongs to.
+        playerShell?.classList.toggle('hidden', !hasReaderContext);
+        if (hasReaderContext && playerShell && mediaPlayer) {
             if (!discoveryPlayerHasDock) {
                 discoveryPlayerWasMinimized = mediaPlayer.classList.contains('minimized-player');
                 discoveryPlayerHasDock = true;
             }
-            main.appendChild(playerShell);
             playerShell.classList.add('player-discovery-dock');
             // Discovery uses the same player as a compact dock.
             toggleMinimize(true);
@@ -789,8 +800,8 @@ function toggleDiscoveryMode(isActive, options = {}) {
         if (discoveryMode) discoveryMode.classList.add('hidden');
         if (sidebarContainer) sidebarContainer.classList.remove('hidden');
 
-        if (playerShell && readerContainer) {
-            readerContainer.appendChild(playerShell);
+        if (playerShell) {
+            playerShell.classList.remove('hidden');
             playerShell.classList.remove('player-discovery-dock');
             playerInfoLayer?.removeAttribute('tabindex');
             playerInfoLayer?.removeAttribute('aria-label');
@@ -1255,6 +1266,9 @@ function setButtonLoading(button, isLoading, loadingText = '') {
         window.MotionLayer.setButtonLoading(button, isLoading, loadingText);
     } else {
         button.disabled = !!isLoading;
+        button.classList.toggle('is-loading', !!isLoading);
+        if (isLoading) button.setAttribute('aria-busy', 'true');
+        else button.removeAttribute('aria-busy');
     }
 }
 
@@ -5309,7 +5323,7 @@ audio.onplay = async () => {
     STATE.pauseTimeoutHandled = false;
 
     // [Audio Waves] Activate wave motion
-    window.MotionLayer?.setAudioWaveState(true);
+    setAudioWaveState(true);
 
     // [TASK 3] Reset stall recovery counters on successful play
     STATE._stallRecoveryCount = 0;
@@ -5346,7 +5360,7 @@ audio.onpause = () => {
     STATE.pauseTimeoutHandled = false;
 
     // [Audio Waves] Deactivate wave motion
-    window.MotionLayer?.setAudioWaveState(false);
+    setAudioWaveState(false);
 
     playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
     document.getElementById('status-indicator').innerText = "Paused";
@@ -5648,13 +5662,14 @@ document.querySelectorAll('.preset-color').forEach(btn => {
 });
 
 function applyFontFamily(fontFamily, syncElements = true) {
-    if (!fontFamily) fontFamily = 'Be Vietnam Pro';
+    if (!fontFamily) fontFamily = DEFAULT_READER_FONT;
     STATE.settings.fontFamily = fontFamily;
     try {
         localStorage.setItem('reader-font-family', fontFamily);
     } catch (_) {}
 
-    document.documentElement.style.setProperty('--reader-font-family', `'${fontFamily}', sans-serif`);
+    ensureReaderFont(fontFamily);
+    document.documentElement.style.setProperty('--reader-font-family', readerFontStack(fontFamily));
     
     if (syncElements) {
         const sel1 = document.getElementById('font-family-select');
@@ -5666,7 +5681,7 @@ function applyFontFamily(fontFamily, syncElements = true) {
         const val1 = document.getElementById('font-family-val');
         if (val1) val1.innerText = fontFamily;
         const sample = document.getElementById('quick-font-sample-preview');
-        if (sample) sample.style.fontFamily = `'${fontFamily}', sans-serif`;
+        if (sample) sample.style.fontFamily = readerFontStack(fontFamily);
     }
 }
 
@@ -5699,7 +5714,7 @@ function applyTypographySettings() {
     root.style.setProperty('--reader-font-size', `${s.fontSize}px`);
 
     // Apply Font Family
-    const currentFont = localStorage.getItem('reader-font-family') || 'Be Vietnam Pro';
+    const currentFont = localStorage.getItem('reader-font-family') || DEFAULT_READER_FONT;
     applyFontFamily(currentFont, true);
 
     // Apply Text Color
@@ -7053,133 +7068,20 @@ clearCacheBtn?.addEventListener('click', async () => {
     }
 });
 
-// --- Theme Management (Luxury Sovereign Edition) ---
-const THEMES_METADATA = {
-    'default': {
-        nameEn: 'Imperial Sovereign Gold',
-        nameVi: 'Vàng Hoàng Gia Đế Vương',
-        moodEn: 'European Royalty · 24K Gold & Obsidian',
-        moodVi: 'Vương giả Châu Âu · Vàng 24K & Gỗ mun',
-        metaColor: '#0A0908',
-        isLight: false
-    },
-    'warm-night': {
-        nameEn: 'Cyberpunk Neon Horizon',
-        nameVi: 'Cyberpunk Neon Viễn Tưởng',
-        moodEn: 'Neo-Tokyo Midnight · Electric Cyan Laser HUD',
-        moodVi: 'Công nghệ viễn tưởng · Laser Cyan HUD',
-        metaColor: '#05070D',
-        isLight: false
-    },
-    'forest': {
-        nameEn: 'Emerald Zen Sanctuary',
-        nameVi: 'Ngọc Lục Bảo Thiền Định',
-        moodEn: 'Bamboo Mist & Imperial Jade Tea House',
-        moodVi: 'Trà đạo thiền định · Rừng thông ngập sương',
-        metaColor: '#050E0A',
-        isLight: false
-    },
-    'rose': {
-        nameEn: 'Bordeaux Haute Couture',
-        nameVi: 'Vang Đỏ Bordeaux Quý Tộc',
-        moodEn: 'Parisian Velvet Noir & Rose Gold Champagne',
-        moodVi: 'Thời trang Paris · Vàng hồng & Nhung đỏ',
-        metaColor: '#0E050A',
-        isLight: false
-    },
-    'ocean': {
-        nameEn: 'Monaco Deep Sapphire',
-        nameVi: 'Lam Ngọc Biển Sâu Monaco',
-        moodEn: 'Abyssal Oceanic Trench & Bioluminescent Waves',
-        moodVi: 'Đại dương sâu thẳm · Lam ngọc phát quang',
-        metaColor: '#030712',
-        isLight: false
-    },
-    'mocha': {
-        nameEn: 'Nordic Bauhaus Studio',
-        nameVi: 'Tối Giản Bắc Âu Bauhaus',
-        moodEn: 'Scandinavian Slate & Bauhaus Cobalt Minimalism',
-        moodVi: 'Kiến trúc Scandinavian · Sắc nét & Tối giản',
-        metaColor: '#0B0E14',
-        isLight: false
-    },
-    'sepia': {
-        nameEn: 'Florentine Renaissance Parchment',
-        nameVi: 'Bản Thảo Phục Hưng Florence',
-        moodEn: '16th Century Vellum & Antique Terracotta Bronze',
-        moodVi: 'Giấy da vellum cổ · Mực đất nung ấm áp',
-        metaColor: '#F5EEDC',
-        isLight: true
-    },
-    'paper': {
-        nameEn: 'Swiss Editorial Newsprint',
-        nameVi: 'Ấn Phẩm Nghệ Thuật Thụy Sĩ',
-        moodEn: 'Alabaster White Paper & International Klein Blue',
-        moodVi: 'Giấy trắng Alabaster · Mực in tạp chí nghệ thuật',
-        metaColor: '#F8F9FA',
-        isLight: true
-    },
-    'e-ink': {
-        nameEn: 'Kindle Paperwhite Monolith',
-        nameVi: 'Mực Điện Tử Kindle Monolith',
-        moodEn: 'Anti-Glare Paperwhite & Pure Matte Monochrome',
-        moodVi: 'E-Ink chống chói · Tối ưu mắt đọc xuyên đêm',
-        metaColor: '#0B0C0E',
-        isLight: false
-    }
-};
-
+// --- Theme Management: four console themes live in ui-interactions.js ---
 function applyTheme(themeId) {
-    const actualId = THEMES_METADATA[themeId] ? themeId : 'default';
-    const theme = THEMES_METADATA[actualId];
-    const curThemeAttr = document.documentElement.getAttribute('data-theme') || 'default';
-
-    const updateDomTheme = () => {
-        document.documentElement.setAttribute('data-theme', actualId);
-        STATE.theme = actualId;
-        try {
-            localStorage.setItem('reader-theme', actualId);
-        } catch (_) {}
-
-        // Update meta theme-color
-        const metaThemeColor = document.querySelector('meta[name="theme-color"]');
-        if (metaThemeColor) {
-            metaThemeColor.content = theme.metaColor;
-        }
-
-        // Update UI theme cards and swatches
-        document.querySelectorAll('.theme-card, .theme-swatch').forEach(el => {
-            el.classList.toggle('active', el.dataset.theme === actualId);
-        });
-
-        // Update displayed name & mood
-        let lang = 'en';
-        try {
-            lang = localStorage.getItem('ui-lang') || 'en';
-        } catch (_) {}
-        const nameEl = document.getElementById('current-theme-name');
-        if (nameEl) nameEl.textContent = lang === 'vi' ? theme.nameVi : theme.nameEn;
-        const moodEl = document.getElementById('current-theme-mood');
-        if (moodEl) moodEl.textContent = lang === 'vi' ? theme.moodVi : theme.moodEn;
-
-        // Dispatch global custom event
-        window.dispatchEvent(new CustomEvent('themechange', { detail: { themeId: actualId, theme } }));
-    };
-
+    const actualId = normalizeThemeId(themeId);
+    const curThemeAttr = document.documentElement.getAttribute('data-theme');
+    const update = () => applyThemeTokens(actualId);
     if (curThemeAttr === actualId) {
-        updateDomTheme();
+        update();
         return;
     }
-
-    if (typeof safeViewTransition === 'function') {
-        safeViewTransition(updateDomTheme);
-    } else {
-        updateDomTheme();
-    }
+    safeViewTransition(update);
 }
 
 window.addEventListener('themechange', (e) => {
-    STATE.theme = e.detail?.themeId || 'default';
+    STATE.theme = e.detail?.themeId || normalizeThemeId(null);
     if (typeof saveProgress === 'function') {
         saveProgress(true);
     }

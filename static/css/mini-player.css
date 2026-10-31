@@ -203,35 +203,7 @@
         var(--theme-primary, #D4AF37) 55%, transparent);
 }
 
-/* One-click PiP button, sits above the full-size player */
-#mpw-player-pip-btn {
-    position: absolute;
-    top: -0.75rem;
-    width: 2rem;
-    height: 2rem;
-    border-radius: 50%;
-    background: color-mix(in srgb, var(--theme-surface, #1e2634) 90%, transparent);
-    border: 1px solid color-mix(in srgb, var(--theme-primary, #D4AF37) 20%, rgba(255, 255, 255, 0.1));
-    color: #94a3b8;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    z-index: 10;
-    font-size: 0.6rem;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
-    transition: color 0.2s, background 0.2s, transform 0.2s;
-}
-
-#mpw-player-pip-btn {
-    right: 5.5rem;
-}
-
-#mpw-player-pip-btn:hover {
-    color: var(--theme-primary, #D4AF37);
-    background: color-mix(in srgb, var(--theme-primary, #D4AF37) 15%, rgba(30, 38, 52, 0.9));
-    transform: scale(1.08);
-}
+/* The one-click PiP button (#mpw-player-pip-btn) is styled with the console in console.css. */
 
 /* ---------- Mobile: full-width bar pinned above the bottom edge ---------- */
 @media (max-width: 640px) {

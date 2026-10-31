@@ -1,11 +1,11 @@
 /**
  * Internationalization (i18n) Module
  */
-import { THEMES_DATA } from './ui-interactions.js';
+import { syncThemeControls } from './ui-interactions.js';
 
 export const translations = {
     en: {
-        "cloud-tts": "CLOUD TTS",
+        "cloud-tts": "Cloud TTS",
         "pro-reader-edition": "Pro Reader Edition",
         "guest-mode": "Guest Mode",
         "sign-in": "Sign In",
@@ -47,27 +47,29 @@ export const translations = {
         "offline-storage": "Offline Storage",
         "clear-cache": "Clear Cache",
         "locally-cached": "Locally Cached",
-        "theme-default-name": "Imperial Sovereign Gold",
-        "theme-default-mood": "European Royalty · 24K Gold & Obsidian",
-        "theme-warm-night-name": "Cyberpunk Neon Horizon",
-        "theme-warm-night-mood": "Neo-Tokyo Midnight · Electric Cyan Laser HUD",
-        "theme-forest-name": "Emerald Zen Sanctuary",
-        "theme-forest-mood": "Bamboo Mist & Imperial Jade Tea House",
-        "theme-rose-name": "Bordeaux Haute Couture",
-        "theme-rose-mood": "Parisian Velvet Noir & Rose Gold Champagne",
-        "theme-ocean-name": "Monaco Deep Sapphire",
-        "theme-ocean-mood": "Abyssal Oceanic Trench & Bioluminescent Waves",
-        "theme-mocha-name": "Nordic Bauhaus Studio",
-        "theme-mocha-mood": "Scandinavian Slate & Bauhaus Cobalt Minimalism",
-        "theme-sepia-name": "Florentine Renaissance Parchment",
-        "theme-sepia-mood": "16th Century Vellum & Antique Terracotta Bronze",
-        "theme-paper-name": "Swiss Editorial Newsprint",
-        "theme-paper-mood": "Alabaster White Paper & International Klein Blue",
-        "theme-e-ink-name": "Kindle Paperwhite Monolith",
-        "theme-e-ink-mood": "Anti-Glare Paperwhite & Pure Matte Monochrome",
-        "tab-library": "Library",
-        "tab-toc": "Contents",
+        "tab-library": "Books",
+        "tab-toc": "Chapters",
         "tab-voice": "Voice",
+        "theme-slate-name": "Slate",
+        "theme-slate-mood": "Default dark · cool graphite",
+        "theme-slate-deep-name": "Deep Slate",
+        "theme-slate-deep-mood": "Darker · for a dark room",
+        "theme-mist-name": "Mist",
+        "theme-mist-mood": "Light · cool grey paper",
+        "theme-sepia-name": "Sepia",
+        "theme-sepia-mood": "Light · warm paper",
+        "keys-play": "play",
+        "keys-sentence": "sentence",
+        "keys-chapter": "chapter",
+        "search-books": "Search books",
+        "app-menu-label": "Settings and tools",
+        "menu-settings": "Display & voice settings",
+        "menu-stats": "Reading stats",
+        "menu-sync": "Sync library",
+        "menu-language": "Switch language",
+        "menu-fullscreen": "Full screen",
+        "offline-banner": "You are offline. New changes cannot be saved yet.",
+        "player-label": "Player",
         "quick-settings-title": "Quick Settings Master Hub",
         "quick-settings-subtitle": "Quick Settings Master Hub",
         "quick-tab-appearance": "Appearance",
@@ -77,7 +79,7 @@ export const translations = {
         "quick-font-size": "Font Size",
         "quick-font-color": "Reading Text Color",
         "quick-color-default": "Theme Default",
-        "quick-theme-header": "Royal Reading Themes",
+        "quick-theme-header": "Colour theme",
         "quick-voice-header": "AI Reading Voice",
         "quick-speed-header": "Playback Speed",
         "quick-pitch-header": "Vocal Pitch",
@@ -98,7 +100,7 @@ export const translations = {
         "quick-done-btn": "Done"
     },
     vi: {
-        "cloud-tts": "CLOUD TTS",
+        "cloud-tts": "Cloud TTS",
         "pro-reader-edition": "Phiên bản Pro",
         "guest-mode": "Chế độ Khách",
         "sign-in": "Đăng Nhập",
@@ -140,27 +142,29 @@ export const translations = {
         "offline-storage": "Lưu trữ ngoại tuyến",
         "clear-cache": "Xóa bộ nhớ đệm",
         "locally-cached": "Đã lưu cục bộ",
-        "theme-default-name": "Vàng Hoàng Gia Đế Vương",
-        "theme-default-mood": "Vương giả Châu Âu · Vàng 24K & Gỗ mun",
-        "theme-warm-night-name": "Cyberpunk Neon Viễn Tưởng",
-        "theme-warm-night-mood": "Công nghệ viễn tưởng · Laser Cyan HUD",
-        "theme-forest-name": "Ngọc Lục Bảo Thiền Định",
-        "theme-forest-mood": "Trà đạo thiền định · Rừng thông ngập sương",
-        "theme-rose-name": "Vang Đỏ Bordeaux Quý Tộc",
-        "theme-rose-mood": "Thời trang Paris · Vàng hồng & Nhung đỏ",
-        "theme-ocean-name": "Lam Ngọc Biển Sâu Monaco",
-        "theme-ocean-mood": "Đại dương sâu thẳm · Lam ngọc phát quang",
-        "theme-mocha-name": "Tối Giản Bắc Âu Bauhaus",
-        "theme-mocha-mood": "Kiến trúc Scandinavian · Sắc nét & Tối giản",
-        "theme-sepia-name": "Bản Thảo Phục Hưng Florence",
-        "theme-sepia-mood": "Giấy da vellum cổ · Mực đất nung ấm áp",
-        "theme-paper-name": "Ấn Phẩm Nghệ Thuật Thụy Sĩ",
-        "theme-paper-mood": "Giấy trắng Alabaster · Mực in tạp chí nghệ thuật",
-        "theme-e-ink-name": "Mực Điện Tử Kindle Monolith",
-        "theme-e-ink-mood": "E-Ink chống chói · Tối ưu mắt đọc xuyên đêm",
-        "tab-library": "Thư viện",
-        "tab-toc": "Mục lục",
-        "tab-voice": "Giọng đọc",
+        "tab-library": "Truyện",
+        "tab-toc": "Chương",
+        "tab-voice": "Giọng",
+        "theme-slate-name": "Slate",
+        "theme-slate-mood": "Tối mặc định · xám than lạnh",
+        "theme-slate-deep-name": "Slate sâu",
+        "theme-slate-deep-mood": "Tối hơn · cho phòng tối",
+        "theme-mist-name": "Sương",
+        "theme-mist-mood": "Sáng · giấy xám lạnh",
+        "theme-sepia-name": "Sepia",
+        "theme-sepia-mood": "Sáng · giấy ấm",
+        "keys-play": "phát",
+        "keys-sentence": "câu",
+        "keys-chapter": "chương",
+        "search-books": "Tìm truyện",
+        "app-menu-label": "Cài đặt và tiện ích",
+        "menu-settings": "Cài đặt hiển thị & giọng",
+        "menu-stats": "Thống kê đọc",
+        "menu-sync": "Đồng bộ thư viện",
+        "menu-language": "Đổi ngôn ngữ",
+        "menu-fullscreen": "Toàn màn hình",
+        "offline-banner": "Bạn đang ngoại tuyến. Các thay đổi mới chưa thể lưu.",
+        "player-label": "Trình phát",
         "quick-settings-title": "Trung Tâm Cài Đặt Nhanh",
         "quick-settings-subtitle": "Quick Settings Master Hub",
         "quick-tab-appearance": "Giao diện",
@@ -170,7 +174,7 @@ export const translations = {
         "quick-font-size": "Kích thước chữ",
         "quick-font-color": "Màu sắc chữ đọc",
         "quick-color-default": "Mặc định Theme",
-        "quick-theme-header": "Chủ đề Hoàng gia (Themes)",
+        "quick-theme-header": "Màu giao diện",
         "quick-voice-header": "Giọng đọc AI",
         "quick-speed-header": "Tốc độ đọc (Playback Speed)",
         "quick-pitch-header": "Cao độ giọng (Vocal Pitch)",
@@ -200,22 +204,23 @@ export function applyLanguage(lang) {
         }
     });
 
-    const langBtn = document.getElementById('lang-btn');
-    if (langBtn) langBtn.textContent = lang === 'en' ? 'VI' : 'EN';
+    document.querySelectorAll('[data-i18n-aria]').forEach(el => {
+        const value = translations[lang]?.[el.getAttribute('data-i18n-aria')];
+        if (value) {
+            el.setAttribute('aria-label', value);
+            if (el.hasAttribute('title')) el.title = value;
+        }
+    });
 
-    let activeThemeId = 'default';
+    // The language row shows the language a click switches to.
+    const langValue = document.getElementById('lang-btn-value');
+    if (langValue) langValue.textContent = lang === 'en' ? 'Tiếng Việt' : 'English';
+
+    let activeThemeId = 'slate';
     try {
-        activeThemeId = localStorage.getItem('reader-theme') || 'default';
+        activeThemeId = localStorage.getItem('reader-theme') || 'slate';
     } catch (_) {}
-    if (THEMES_DATA[activeThemeId]) {
-        const t = THEMES_DATA[activeThemeId];
-        const nameEl = document.getElementById('current-theme-name');
-        if (nameEl) nameEl.textContent = lang === 'vi' ? t.nameVi : t.nameEn;
-        const moodEl = document.getElementById('current-theme-mood');
-        if (moodEl) moodEl.textContent = lang === 'vi' ? t.moodVi : t.moodEn;
-        const quickThemeNameEl = document.getElementById('quick-theme-current-name');
-        if (quickThemeNameEl) quickThemeNameEl.textContent = lang === 'vi' ? t.nameVi : t.nameEn;
-    }
+    syncThemeControls(activeThemeId);
 }
 
 if (typeof window !== 'undefined') {
@@ -225,19 +230,24 @@ if (typeof window !== 'undefined') {
 
 export function initI18n() {
     const langBtn = document.getElementById('lang-btn');
-    let currentLang = 'en';
-    try {
-        currentLang = localStorage.getItem('ui-lang') || 'en';
-    } catch (_) {}
-
-    langBtn?.addEventListener('click', () => {
-        currentLang = currentLang === 'en' ? 'vi' : 'en';
+    const storedLang = () => {
         try {
-            localStorage.setItem('ui-lang', currentLang);
+            return localStorage.getItem('ui-lang') || 'en';
+        } catch (_) {
+            return 'en';
+        }
+    };
+
+    // Read the stored language on every click so Quick Settings and this row never disagree.
+    langBtn?.addEventListener('click', () => {
+        const nextLang = storedLang() === 'en' ? 'vi' : 'en';
+        try {
+            localStorage.setItem('ui-lang', nextLang);
         } catch (_) {}
-        applyLanguage(currentLang);
+        applyLanguage(nextLang);
+        window.QuickSettingsController?.updateLangButtons?.(nextLang);
     });
 
-    applyLanguage(currentLang);
+    applyLanguage(storedLang());
 }
 

@@ -2,85 +2,93 @@
  * UI Interactions & Theme Controller
  */
 
+export const DEFAULT_THEME = 'slate';
+export const DEFAULT_READER_FONT = 'Source Serif 4';
+
 export const THEMES_DATA = {
-    'default': {
-        nameEn: 'Imperial Sovereign Gold',
-        nameVi: 'Vàng Hoàng Gia Đế Vương',
-        moodEn: 'European Royalty · 24K Gold & Obsidian',
-        moodVi: 'Vương giả Châu Âu · Vàng 24K & Gỗ mun',
-        metaColor: '#0A0908',
+    'slate': {
+        nameEn: 'Slate',
+        nameVi: 'Slate',
+        moodEn: 'Default dark · cool graphite',
+        moodVi: 'Tối mặc định · xám than lạnh',
+        metaColor: '#2A3139',
         isLight: false
     },
-    'warm-night': {
-        nameEn: 'Cyberpunk Neon Horizon',
-        nameVi: 'Cyberpunk Neon Viễn Tưởng',
-        moodEn: 'Neo-Tokyo Midnight · Electric Cyan Laser HUD',
-        moodVi: 'Công nghệ viễn tưởng · Laser Cyan HUD',
-        metaColor: '#05070D',
+    'slate-deep': {
+        nameEn: 'Deep Slate',
+        nameVi: 'Slate sâu',
+        moodEn: 'Darker · for a dark room',
+        moodVi: 'Tối hơn · cho phòng tối',
+        metaColor: '#151B21',
         isLight: false
     },
-    'forest': {
-        nameEn: 'Emerald Zen Sanctuary',
-        nameVi: 'Ngọc Lục Bảo Thiền Định',
-        moodEn: 'Bamboo Mist & Imperial Jade Tea House',
-        moodVi: 'Trà đạo thiền định · Rừng thông ngập sương',
-        metaColor: '#050E0A',
-        isLight: false
-    },
-    'rose': {
-        nameEn: 'Bordeaux Haute Couture',
-        nameVi: 'Vang Đỏ Bordeaux Quý Tộc',
-        moodEn: 'Parisian Velvet Noir & Rose Gold Champagne',
-        moodVi: 'Thời trang Paris · Vàng hồng & Nhung đỏ',
-        metaColor: '#0E050A',
-        isLight: false
-    },
-    'ocean': {
-        nameEn: 'Monaco Deep Sapphire',
-        nameVi: 'Lam Ngọc Biển Sâu Monaco',
-        moodEn: 'Abyssal Oceanic Trench & Bioluminescent Waves',
-        moodVi: 'Đại dương sâu thẳm · Lam ngọc phát quang',
-        metaColor: '#030712',
-        isLight: false
-    },
-    'mocha': {
-        nameEn: 'Nordic Bauhaus Studio',
-        nameVi: 'Tối Giản Bắc Âu Bauhaus',
-        moodEn: 'Scandinavian Slate & Bauhaus Cobalt Minimalism',
-        moodVi: 'Kiến trúc Scandinavian · Sắc nét & Tối giản',
-        metaColor: '#0B0E14',
-        isLight: false
+    'mist': {
+        nameEn: 'Mist',
+        nameVi: 'Sương',
+        moodEn: 'Light · cool grey paper',
+        moodVi: 'Sáng · giấy xám lạnh',
+        metaColor: '#EBEFF2',
+        isLight: true
     },
     'sepia': {
-        nameEn: 'Florentine Renaissance Parchment',
-        nameVi: 'Bản Thảo Phục Hưng Florence',
-        moodEn: '16th Century Vellum & Antique Terracotta Bronze',
-        moodVi: 'Giấy da vellum cổ · Mực đất nung ấm áp',
-        metaColor: '#F5EEDC',
+        nameEn: 'Sepia',
+        nameVi: 'Sepia',
+        moodEn: 'Light · warm paper',
+        moodVi: 'Sáng · giấy ấm',
+        metaColor: '#F2E6D3',
         isLight: true
-    },
-    'paper': {
-        nameEn: 'Swiss Editorial Newsprint',
-        nameVi: 'Ấn Phẩm Nghệ Thuật Thụy Sĩ',
-        moodEn: 'Alabaster White Paper & International Klein Blue',
-        moodVi: 'Giấy trắng Alabaster · Mực in tạp chí nghệ thuật',
-        metaColor: '#F8F9FA',
-        isLight: true
-    },
-    'e-ink': {
-        nameEn: 'Kindle Paperwhite Monolith',
-        nameVi: 'Mực Điện Tử Kindle Monolith',
-        moodEn: 'Anti-Glare Paperwhite & Pure Matte Monochrome',
-        moodVi: 'E-Ink chống chói · Tối ưu mắt đọc xuyên đêm',
-        metaColor: '#0B0C0E',
-        isLight: false
     }
 };
 
+// Theme ids saved by the old 9-theme picker, mapped to the nearest console theme.
+export const LEGACY_THEME_MAP = {
+    'default': 'slate',
+    'forest': 'slate',
+    'rose': 'slate',
+    'mocha': 'slate',
+    'warm-night': 'slate-deep',
+    'ocean': 'slate-deep',
+    'e-ink': 'slate-deep',
+    'paper': 'mist'
+};
+
+export function normalizeThemeId(themeId) {
+    if (themeId && THEMES_DATA[themeId]) return themeId;
+    return LEGACY_THEME_MAP[themeId] || DEFAULT_THEME;
+}
+
+function currentUiLang() {
+    try {
+        return localStorage.getItem('ui-lang') || 'en';
+    } catch (_) {
+        return 'en';
+    }
+}
+
+export function syncThemeControls(themeId) {
+    const actualId = normalizeThemeId(themeId);
+    const theme = THEMES_DATA[actualId];
+    const lang = currentUiLang();
+    document.querySelectorAll('.theme-card, .theme-swatch').forEach(el => {
+        const isActive = el.dataset.theme === actualId;
+        el.classList.toggle('active', isActive);
+        el.setAttribute('aria-pressed', String(isActive));
+    });
+    document.querySelectorAll('.quick-theme-btn').forEach(btn => {
+        btn.setAttribute('aria-pressed', String(btn.dataset.theme === actualId));
+    });
+    const nameEl = document.getElementById('current-theme-name');
+    if (nameEl) nameEl.textContent = lang === 'vi' ? theme.nameVi : theme.nameEn;
+    const moodEl = document.getElementById('current-theme-mood');
+    if (moodEl) moodEl.textContent = lang === 'vi' ? theme.moodVi : theme.moodEn;
+    const quickNameEl = document.getElementById('quick-theme-current-name');
+    if (quickNameEl) quickNameEl.textContent = lang === 'vi' ? theme.nameVi : theme.nameEn;
+}
+
 export function applyTheme(themeId) {
     const root = document.documentElement;
-    const theme = THEMES_DATA[themeId] || THEMES_DATA['default'];
-    const actualId = THEMES_DATA[themeId] ? themeId : 'default';
+    const actualId = normalizeThemeId(themeId);
+    const theme = THEMES_DATA[actualId];
 
     root.setAttribute('data-theme', actualId);
 
@@ -89,18 +97,7 @@ export function applyTheme(themeId) {
         metaThemeColor.content = theme.metaColor;
     }
 
-    document.querySelectorAll('.theme-card, .theme-swatch').forEach(el => {
-        el.classList.toggle('active', el.dataset.theme === actualId);
-    });
-
-    let lang = 'en';
-    try {
-        lang = localStorage.getItem('ui-lang') || 'en';
-    } catch (_) {}
-    const nameEl = document.getElementById('current-theme-name');
-    if (nameEl) nameEl.textContent = lang === 'vi' ? theme.nameVi : theme.nameEn;
-    const moodEl = document.getElementById('current-theme-mood');
-    if (moodEl) moodEl.textContent = lang === 'vi' ? theme.moodVi : theme.moodEn;
+    syncThemeControls(actualId);
 
     try {
         localStorage.setItem('reader-theme', actualId);
@@ -113,6 +110,35 @@ export function applyTheme(themeId) {
     }
 
     window.dispatchEvent(new CustomEvent('themechange', { detail: { themeId: actualId, theme } }));
+}
+
+// Reading fonts other than the preloaded ones are fetched only when chosen.
+const PRELOADED_FONTS = new Set(['Be Vietnam Pro', 'Source Serif 4']);
+const READER_FONT_QUERIES = {
+    'Playfair Display': 'Playfair+Display:wght@400;600',
+    'Plus Jakarta Sans': 'Plus+Jakarta+Sans:wght@400;600',
+    'Literata': 'Literata:opsz,wght@7..72,400;7..72,600',
+    'Lora': 'Lora:wght@400;600',
+    'Merriweather': 'Merriweather:wght@400;700',
+    'Montserrat': 'Montserrat:wght@400;600',
+    'Inter': 'Inter:wght@400;600'
+};
+const loadedReaderFonts = new Set();
+
+export function ensureReaderFont(fontFamily) {
+    if (!fontFamily || PRELOADED_FONTS.has(fontFamily) || loadedReaderFonts.has(fontFamily)) return;
+    const query = READER_FONT_QUERIES[fontFamily];
+    if (!query) return;
+    loadedReaderFonts.add(fontFamily);
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = `https://fonts.googleapis.com/css2?family=${query}&display=swap`;
+    document.head.appendChild(link);
+}
+
+export function readerFontStack(fontFamily) {
+    const serif = /Serif|Literata|Lora|Merriweather|Playfair/.test(fontFamily || '');
+    return `'${fontFamily}', ${serif ? 'Georgia, serif' : 'system-ui, sans-serif'}`;
 }
 
 export function toggleSidebar(show) {
@@ -129,6 +155,76 @@ export function toggleSidebar(show) {
         overlay.classList.remove('opacity-100');
         setTimeout(() => overlay.classList.add('hidden'), 300);
     }
+}
+
+// Header "settings & tools" popover: same keyboard model as the account menu.
+export function initAppMenu() {
+    const trigger = document.getElementById('app-menu-btn');
+    const menu = document.getElementById('app-menu');
+    if (!trigger || !menu) return;
+    let isOpen = false;
+
+    const items = () => [...menu.querySelectorAll('[role="menuitem"]:not(:disabled)')];
+
+    function onOutside(event) {
+        if (!menu.contains(event.target) && !trigger.contains(event.target)) setOpen(false);
+    }
+
+    function setOpen(next, { restoreFocus = false } = {}) {
+        if (isOpen === next) return;
+        isOpen = next;
+        menu.hidden = !next;
+        trigger.setAttribute('aria-expanded', String(next));
+        if (next) {
+            document.addEventListener('pointerdown', onOutside, true);
+            items()[0]?.focus();
+        } else {
+            document.removeEventListener('pointerdown', onOutside, true);
+            if (restoreFocus) trigger.focus();
+        }
+    }
+
+    trigger.addEventListener('click', () => setOpen(!isOpen));
+    // Capture phase: close before an item's own handler, some of which stop propagation.
+    menu.addEventListener('click', (event) => {
+        if (event.target.closest('[role="menuitem"]')) setOpen(false);
+    }, true);
+    menu.addEventListener('keydown', (event) => {
+        const list = items();
+        const index = list.indexOf(document.activeElement);
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            setOpen(false, { restoreFocus: true });
+        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            const step = event.key === 'ArrowDown' ? 1 : -1;
+            list[(index + step + list.length) % list.length]?.focus();
+        } else if (event.key === 'Home' || event.key === 'End') {
+            event.preventDefault();
+            list[event.key === 'Home' ? 0 : list.length - 1]?.focus();
+        } else if (event.key === 'Tab') {
+            setOpen(false);
+        }
+    });
+
+    window.closeAppMenu = () => setOpen(false);
+}
+
+// Header search: Discovery search when Home is showing, otherwise the library search.
+export function initHeaderSearch() {
+    const button = document.getElementById('header-search-btn');
+    button?.addEventListener('click', () => {
+        const discovery = document.getElementById('discovery-mode');
+        if (discovery && !discovery.classList.contains('hidden')) {
+            const input = document.getElementById('discovery-search');
+            input?.scrollIntoView({ block: 'center' });
+            input?.focus();
+            return;
+        }
+        switchSidebarTab('library');
+        if (window.innerWidth < 1024) toggleSidebar(true);
+        setTimeout(() => document.getElementById('library-search')?.focus(), 60);
+    });
 }
 
 export function toggleVoiceSettings(expand = true) {
@@ -217,6 +313,9 @@ export function showDictStatus(msg) {
 // Bind to window for global access across legacy modules & DOM event listeners
 if (typeof window !== 'undefined') {
     window.THEMES_DATA = THEMES_DATA;
+    window.normalizeThemeId = normalizeThemeId;
+    window.ensureReaderFont = ensureReaderFont;
+    window.readerFontStack = readerFontStack;
     window.applyTheme = applyTheme;
     window.toggleSidebar = toggleSidebar;
     window.toggleVoiceSettings = toggleVoiceSettings;
@@ -387,19 +486,12 @@ export const QuickSettingsController = {
 
     syncAllValues() {
         // 1. Theme
-        const curTheme = localStorage.getItem('reader-theme') || 'default';
-        document.querySelectorAll('.quick-theme-btn').forEach(btn => {
-            const isAct = btn.dataset.theme === curTheme;
-            btn.classList.toggle('border-primary/50', isAct);
-            btn.classList.toggle('bg-primary/15', isAct);
-        });
-        const themeNameEl = document.getElementById('quick-theme-current-name');
-        if (themeNameEl && THEMES_DATA[curTheme]) {
-            themeNameEl.innerText = THEMES_DATA[curTheme].nameVi || curTheme;
-        }
+        let curTheme = DEFAULT_THEME;
+        try { curTheme = normalizeThemeId(localStorage.getItem('reader-theme')); } catch (_) {}
+        syncThemeControls(curTheme);
 
         // 2. Font Family
-        const curFont = localStorage.getItem('reader-font-family') || 'Be Vietnam Pro';
+        const curFont = localStorage.getItem('reader-font-family') || DEFAULT_READER_FONT;
         const qFontSelect = document.getElementById('quick-font-family-select');
         if (qFontSelect) qFontSelect.value = curFont;
         const qFontBadge = document.getElementById('quick-font-family-badge');
@@ -472,14 +564,15 @@ export const QuickSettingsController = {
     },
 
     setFontFamily(font) {
-        if (!font) font = 'Be Vietnam Pro';
+        if (!font) font = DEFAULT_READER_FONT;
         try { localStorage.setItem('reader-font-family', font); } catch (_) {}
-        document.documentElement.style.setProperty('--reader-font-family', `'${font}', sans-serif`);
+        ensureReaderFont(font);
+        document.documentElement.style.setProperty('--reader-font-family', readerFontStack(font));
         
         const qFontBadge = document.getElementById('quick-font-family-badge');
         if (qFontBadge) qFontBadge.innerText = font;
         const qPreview = document.getElementById('quick-font-sample-preview');
-        if (qPreview) qPreview.style.fontFamily = `'${font}', sans-serif`;
+        if (qPreview) qPreview.style.fontFamily = readerFontStack(font);
         const sFontSelect = document.getElementById('font-family-select');
         if (sFontSelect) sFontSelect.value = font;
         const sFontVal = document.getElementById('font-family-val');
@@ -526,15 +619,6 @@ export const QuickSettingsController = {
 
     setTheme(themeId) {
         applyTheme(themeId);
-        document.querySelectorAll('.quick-theme-btn').forEach(btn => {
-            const isAct = btn.dataset.theme === themeId;
-            btn.classList.toggle('border-primary/50', isAct);
-            btn.classList.toggle('bg-primary/15', isAct);
-        });
-        const themeNameEl = document.getElementById('quick-theme-current-name');
-        if (themeNameEl && THEMES_DATA[themeId]) {
-            themeNameEl.innerText = THEMES_DATA[themeId].nameVi || themeId;
-        }
     },
 
     setVoice(voice) {
@@ -701,12 +785,15 @@ export function initUIInteractions() {
     const themePickerPanel = document.getElementById('theme-picker-panel');
     const themeChevron = document.getElementById('theme-chevron');
 
-    themeToggleBtn?.addEventListener('click', () => {
+    const setThemePickerOpen = (open) => {
         if (!themePickerPanel) return;
-        const isOpen = themePickerPanel.classList.contains('open') || themePickerPanel.classList.contains('active');
-        themePickerPanel.classList.toggle('open', !isOpen);
-        themePickerPanel.classList.toggle('active', !isOpen);
-        if (themeChevron) themeChevron.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+        themePickerPanel.hidden = !open;
+        themeToggleBtn?.setAttribute('aria-expanded', String(open));
+        if (themeChevron) themeChevron.style.transform = open ? 'rotate(180deg)' : 'rotate(0deg)';
+    };
+    setThemePickerOpen(false);
+    themeToggleBtn?.addEventListener('click', () => {
+        setThemePickerOpen(!!themePickerPanel?.hidden);
     });
 
     document.querySelectorAll('.theme-card, .theme-swatch').forEach(card => {
@@ -716,16 +803,14 @@ export function initUIInteractions() {
         });
     });
 
+    let savedTheme = null;
     try {
-        const savedTheme = localStorage.getItem('reader-theme');
-        if (savedTheme && THEMES_DATA[savedTheme]) {
-            applyTheme(savedTheme);
-        } else {
-            applyTheme('default');
-        }
-    } catch (_) {
-        applyTheme('default');
-    }
+        savedTheme = localStorage.getItem('reader-theme');
+    } catch (_) {}
+    applyTheme(normalizeThemeId(savedTheme));
+
+    initAppMenu();
+    initHeaderSearch();
 
     QuickSettingsController.init();
     window.QuickSettingsController = QuickSettingsController;

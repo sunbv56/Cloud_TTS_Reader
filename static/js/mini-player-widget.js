@@ -152,16 +152,25 @@
         if (document.pictureInPictureEnabled || 'documentPictureInPicture' in window) {
             const pipBtn = document.createElement('button');
             pipBtn.id = 'mpw-player-pip-btn';
+            pipBtn.type = 'button';
             pipBtn.title = 'Picture-in-Picture (floating window)';
+            pipBtn.setAttribute('aria-label', 'Cửa sổ nổi (PiP)');
             pipBtn.innerHTML = `
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <svg class="w-4 h-4" aria-hidden="true" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <rect x="2.5" y="4.5" width="19" height="15" rx="3" stroke="currentColor" stroke-width="2" stroke-opacity="0.8" />
                     <rect x="11.5" y="10.5" width="8" height="7" rx="1.8" fill="currentColor" fill-opacity="0.3" stroke="currentColor" stroke-width="1.8" />
                 </svg>`;
             pipBtn.addEventListener('click', () => {
                 openBestPiP().catch(err => console.error('[MPW] PiP failed:', err));
             });
-            mediaPlayer.appendChild(pipBtn);
+            // Sits in the console's tool group, just before the collapse button.
+            const utils = document.getElementById('player-utils-layer');
+            const minimizeBtn = document.getElementById('minimize-btn');
+            if (utils && minimizeBtn && minimizeBtn.parentElement === utils) {
+                utils.insertBefore(pipBtn, minimizeBtn);
+            } else {
+                mediaPlayer.appendChild(pipBtn);
+            }
 
         }
     }
