@@ -2082,9 +2082,10 @@
     }
 
     /* ============================================================ feedback */
+    /* Bottom-anchored above the player bar so toasts never cover the reader top bar (☰, ⋮). */
     .toast-region {
         position: fixed;
-        top: calc(var(--header-h) + var(--space-2));
+        bottom: calc(var(--console-h) + env(safe-area-inset-bottom) + var(--space-2));
         right: var(--space-2);
         z-index: var(--z-toast);
         width: min(24rem, calc(100vw - 16px));
@@ -2093,7 +2094,9 @@
         gap: var(--space-2);
         pointer-events: none;
     }
-    body:has(#network-status:not(.hidden)) .toast-region { top: calc(var(--header-h) + 64px); }
+    @media (min-width: 1024px) {
+        .toast-region { bottom: calc(var(--console-h-wide) + env(safe-area-inset-bottom) + var(--space-2)); }
+    }
     .toast-hud-glass {
         position: relative;
         overflow: hidden;
@@ -2105,9 +2108,10 @@
         color: var(--color-text);
         box-shadow: 0 12px 30px -12px var(--color-shadow);
         pointer-events: auto;
-        animation: cc-open var(--dur) var(--ease-out);
+        animation: cc-toast-in var(--dur) var(--ease-out);
         --color-muted: var(--color-muted-raised);
     }
+    @keyframes cc-toast-in { from { opacity: 0; transform: translateY(6px); } }
     .toast-hud-glass i { color: var(--toast-tone, var(--color-accent)) !important; }
     .toast-hud-glass .text-white,
     .toast-hud-glass .text-slate-200 { color: var(--color-text) !important; }
