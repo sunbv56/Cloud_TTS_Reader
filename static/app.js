@@ -705,9 +705,19 @@ const APP_STATUS = {
         indicator.innerText = text;
         indicator.style.color = '';
     },
-    toast(message, kind = 'error') {
+    toast(message, kind = 'error', { key = null } = {}) {
         const region = document.getElementById('app-toast-region');
         if (!region) return;
+
+        // A keyed toast (e.g. reading speed) replaces its live predecessor instead of stacking.
+        if (key) {
+            const previous = [...region.children].find(node => node.dataset.toastKey === key && !node.dataset.leaving);
+            if (previous?.refreshToast) {
+                AudioHapticFX.haptic(14);
+                previous.refreshToast(message);
+                return;
+            }
+        }
 
         AudioHapticFX.haptic(14);
 
@@ -763,6 +773,21 @@ const APP_STATUS = {
         });
         toast.addEventListener('click', dismiss);
         toast.dismissToast = dismiss;
+        if (key) {
+            toast.dataset.toastKey = key;
+            toast.refreshToast = (nextMessage) => {
+                const body = toast.querySelector('.text-slate-200');
+                if (body) body.innerHTML = nextMessage;
+                const fill = toast.querySelector('.toast-progress-fill');
+                if (fill) {
+                    fill.style.animation = 'none';
+                    void fill.offsetWidth;
+                    fill.style.animation = '';
+                }
+                if (removeTimer) clearTimeout(removeTimer);
+                removeTimer = setTimeout(dismiss, 4800);
+            };
+        }
 
         // Keep the stack short so it never buries the reader on a phone: drop the oldest first.
         const maxToasts = window.matchMedia('(max-width: 639.98px)').matches ? 2 : 3;
@@ -2542,10 +2567,22 @@ async function resetAudioEngine() {
 function trimReaderContentCache(activeChapterIndex) {
     if (!STATE.currentBook?.chapters) return;
 
+    // With short chapters the prefetch window spans several chapters; their
+    // text is still read by runPrefetch, retries and processAppendQueue.
+    let pipelineEnd = activeChapterIndex + 1;
+    const extend = (chapterIndex) => {
+        if (Number.isInteger(chapterIndex) && chapterIndex > pipelineEnd) pipelineEnd = chapterIndex;
+    };
+    extend(STATE.lastAppendedChapter);
+    STATE.appendQueue.forEach(chunk => extend(chunk.chapterIndex));
+    STATE.chunkTimings.forEach(timing => extend(timing.chapterIndex));
+    STATE.fetchingSet.forEach(key => extend(Number.parseInt(key, 10)));
+
     if (STATE.isSegmented) {
         const segmentSize = STATE.segmentSize || 100;
         const activeSegment = Math.floor(activeChapterIndex / segmentSize);
         const keepSegments = new Set([activeSegment, activeSegment + 1]);
+        for (let segment = activeSegment + 2; segment <= Math.floor(pipelineEnd / segmentSize); segment++) keepSegments.add(segment);
         for (const segmentIndex of Array.from(STATE.loadedSegments)) {
             if (keepSegments.has(segmentIndex)) continue;
             const start = segmentIndex * segmentSize;
@@ -2560,7 +2597,7 @@ function trimReaderContentCache(activeChapterIndex) {
     }
 
     const firstKept = Math.max(0, activeChapterIndex);
-    const lastKept = Math.min(STATE.currentBook.chapters.length - 1, activeChapterIndex + 1);
+    const lastKept = Math.min(STATE.currentBook.chapters.length - 1, pipelineEnd);
     STATE.currentBook.chapters.forEach((chapter, index) => {
         if (index >= firstKept && index <= lastKept) return;
         if (chapter?.sentences) chapter.sentences = null;
@@ -2823,7 +2860,18 @@ function statusMatches(text, ...keys) {
 }
 
 function idleStatus() {
-    return STATE.isPlaying && !audio.paused ? tr('status-streaming', 'Streaming') : tr('status-ready', 'Ready');
+    if (STATE.isPlaying && !audio.paused) return tr('status-streaming', 'Streaming');
+    // A prefetch reply that lands after a pause must not turn "Paused" into "Ready".
+    const current = document.getElementById('status-indicator')?.innerText;
+    if (audio.paused && statusMatches(current, 'status-paused')) return current;
+    return tr('status-ready', 'Ready');
+}
+
+// play() rejects with AbortError when a pause() lands first; that is expected.
+function resumeAudio() {
+    return audio.play().catch(err => {
+        if (err?.name !== 'AbortError') console.warn('[Audio] play() rejected:', err);
+    });
 }
 
 // The server keeps one TTS socket per account and refuses extra ones with 1013.
@@ -3291,8 +3339,10 @@ function processAppendQueue() {
     let expectedIdx = STATE.lastAppendedIndex + 1;
 
     // Nếu index vượt quá số câu của chương hiện tại -> nhảy sang câu số 0 của chương tiếp theo
-    if (STATE.currentBook && STATE.currentBook.chapters[expectedChap]) {
-        if (expectedIdx >= STATE.currentBook.chapters[expectedChap].sentences.length) {
+    const expectedChapter = STATE.currentBook?.chapters[expectedChap];
+    if (expectedChapter) {
+        const sentenceCount = expectedChapter.count || expectedChapter.sentences?.length || 0;
+        if (sentenceCount > 0 && expectedIdx >= sentenceCount) {
             expectedChap++;
             expectedIdx = 0;
         }
@@ -6070,8 +6120,18 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
                 continue;
             }
 
+            if (!STATE.currentBook) return;
+            let sentences = STATE.currentBook.chapters[currentChapIdx]?.sentences;
+            if (!sentences) {
+                await fetchChapterSentences(currentChapIdx).catch(() => false);
+                sentences = STATE.currentBook?.chapters[currentChapIdx]?.sentences;
+                if (!sentences) break;
+            }
+            if (sentences[currentSentIdx] === undefined) break;
+            if (!STATE.ws || STATE.ws.readyState !== WebSocket.OPEN) return;
+
             STATE.fetchingSet.add(key);
-            const text = applySkipDictionary(STATE.currentBook.chapters[currentChapIdx].sentences[currentSentIdx]);
+            const text = applySkipDictionary(sentences[currentSentIdx]);
             const { voice, speed, pitch, volume } = STATE.settings;
             const rate = `${Math.round((speed - 1) * 100) >= 0 ? '+' : ''}${Math.round((speed - 1) * 100)}%`;
 
@@ -6308,7 +6368,7 @@ async function togglePlayback() {
         if (STATE.chunkTimings.length === 0) {
             await playFromSentence(STATE.currentSentenceIndex);
         } else {
-            audio.play();
+            resumeAudio();
         }
     } else {
         audio.pause();
@@ -7158,7 +7218,7 @@ async function playNextChunk() {
         && STATE.chunkTimings[curTimingIdx + 1].chapterIndex === curChap) {
         const nextChunk = STATE.chunkTimings[curTimingIdx + 1];
         audio.currentTime = nextChunk.startTime + 0.01;
-        if (audio.paused) audio.play();
+        if (audio.paused) resumeAudio();
     } else {
         const sentenceCount = chapters[curChap]?.sentences?.length ?? 0;
         if (sentenceCount > 0 && curSent < sentenceCount - 1) {
@@ -7179,7 +7239,7 @@ async function playPrevChunk() {
     if (curTimingIdx > 0 && STATE.chunkTimings[curTimingIdx - 1].chapterIndex === curChap) {
         const prevChunk = STATE.chunkTimings[curTimingIdx - 1];
         audio.currentTime = prevChunk.startTime + 0.01;
-        if (audio.paused) audio.play();
+        if (audio.paused) resumeAudio();
     } else {
         if (curSent > 0) {
             await playFromSentence(curSent - 1);

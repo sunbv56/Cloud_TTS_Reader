@@ -85,7 +85,7 @@ function cycleSpeed() {
     if (index === -1) index = 0;
     const next = setSpeed(SPEED_PRESETS[index]);
     haptic(10);
-    window.APP_STATUS?.toast(t('speed-toast', 'Tốc độ đọc: {v}', { v: formatSpeed(next) }), 'info');
+    window.APP_STATUS?.toast(t('speed-toast', 'Tốc độ đọc: {v}', { v: formatSpeed(next) }), 'info', { key: 'speed' });
 }
 
 let stepperOpen = false;
@@ -96,6 +96,12 @@ function onStepperOutside(event) {
 }
 
 function onStepperKey(event) {
+    if ((event.key === 'ArrowUp' || event.key === 'ArrowDown') && $('speed-stepper')?.contains(document.activeElement)) {
+        event.preventDefault();
+        event.stopPropagation();
+        setSpeed(currentSpeed() + (event.key === 'ArrowUp' ? 0.05 : -0.05));
+        return;
+    }
     if (event.key !== 'Escape') return;
     event.preventDefault();
     event.stopPropagation();
@@ -176,6 +182,9 @@ function initSpeedChip() {
             event.preventDefault();
             event.stopPropagation();
             setSpeed(currentSpeed() + (event.key === 'ArrowUp' ? 0.05 : -0.05));
+            setStepper(true);
+            const step = event.key === 'ArrowUp' ? '0.05' : '-0.05';
+            $('speed-stepper')?.querySelector(`[data-speed-step="${step}"]`)?.focus({ preventScroll: true });
         }
     });
 
