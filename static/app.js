@@ -388,7 +388,7 @@ const STATS_MANAGER = {
             const mins = Math.floor(STATE.stats.totalTime / 60);
             timeEl.innerText = mins > 60 ? `${(mins / 60).toFixed(1)}h` : `${mins}m`;
         }
-        if (streakDot && STATE.stats.streak > 0) streakDot.classList.remove('hidden');
+        if (streakDot) streakDot.classList.toggle('hidden', !(STATE.user && STATE.stats.streak > 0));
     },
 
     scheduleSync() {
@@ -578,6 +578,13 @@ function renderSignedOutLibrary() {
 }
 
 /** Fetch helper for backend endpoints that access the authenticated user's data. */
+// authFetch's own messages already tell the user what to do; callers show them as-is.
+function userFacingError(message) {
+    const error = new Error(message);
+    error.userFacing = true;
+    return error;
+}
+
 async function authFetch(url, options = {}) {
     const user = STATE.user || auth?.currentUser;
     if (!user) throw new Error('Authentication required');
@@ -597,17 +604,17 @@ async function authFetch(url, options = {}) {
             headers.set('Authorization', `Bearer ${token}`);
             response = await fetchWithTimeout(url, { ...requestOptions, headers }, { timeoutMs, retries: 0 });
         }
-        if (response.status === 401) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.');
-        if (response.status === 403) throw new Error('Bạn không có quyền thực hiện thao tác này.');
+        if (response.status === 401) throw userFacingError(tr('auth-expired', 'Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.'));
+        if (response.status === 403) throw userFacingError(tr('auth-forbidden', 'Bạn không có quyền thực hiện thao tác này.'));
         return response;
     } catch (error) {
         if (error instanceof NetworkTimeoutError) {
-            const timeoutError = new Error('Máy chủ phản hồi quá lâu. Hãy thử lại.');
+            const timeoutError = userFacingError(tr('net-timeout', 'Máy chủ phản hồi quá lâu. Hãy thử lại.'));
             timeoutError.code = 'NETWORK_TIMEOUT';
             timeoutError.cause = error;
             throw timeoutError;
         }
-        if (error instanceof TypeError) throw new Error('Không thể kết nối máy chủ. Hãy kiểm tra mạng và thử lại.');
+        if (error instanceof TypeError) throw userFacingError(tr('net-unreachable', 'Không thể kết nối máy chủ. Hãy kiểm tra mạng và thử lại.'));
         throw error;
     }
 }
@@ -698,10 +705,10 @@ const APP_STATUS = {
             info: '<i class="fas fa-info-circle text-primary text-base"></i>'
         };
         const titles = {
-            success: 'Thành công',
-            error: 'Thông báo lỗi',
-            warning: 'Cảnh báo',
-            info: 'Hệ thống'
+            success: tr('toast-success', 'Thành công'),
+            error: tr('toast-error', 'Thông báo lỗi'),
+            warning: tr('toast-warning', 'Cảnh báo'),
+            info: tr('toast-info', 'Hệ thống')
         };
 
         const kindClass = `toast-kind-${kind || 'info'}`;
@@ -717,7 +724,7 @@ const APP_STATUS = {
                 <div class="font-bold text-[11px] uppercase tracking-wider opacity-80 mb-0.5 text-white">${titleText}</div>
                 <div class="text-slate-200 text-xs leading-relaxed break-words">${message}</div>
             </div>
-            <button type="button" class="text-slate-400 hover:text-white p-1 -mr-1 -mt-1 text-xs opacity-70 hover:opacity-100 transition-opacity" aria-label="Đóng">
+            <button type="button" class="text-slate-400 hover:text-white p-1 -mr-1 -mt-1 text-xs opacity-70 hover:opacity-100 transition-opacity" aria-label="${tr('toast-close', 'Đóng')}">
                 <i class="fas fa-times"></i>
             </button>
             <div class="toast-progress-track">
@@ -750,7 +757,7 @@ const APP_STATUS = {
     },
     error(error, fallback = 'Đã xảy ra lỗi. Vui lòng thử lại.') {
         const message = (typeof error === 'string' ? error : error?.message) || fallback;
-        this.set('Lỗi');
+        this.set(tr('status-error', 'Lỗi'));
         this.toast(message, 'error');
     }
 };
@@ -762,12 +769,12 @@ function updateNetworkStatus() {
     const banner = document.getElementById('network-status');
     if (!banner) return;
     banner.classList.toggle('hidden', navigator.onLine);
-    APP_STATUS.set(navigator.onLine ? 'Ready' : 'Ngoại tuyến');
+    APP_STATUS.set(navigator.onLine ? 'Ready' : tr('status-offline', 'Ngoại tuyến'));
 }
 window.addEventListener('offline', updateNetworkStatus);
 window.addEventListener('online', () => {
     updateNetworkStatus();
-    APP_STATUS.toast('Đã kết nối lại mạng.', 'success');
+    APP_STATUS.toast(tr('network-back', 'Đã kết nối lại mạng.'), 'success');
     retryPendingProgressSaveNow();
 });
 updateNetworkStatus();
@@ -2130,7 +2137,7 @@ function applySkipDictionary(text) {
 }
 
 // --- Loading Overlay Helpers (UI/UX Pro Max + GSAP) ---
-function showLoading(text = "Processing Masterpiece", { subtext = "Vui lòng đợi trong giây lát...", progress = null, status = "Tiến trình" } = {}) {
+function showLoading(text = tr('loading-default', 'Đang xử lý'), { subtext = tr('loading-wait', 'Vui lòng đợi trong giây lát...'), progress = null, status = tr('loading-progress', 'Tiến trình') } = {}) {
     const overlay = document.getElementById('global-loading');
     const textEl = document.getElementById('loading-text');
     const subtextEl = document.getElementById('loading-subtext');
@@ -3905,7 +3912,7 @@ async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
 async function deleteBook(bookId, filename, title, bypassConfirm = false) {
     closeAllKebabMenus(); // close menu first
 
-    if (!bypassConfirm && !confirm(`Xóa truyện "${title}"?\n\nHành động này sẽ xóa vĩnh viễn dữ liệu trên Cloud. Không thể hoàn tác!`)) return;
+    if (!bypassConfirm && !confirm(tr('delete-book-confirm', 'Xóa truyện "{title}"?\n\nHành động này sẽ xóa vĩnh viễn dữ liệu trên Cloud. Không thể hoàn tác!', { title }))) return;
     if (!STATE.user) return;
 
     document.getElementById('status-indicator').innerText = 'Đang xóa...';
@@ -4354,7 +4361,9 @@ async function loadBookFromStorage(bookId, bookData) {
     } catch (err) {
         if (err?.name === 'AbortError' || loadController.signal.aborted) return;
         console.error("Load from Storage Error:", err);
-        APP_STATUS.error("Không thể tải sách từ bộ nhớ. Hãy kiểm tra file có còn tồn tại.");
+        APP_STATUS.error(err?.userFacing
+            ? err.message
+            : tr('book-load-failed', 'Không thể tải sách từ bộ nhớ. Hãy kiểm tra file có còn tồn tại.'));
     } finally {
         if (STATE.loadController === loadController) {
             STATE.loadController = null;
@@ -4400,10 +4409,10 @@ const handleFileUpload = async (e) => {
 
     const illustrations = includeImages ? selectedFiles.filter(candidate => candidate !== file) : [];
 
-    showLoading("Đang tải lên " + file.name, {
-        subtext: "Đang kiểm tra & phân tách chương...",
+    showLoading(tr('upload-book-title', 'Đang tải lên {name}', { name: file.name }), {
+        subtext: tr('upload-book-checking', 'Đang kiểm tra & phân tách chương...'),
         progress: 10,
-        status: "Tải sách"
+        status: tr('upload-book-step', 'Tải sách')
     });
     const uploaderUid = STATE.user.uid;
     const formData = new FormData();
@@ -4418,13 +4427,20 @@ const handleFileUpload = async (e) => {
         if (file.name.toLowerCase().endsWith('.txt')) {
             const preview = await file.slice(0, 4 * 1024 * 1024).text();
             separatorCount = (preview.match(/^\s*={3,}\s*$/gm) || []).length;
-            if (separatorCount === 0 && !confirm('Không tìm thấy dòng === để phân cách chương. File sẽ được nhập thành một chương. Tiếp tục?')) {
+            if (separatorCount === 0 && !confirm(tr('import-no-separator-confirm', 'Không tìm thấy dòng === để phân cách chương. File sẽ được nhập thành một chương. Tiếp tục?'))) {
                 hideLoading();
                 return;
             }
         }
         const estimatedChapters = separatorCount + 1;
-        updateLoadingProgress(25, "Đang xử lý truyện...", file.name.toLowerCase().endsWith('.txt') ? `Tìm thấy ~${estimatedChapters} chương. Đang gửi lên cloud...` : 'Đang phân tích cấu trúc...', 'Gửi dữ liệu');
+        updateLoadingProgress(
+            25,
+            tr('upload-processing', 'Đang xử lý truyện...'),
+            file.name.toLowerCase().endsWith('.txt')
+                ? tr('upload-found-chapters', 'Tìm thấy ~{count} chương. Đang gửi lên cloud...', { count: estimatedChapters })
+                : tr('upload-analyzing', 'Đang phân tích cấu trúc...'),
+            tr('upload-sending', 'Gửi dữ liệu')
+        );
         const response = await authFetch('/api/upload-story', {
             method: 'POST',
             body: formData
@@ -4459,7 +4475,7 @@ const handleFileUpload = async (e) => {
         }
         const data = await response.json();
 
-        updateLoadingProgress(illustrations.length ? 50 : 85, "Đang khởi tạo mục lục...", "Tải thông tin metadata từ server...", "Khởi tạo");
+        updateLoadingProgress(illustrations.length ? 50 : 85, tr('upload-building-toc', 'Đang khởi tạo mục lục...'), tr('upload-fetching-meta', 'Tải thông tin metadata từ server...'), tr('upload-init', 'Khởi tạo'));
         // Fetch fresh metadata
         if (STATE.user?.uid !== uploaderUid) return;
         const metaRes = await authFetch(`/api/stories/${uploaderUid}/${data.storyId}/metadata`);
@@ -4485,7 +4501,7 @@ const handleFileUpload = async (e) => {
             }
         }
 
-        updateLoadingProgress(95, "Đang mở sách...", "Sắp xong rồi!", "Hoàn tất");
+        updateLoadingProgress(95, tr('upload-opening', 'Đang mở sách...'), tr('upload-almost', 'Sắp xong rồi!'), tr('upload-done', 'Hoàn tất'));
         if (STATE.user?.uid !== uploaderUid) return;
         // --- FIX BUG 6: Await loadBook and call refreshLibrary directly ---
         const loaded = await loadBook(bookInfo, data.storyId, data.filename || file.name);
@@ -7481,13 +7497,21 @@ document.addEventListener('keydown', async (e) => {
 // --- Service Worker Registration for PWA ---
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/static/sw.js')
+        // The server sends Service-Worker-Allowed: / so the worker can control the app page.
+        navigator.serviceWorker.register('/static/sw.js', { scope: '/' })
             .then(registration => {
+                registration.update();
                 console.log('ServiceWorker registration successful with scope: ', registration.scope);
             })
             .catch(err => {
                 console.log('ServiceWorker registration failed: ', err);
             });
+        // Older builds registered with the default /static/ scope, which never controlled '/'.
+        navigator.serviceWorker.getRegistrations?.().then(registrations => {
+            registrations
+                .filter(registration => new URL(registration.scope).pathname === '/static/')
+                .forEach(registration => registration.unregister());
+        }).catch(() => {});
     });
 }
 

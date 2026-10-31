@@ -207,6 +207,9 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         }
     }
 
+    // account-menu.js owns the trigger's label, so it re-renders when the UI language flips.
+    window.addEventListener('uilanguagechange', render);
+
     trigger.addEventListener('click', () => {
         if (!sessions.user) {
             addAccount();

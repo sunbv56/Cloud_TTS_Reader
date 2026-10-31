@@ -44,8 +44,9 @@ self.addEventListener('fetch', (event) => {
     if (request.method !== 'GET') return;
 
     const url = new URL(request.url);
+    // Scope is '/', so only the shell is handled; /api and other routes go straight to the network.
     const isAppShell = url.origin === self.location.origin
-        && (request.mode === 'navigate' || url.pathname === '/' || url.pathname.startsWith('/static/'));
+        && (url.pathname === '/' || url.pathname.startsWith('/static/'));
     if (!isAppShell) return;
 
     event.respondWith(
@@ -61,7 +62,7 @@ self.addEventListener('fetch', (event) => {
                 const cached = await caches.match(request);
                 if (cached) return cached;
                 if (request.mode === 'navigate') {
-                    return caches.match('/static/index.html');
+                    return (await caches.match('/')) || caches.match('/static/index.html');
                 }
                 throw new Error(`Offline asset unavailable: ${url.pathname}`);
             })

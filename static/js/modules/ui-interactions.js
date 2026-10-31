@@ -411,7 +411,11 @@ export const SettingsSheet = {
         if (!this.sheet) return;
         window.closeAppMenu?.();
         if (!this.isOpen()) {
-            this.returnFocus = document.activeElement;
+            const active = document.activeElement;
+            // Menu items are hidden once the sheet opens; hand focus back to the menu button.
+            this.returnFocus = (!active || active === document.body || active.closest('#app-menu'))
+                ? document.getElementById('app-menu-btn')
+                : active;
             this.sync();
             this.sheet.hidden = false;
             if (this.scrim) this.scrim.hidden = false;

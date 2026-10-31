@@ -343,7 +343,7 @@ function statusTone(text) {
     if (!s || /^(Ready|Streaming|Paused|System Ready|Changes saved!|Đã xóa!)$/i.test(s)
         || /^Session Expired|^Sleep Timer/i.test(s)) return 'quiet';
     if (/^(Lỗi|Error|Config Error)|RAM\/ROM|Chưa lưu/i.test(s)) return 'error';
-    if (/Disconnected|failed|không phản hồi|Bấm Play|Ngoại tuyến/i.test(s)) return 'warn';
+    if (/Disconnected|failed|không phản hồi|Bấm Play|Ngoại tuyến|^Offline/i.test(s)) return 'warn';
     return 'busy';
 }
 
