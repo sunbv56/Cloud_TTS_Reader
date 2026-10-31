@@ -979,6 +979,14 @@ function trCount(key, fallback, n) {
     return tr(useOne ? oneKey : key, fallback, { n });
 }
 
+// File-derived titles such as "Dạ_Hành_Thư_Sinh" have no spaces; a <wbr>
+// after each "_" lets them wrap there instead of mid-word (text is unchanged).
+function setBreakableTitle(el, text) {
+    const parts = String(text ?? '').split('_');
+    el.replaceChildren(parts[0]);
+    for (let i = 1; i < parts.length; i++) el.append('_', document.createElement('wbr'), parts[i]);
+}
+
 function removeVietnameseTones(str) {
     str = str.normalize('NFD').replace(/[̀-ͯ]/g, "");
     str = str.replace(/[đĐ]/g, m => m === 'đ' ? 'd' : 'D');
@@ -1112,6 +1120,9 @@ const coverQueue = [];
 const coverPending = new Map();
 let coverActive = 0;
 let coverObserver = null;
+// Covers resolved before a library refresh; painted straight away while the
+// fresh lookup runs so on-screen covers don't flash back to initials.
+let coverPrevious = null;
 
 function titleHue(title) {
     let hash = 0;
@@ -1146,6 +1157,8 @@ function attachCover(element, bookId, hasImages) {
         paintCover(element, STATE.coverResolved.get(bookId));
         return;
     }
+    const previous = coverPrevious?.get(bookId);
+    if (previous?.url && coverPrevious.liveURLs.has(previous.url)) paintCover(element, previous, { instant: true });
     if (!('IntersectionObserver' in window)) {
         void requestCover(bookId);
         return;
@@ -1206,7 +1219,7 @@ async function resolveCover(bookId) {
     return { url, imageId: cover.id, crop: cover.coverCrop || null };
 }
 
-function paintCover(element, info) {
+function paintCover(element, info, { instant = false } = {}) {
     if (!element) return;
     if (!info) {
         element.querySelector('img.cover__img')?.remove();
@@ -1233,6 +1246,8 @@ function paintCover(element, info) {
     };
     if (img.getAttribute('src') !== info.url) img.src = info.url;
     else if (img.complete && img.naturalWidth) onLoad();
+    // Already decoded once (same object URL): show it now, crop follows on load.
+    if (instant) element.dataset.coverStatus = 'loaded';
 }
 
 // coverCrop is stored normalised (0..1). Show the crop's centre at the box's
@@ -1361,7 +1376,7 @@ function buildLibraryRow(entry, listName) {
     text.className = 'lib-row__text';
     const title = document.createElement('span');
     title.className = 'lib-row__title';
-    title.textContent = entry.title;
+    setBreakableTitle(title, entry.title);
     const meta = document.createElement('span');
     meta.className = 'lib-row__meta';
     meta.textContent = formatEntryMeta(entry);
@@ -1393,7 +1408,7 @@ function buildShelfCard(entry) {
     bar.append(fill);
     const title = document.createElement('span');
     title.className = 'shelf-card__title';
-    title.textContent = entry.title;
+    setBreakableTitle(title, entry.title);
     const meta = document.createElement('span');
     meta.className = 'shelf-card__meta';
     meta.textContent = formatEntryMeta(entry);
@@ -1635,11 +1650,17 @@ function applyLibraryFilters() {
         libraryEmptyState(sidebar.query, librarySearch?.value.trim(), sidebar.visible), 'sidebar');
     setLibraryEmpty('discovery-search-empty', 'discovery-search-empty-text', 'discovery-clear-search',
         libraryEmptyState(shelf.query, shelfSearch?.value.trim(), shelf.visible), 'shelf');
+    // A re-sync keeps the old list on screen; say so while it runs.
+    const syncing = libraryView.status === 'loading' && discoveryLibrary.length > 0;
+    const syncHint = document.getElementById('library-sync-hint');
+    if (syncHint) syncHint.hidden = !syncing;
     const count = document.getElementById('discovery-result-count');
     if (count) {
-        count.textContent = libraryView.status === 'ready' && discoveryLibrary.length
-            ? tr('shelf-count', '{shown}/{total} truyện', { shown: shelf.visible, total: discoveryLibrary.length })
-            : '';
+        count.textContent = syncing
+            ? tr('library-syncing', 'Đang đồng bộ…')
+            : libraryView.status === 'ready' && discoveryLibrary.length
+                ? tr('shelf-count', '{shown}/{total} truyện', { shown: shelf.visible, total: discoveryLibrary.length })
+                : '';
     }
 }
 
@@ -1720,7 +1741,7 @@ function updateDiscoveryContinueCard() {
     if (!target) return;
     const { entry, isOpen } = target;
     const isPlaying = isOpen && typeof audio !== 'undefined' && !audio.paused;
-    title.textContent = entry.title;
+    setBreakableTitle(title, entry.title);
     meta.textContent = formatEntryMeta(entry);
     progress.style.width = `${entry.percent}%`;
     if (label) {
@@ -1828,8 +1849,40 @@ function onBookMenuKey(event) {
         event.preventDefault();
         items[event.key === 'Home' ? 0 : items.length - 1]?.focus();
     } else if (event.key === 'Tab') {
-        closeBookMenu();
+        // The menu lives at the end of <body>; continue the Tab order from the row's ⋮.
+        event.preventDefault();
+        const trigger = bookMenu.trigger;
+        closeBookMenu({ restoreFocus: true });
+        if (!event.shiftKey && trigger?.isConnected) focusNextAfter(trigger);
     }
+}
+
+function focusNextAfter(el) {
+    const focusables = [...document.querySelectorAll('a[href], button:not(:disabled), input:not(:disabled):not([type="hidden"]), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')]
+        .filter(node => node.tabIndex >= 0 && node.getClientRects().length && !node.closest('[hidden], .hidden, [inert]'));
+    const index = focusables.indexOf(el);
+    focusables[index + 1]?.focus();
+}
+
+// After a row disappears, keep keyboard focus in the same list (neighbouring
+// row's same control), or on the list's search field when the list is empty.
+function snapshotLibraryFocus() {
+    const control = document.activeElement?.closest?.('[data-action]');
+    const list = control?.closest('#book-list, #discovery-grid');
+    if (!list) return null;
+    const item = control.closest('[data-book-id]');
+    return { listId: list.id, action: control.dataset.action, index: [...list.querySelectorAll('[data-book-id]')].indexOf(item) };
+}
+
+function restoreLibraryFocus(snapshot) {
+    if (!snapshot) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected) return;
+    const list = document.getElementById(snapshot.listId);
+    const controls = [...(list?.querySelectorAll(`[data-book-id] [data-action="${snapshot.action}"]`) || [])];
+    const target = controls[Math.min(snapshot.index, controls.length - 1)]
+        || document.getElementById(snapshot.listId === 'book-list' ? 'library-search' : 'discovery-search');
+    target?.focus({ preventScroll: true });
 }
 
 function onBookMenuViewportChange() {
@@ -1850,7 +1903,7 @@ function openBookMenu(entry, trigger) {
     const listId = trigger.closest('#book-list, #discovery-grid')?.id;
     if (listId) libraryTriggerHome.set(trigger, { listId, bookId: entry.id, action: trigger.dataset.action });
     const title = document.getElementById('book-menu-title');
-    if (title) title.textContent = entry.title;
+    if (title) setBreakableTitle(title, entry.title);
     const isSheet = window.matchMedia('(max-width: 639.98px)').matches;
     menu.style.left = '';
     menu.style.top = '';
@@ -2326,11 +2379,43 @@ function setButtonLoading(button, isLoading, loadingText = '') {
     if (window.MotionLayer?.setButtonLoading) {
         window.MotionLayer.setButtonLoading(button, isLoading, loadingText);
     } else {
+        // Disabling a focused button drops focus to <body>; give it back afterwards.
+        if (isLoading && document.activeElement === button) button.dataset.refocus = '1';
         button.disabled = !!isLoading;
         button.classList.toggle('is-loading', !!isLoading);
+        if (!isLoading && button.dataset.refocus) {
+            delete button.dataset.refocus;
+            const active = document.activeElement;
+            if (button.isConnected && (!active || active === document.body)) button.focus({ preventScroll: true });
+        }
         if (isLoading) button.setAttribute('aria-busy', 'true');
         else button.removeAttribute('aria-busy');
+        if (button.classList.contains('icon-btn')) setIconButtonGlyph(button, isLoading ? 'i-download' : null);
     }
+}
+
+// Icon-only buttons show their state through the glyph (no spinner loop):
+// a download arrow while busy, a check on success, then the original icon.
+function setIconButtonGlyph(button, iconId) {
+    const use = button.querySelector('svg use');
+    if (!use) return;
+    if (!button.dataset.icon) button.dataset.icon = use.getAttribute('href') || '';
+    use.setAttribute('href', iconId ? `#${iconId}` : button.dataset.icon);
+}
+
+function flashButtonSuccess(button) {
+    if (window.MotionLayer?.animateSuccessCheck) {
+        window.MotionLayer.animateSuccessCheck(button);
+        return;
+    }
+    if (!button.classList.contains('icon-btn')) return;
+    clearTimeout(button._successTimer);
+    button.classList.add('is-success');
+    setIconButtonGlyph(button, 'i-check');
+    button._successTimer = setTimeout(() => {
+        button.classList.remove('is-success');
+        if (!button.hasAttribute('aria-busy')) setIconButtonGlyph(button, null);
+    }, 1600);
 }
 
 function debounce(func, wait) {
@@ -3421,7 +3506,7 @@ async function saveImageManifest(bookId, manifest) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(manifest)
     });
-    if (!response.ok) throw new Error(`Manifest save failed (${response.status})`);
+    if (!response.ok) throw new Error(tr('img-manifest-save-failed', 'Không lưu được danh sách ảnh ({status})', { status: response.status }));
     STATE.imageManifestCache.set(bookId, manifest);
 }
 
@@ -3432,36 +3517,37 @@ async function uploadBookImages(bookId, files, bookTitle = '') {
     const manifest = STATE.currentBookId === bookId && STATE.imageManifest?.images
         ? STATE.imageManifest
         : await loadImageManifest(bookId);
-    if (manifest._retryable) throw new Error('Không đọc được danh sách ảnh hiện có. Hãy thử lại sau.');
+    if (manifest._retryable) throw new Error(tr('img-manifest-retry', 'Không đọc được danh sách ảnh hiện có. Hãy thử lại sau.'));
     const totalFiles = files.length;
     for (let idx = 0; idx < totalFiles; idx++) {
         const sourceFile = files[idx];
         const basePercent = (idx / totalFiles) * 100;
         const fileWeight = (1 / totalFiles) * 100;
 
+        const step = { n: idx + 1, total: totalFiles };
         updateLoadingProgress(
             basePercent + fileWeight * 0.2,
-            `Đang xử lý ảnh (${idx + 1}/${totalFiles})`,
-            `Nén ${sourceFile.name}...`,
-            `Xử lý ảnh ${idx + 1}/${totalFiles}`
+            tr('img-processing', 'Đang xử lý ảnh ({n}/{total})', step),
+            tr('img-compressing', 'Nén {name}...', { name: sourceFile.name }),
+            tr('img-processing-step', 'Xử lý ảnh {n}/{total}', step)
         );
 
         const file = await compressImageForStorage(sourceFile, {
             onProgress: (passPercent) => {
                 updateLoadingProgress(
                     basePercent + fileWeight * (passPercent / 100 * 0.4),
-                    `Đang xử lý ảnh (${idx + 1}/${totalFiles})`,
-                    `Tối ưu dung lượng ${sourceFile.name}...`
+                    tr('img-processing', 'Đang xử lý ảnh ({n}/{total})', step),
+                    tr('img-optimizing', 'Tối ưu dung lượng {name}...', { name: sourceFile.name })
                 );
             }
         });
-        if (file.size > IMAGE_MAX_BYTES) throw new Error(`${sourceFile.name} vượt quá 150 KB sau tối ưu.`);
+        if (file.size > IMAGE_MAX_BYTES) throw new Error(tr('img-too-large', '{name} vượt quá 150 KB sau tối ưu.', { name: sourceFile.name }));
 
         updateLoadingProgress(
             basePercent + fileWeight * 0.65,
-            `Đang tải lên ảnh (${idx + 1}/${totalFiles})`,
-            `Đang tải ${file.name} lên đám mây...`,
-            `Tải lên ${idx + 1}/${totalFiles}`
+            tr('img-uploading', 'Đang tải lên ảnh ({n}/{total})', step),
+            tr('img-uploading-file', 'Đang tải {name} lên đám mây...', { name: sourceFile.name }),
+            tr('img-uploading-step', 'Tải lên {n}/{total}', step)
         );
 
         const imageId = `img_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
@@ -3472,7 +3558,7 @@ async function uploadBookImages(bookId, files, bookTitle = '') {
             method: 'POST',
             body: formData
         });
-        if (!response.ok) throw new Error(`Image upload failed (${response.status})`);
+        if (!response.ok) throw new Error(tr('img-upload-failed', 'Tải ảnh lên thất bại ({status})', { status: response.status }));
         manifest.images.push({
             id: imageId,
             path: `users/${STATE.user.uid}/images/${bookId}/assets/${imageId}.webp`,
@@ -3485,8 +3571,8 @@ async function uploadBookImages(bookId, files, bookTitle = '') {
 
         updateLoadingProgress(
             ((idx + 1) / totalFiles) * 100,
-            `Đã xong ảnh ${idx + 1}/${totalFiles}`,
-            `Hoàn tất ${sourceFile.name}`
+            tr('img-done', 'Đã xong ảnh {n}/{total}', step),
+            tr('img-done-file', 'Hoàn tất {name}', { name: sourceFile.name })
         );
     }
     await saveImageManifest(bookId, manifest);
@@ -3593,9 +3679,10 @@ async function setBookCover(bookId, imageId) {
     if (bookId === STATE.currentBookId) STATE.imageManifest = manifest;
 }
 
-function imageManagerButton(label, onClick, { danger = false, disabled = false, title = '' } = {}) {
+function imageManagerButton(label, onClick, { danger = false, disabled = false, title = '', act = '' } = {}) {
     const button = document.createElement('button');
     button.type = 'button';
+    if (act) button.dataset.act = act;
     button.className = danger ? 'btn btn--danger' : 'btn';
     button.textContent = label;
     button.disabled = disabled;
@@ -3622,11 +3709,39 @@ async function afterImageChange(message) {
     if (message) announceImageChange(message);
 }
 
+// Rebuilding the list drops the focused row button; put focus back on the same
+// action of the same image (or its neighbour) so keyboard users stay inside the dialog.
+let imageManagerFocusHint = null;
+
+function rememberImageManagerFocus(imageId, act) {
+    const rows = [...document.querySelectorAll('#image-manager-list .img-row')];
+    imageManagerFocusHint = { imageId, act, index: rows.findIndex(row => row.dataset.imageId === imageId) };
+}
+
+function restoreImageManagerFocus(list) {
+    const hint = imageManagerFocusHint;
+    imageManagerFocusHint = null;
+    if (!hint || document.getElementById('image-manager-modal')?.classList.contains('hidden')) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && active.isConnected && !list.contains(active)) return;
+    const rows = [...list.querySelectorAll('.img-row')];
+    const row = rows.find(r => r.dataset.imageId === hint.imageId)
+        || rows[Math.min(Math.max(hint.index, 0), rows.length - 1)];
+    const target = row
+        ? (row.querySelector(`[data-act="${hint.act}"]:not(:disabled)`) || row.querySelector('button:not(:disabled)'))
+        : document.getElementById('image-manager-add-btn');
+    target?.focus();
+}
+
 async function renderImageManager() {
     const list = document.getElementById('image-manager-list');
     const title = document.getElementById('image-manager-book-title');
     const bookId = imageManagerBookId || STATE.currentBookId;
     if (!list || !bookId) return;
+    const focusedAct = document.activeElement?.closest?.('#image-manager-list .img-row [data-act]');
+    if (focusedAct) {
+        rememberImageManagerFocus(focusedAct.closest('.img-row').dataset.imageId, focusedAct.dataset.act);
+    }
 
     if (!list.children.length) {
         list.innerHTML = '<div class="img-skeleton"></div><div class="img-skeleton"></div>';
@@ -3647,12 +3762,14 @@ async function renderImageManager() {
         line2.textContent = tr('images-empty-hint', 'Bấm “Thêm ảnh” để tải ảnh bìa và tranh minh hoạ.');
         empty.append(line1, line2);
         list.append(empty);
+        restoreImageManagerFocus(list);
         return;
     }
     for (const image of manifest.images) {
         const isCover = manifest.coverId === image.id;
         const row = document.createElement('div');
         row.className = 'img-row';
+        row.dataset.imageId = image.id;
         const thumb = document.createElement('img');
         thumb.className = 'img-row__thumb';
         thumb.alt = image.alt || tr('illustration', 'Ảnh minh hoạ');
@@ -3677,37 +3794,43 @@ async function renderImageManager() {
         const actions = document.createElement('div');
         actions.className = 'img-row__acts';
         const coverBtn = imageManagerButton(isCover ? tr('is-cover', 'Đang là bìa') : tr('set-cover', 'Đặt bìa'), async () => {
+            rememberImageManagerFocus(image.id, 'cover');
             setButtonLoading(coverBtn, true, '…');
             try {
                 await setBookCover(bookId, image.id);
                 await afterImageChange(tr('cover-set-done', 'Đã đặt làm ảnh bìa.'));
             } catch (err) {
                 APP_STATUS.error(err, tr('set-cover-failed', 'Không thể đặt ảnh bìa'));
+                imageManagerFocusHint = null;
             } finally {
                 setButtonLoading(coverBtn, false);
             }
-        }, { disabled: isCover });
+        }, { disabled: isCover, act: 'cover' });
         const cropBtn = imageManagerButton(tr('crop-title', 'Căn bìa'), () => openImageCropper(bookId, image),
-            { title: tr('crop-hint', 'Kéo ảnh để chọn vùng hiện trên bìa. Ảnh gốc không bị cắt.') });
+            { title: tr('crop-hint', 'Kéo ảnh để chọn vùng hiện trên bìa. Ảnh gốc không bị cắt.'), act: 'crop' });
         const replaceBtn = imageManagerButton(tr('replace-image', 'Thay'), () => {
             STATE.imageEditTargetId = image.id;
+            rememberImageManagerFocus(image.id, 'replace');
             imageInput?.click();
-        });
+        }, { act: 'replace' });
         const deleteBtn = imageManagerButton(tr('delete', 'Xoá'), async () => {
             if (!confirm(tr('delete-image-confirm', 'Xoá ảnh “{name}”?', { name: image.alt || tr('illustration', 'Ảnh minh hoạ') }))) return;
+            rememberImageManagerFocus(image.id, 'delete');
             setButtonLoading(deleteBtn, true, '…');
             try {
                 await removeBookImage(bookId, image.id);
                 await afterImageChange(tr('image-deleted', 'Đã xoá ảnh.'));
             } catch (err) {
                 APP_STATUS.error(err, tr('image-delete-failed', 'Không thể xoá ảnh'));
+                imageManagerFocusHint = null;
                 setButtonLoading(deleteBtn, false);
             }
-        }, { danger: true });
+        }, { danger: true, act: 'delete' });
         actions.append(coverBtn, cropBtn, replaceBtn, deleteBtn);
         row.append(thumb, info, actions);
         list.append(row);
     }
+    restoreImageManagerFocus(list);
 }
 
 async function openImageManager(bookId = STATE.currentBookId, bookTitle = STATE.currentBook?.title || '') {
@@ -4004,9 +4127,15 @@ async function refreshLibrary() {
         libraryView.status = 'ready';
         // Covers are re-derived from the cached manifests/URLs, so a cover
         // change made in the image manager shows up after this refresh.
+        coverPrevious = new Map(STATE.coverResolved);
+        coverPrevious.liveURLs = new Set(STATE.imageURLCache.values());
         STATE.coverResolved.clear();
-        if (!STATE.currentBookId) toggleDiscoveryMode(true);
-        renderLibraryViews();
+        try {
+            if (!STATE.currentBookId) toggleDiscoveryMode(true);
+            renderLibraryViews();
+        } finally {
+            coverPrevious = null;
+        }
     } catch (err) {
         if (STATE.user?.uid !== libraryUid || refreshId !== libraryView.refreshSeq) return;
         console.error("Library Refresh Error:", err);
@@ -4032,11 +4161,12 @@ async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
     if (status) status.innerText = tr('status-txt-preparing', 'Preparing TXT…');
     APP_STATUS.toast(tr('export-starting', 'Đang xuất file TXT toàn bộ tác phẩm...'), 'info');
 
+    let succeeded = false;
     try {
         const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/export-text`);
 
         if (!response.ok) {
-            let message = 'Unable to download the TXT file.';
+            let message = tr('txt-unavailable', 'Không tải được file TXT.');
             try {
                 const errorData = await response.json();
                 if (errorData.error) message = errorData.error;
@@ -4060,15 +4190,16 @@ async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
         setTimeout(() => URL.revokeObjectURL(url), 1000);
         if (status) status.innerText = tr('status-txt-started', 'TXT download started');
         APP_STATUS.toast(tr('export-done', 'Đã tải xuống file "{name}" thành công!', { name: filename }), 'success');
-        if (btn && window.MotionLayer?.animateSuccessCheck) {
-            window.MotionLayer.animateSuccessCheck(btn);
-        }
+        succeeded = true;
     } catch (err) {
         console.error('[Export TXT]', err);
         APP_STATUS.error(tr('export-failed', 'Không thể tải file TXT: {error}', { error: err.message }));
         if (status) status.innerText = tr('status-txt-failed', 'TXT download failed');
     } finally {
-        if (btn) setButtonLoading(btn, false);
+        if (btn) {
+            setButtonLoading(btn, false);
+            if (succeeded) flashButtonSuccess(btn);
+        }
         setTimeout(() => {
             if (status && statusMatches(status.innerText, 'status-txt-started', 'status-txt-failed')) {
                 status.innerText = previousStatus || tr('status-ready', 'Ready');
@@ -4095,12 +4226,14 @@ async function deleteBook(bookId, filename, title, bypassConfirm = false) {
         await deleteDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId));
         console.log(`[Delete] "${title}" deleted successfully.`);
 
+        const focusSnapshot = snapshotLibraryFocus();
         if (STATE.currentBookId === bookId) {
             await handlePlaybackStall(); // This handles WS close, RAM/ROM clear, and UI reset
             closeCurrentBook();
         }
 
         await refreshLibrary();
+        restoreLibraryFocus(focusSnapshot);
         APP_STATUS.set(tr('status-deleted', 'Đã xóa!'));
         setTimeout(() => APP_STATUS.set(tr('status-ready', 'Ready')), 2500);
 
@@ -4225,9 +4358,9 @@ function closeImageCropper() {
 async function openImageCropper(bookId, image) {
     try {
         const sourceURL = await getImageURL(bookId, image);
-        if (!sourceURL) throw new Error('Không thể tải ảnh để crop.');
+        if (!sourceURL) throw new Error(tr('crop-load-failed', 'Không thể tải ảnh để crop.'));
         const sourceBlob = await fetch(sourceURL).then(response => {
-            if (!response.ok) throw new Error(`Không thể tải ảnh (${response.status}).`);
+            if (!response.ok) throw new Error(tr('crop-fetch-failed', 'Không thể tải ảnh ({status}).', { status: response.status }));
             return response.blob();
         });
         const sourceFile = new File([sourceBlob], `${image.alt || 'image'}.webp`, { type: sourceBlob.type || 'image/webp' });
@@ -4235,7 +4368,7 @@ async function openImageCropper(bookId, image) {
         const preview = document.getElementById('image-crop-preview');
         const stage = document.getElementById('image-crop-stage');
         const zoom = document.getElementById('image-crop-zoom');
-        if (!preview || !stage || !zoom) throw new Error('Không thể mở công cụ crop.');
+        if (!preview || !stage || !zoom) throw new Error(tr('crop-tool-missing', 'Không thể mở công cụ crop.'));
 
         preview.src = objectURL;
         await preview.decode();
@@ -4656,12 +4789,12 @@ const handleFileUpload = async (e) => {
         }
 
         if (illustrations.length) {
-            document.getElementById('status-indicator').innerText = tr('status-optimizing-images', 'Optimizing {n} images…', { n: illustrations.length });
+            document.getElementById('status-indicator').innerText = trCount('img-optimizing-count', 'Đang tối ưu {n} ảnh...', illustrations.length);
             try {
                 await uploadBookImages(data.storyId, illustrations, bookInfo.title || file.name);
             } catch (imageError) {
                 console.error('[Images] Upload failed:', imageError);
-                APP_STATUS.toast(`Sách đã tải lên nhưng ảnh minh họa chưa lưu được: ${imageError.message}`, 'warning');
+                APP_STATUS.toast(tr('img-upload-partial', 'Sách đã tải lên nhưng ảnh minh họa chưa lưu được: {error}', { error: imageError.message }), 'warning');
             }
         }
 
