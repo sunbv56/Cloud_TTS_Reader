@@ -557,21 +557,28 @@
         ctx.fillStyle = background;
         ctx.fillRect(0, 0, dimensions.width, dimensions.height);
 
+        // Theme tokens are OKLCH, so alpha goes through globalAlpha instead of
+        // a hex suffix (addColorStop throws on 'oklch(...)33').
         const glow = ctx.createRadialGradient(dimensions.width - 40, 16, 4, dimensions.width - 40, 16, 180);
-        glow.addColorStop(0, `${primary}33`);
-        glow.addColorStop(1, `${primary}00`);
+        glow.addColorStop(0, primary);
+        glow.addColorStop(1, 'transparent');
         ctx.fillStyle = glow;
-        ctx.fillRect(dimensions.width - 220, 0, 220, 150);
+        ctx.globalAlpha = 0.2;
+        ctx.fillRect(dimensions.width - 220, 0, 220, 200);
 
-        ctx.fillStyle = `${primary}22`;
+        ctx.fillStyle = primary;
+        ctx.globalAlpha = 0.13;
         ctx.fillRect(0, 0, 5, dimensions.height);
+        ctx.globalAlpha = 1;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = isLight ? textMain : '#f8fafc';
         const headerLines = fitText(ctx, headerText || 'Cloud TTS Reader', contentWidth, 1, '700', 15, 8);
         ctx.fillText(headerLines[0] || 'Cloud TTS Reader', left, 34);
-        ctx.fillStyle = `${primary}88`;
+        ctx.fillStyle = primary;
+        ctx.globalAlpha = 0.53;
         ctx.fillRect(left, 47, contentWidth, 2);
+        ctx.globalAlpha = 1;
 
         ctx.fillStyle = isLight ? textReading : '#f8fafc';
         const progressTop = dimensions.height - 27;
@@ -658,7 +665,11 @@
     // Prefer the borderless Canvas Video PiP; fall back to Document PiP.
     function openBestPiP() {
         if (document.pictureInPictureEnabled) {
-            return openVideoPiP();
+            if (!('documentPictureInPicture' in window)) return openVideoPiP();
+            return openVideoPiP().catch(err => {
+                console.warn('[MPW] Video PiP failed, using Document PiP:', err);
+                return openPiP();
+            });
         } else if ('documentPictureInPicture' in window) {
             return openPiP();
         } else {

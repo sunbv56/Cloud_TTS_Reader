@@ -2608,6 +2608,14 @@ document.addEventListener('paste', event => {
 // browsers to classify this page as background audio. A silent Web Audio
 // oscillator kept the DSP/audio graph awake continuously and heated phones.
 
+// Idle and sleep-timer stops say why playback ended; the "Paused" /
+// "Disconnected" that follow them must not replace that reason.
+function setStatusKeepingStopReason(text) {
+    const indicator = document.getElementById('status-indicator');
+    if (/^(Session Expired \(|Sleep Timer)/.test(indicator.innerText)) return;
+    indicator.innerText = text;
+}
+
 function closeWebSocketIntentionally() {
     if (STATE.prefetchTimeout) {
         clearTimeout(STATE.prefetchTimeout);
@@ -2916,7 +2924,7 @@ async function initWebSocket() {
         // must stay closed. Buffered chunks alone are not proof that playback
         // is active and previously caused endless background reconnects.
         if (socket._intentionalClose) {
-            document.getElementById('status-indicator').innerText = "Disconnected";
+            setStatusKeepingStopReason("Disconnected");
             return;
         }
 
@@ -6060,7 +6068,7 @@ audio.onpause = () => {
     setAudioWaveState(false);
 
     setPlayIcon(false);
-    document.getElementById('status-indicator').innerText = "Paused";
+    setStatusKeepingStopReason("Paused");
     updatePipUI();
     if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused';
