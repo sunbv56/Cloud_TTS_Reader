@@ -41,14 +41,16 @@ def test_index_page_serves_html():
     response = client.get("/")
     assert response.status_code == 200
     assert "Cloud TTS" in response.text
-    assert "/static/css/main.css" in response.text
+    assert "/static/css/app.css?v=" in response.text
+    assert "@tailwindcss/browser" not in response.text
     assert "/static/js/main.js" in response.text
 
 
 def test_static_modular_assets_served():
-    css_res = client.get("/static/css/main.css")
+    css_res = client.get("/static/css/app.css")
     assert css_res.status_code == 200
-    assert "themes.css" in css_res.text
+    assert "--theme-primary" in css_res.text
+    assert ".bg-primary\\/15" in css_res.text
 
     themes_res = client.get("/static/css/themes.css")
     assert themes_res.status_code == 200
@@ -57,6 +59,12 @@ def test_static_modular_assets_served():
     js_res = client.get("/static/js/main.js")
     assert js_res.status_code == 200
     assert "initUIInteractions" in js_res.text
+
+
+def test_static_cache_headers():
+    assert client.get("/static/css/app.css?v=abc").headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert client.get("/static/app.js").headers["cache-control"] == "no-cache"
+    assert client.get("/static/icon-192.png").headers["cache-control"] == "public, max-age=604800"
 
 
 def test_append_chapters_json_validation():

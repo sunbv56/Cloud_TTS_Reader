@@ -8,6 +8,7 @@ if str(_PKG_ROOT) not in sys.path:
     sys.path.insert(0, str(_PKG_ROOT))
 
 from contextlib import asynccontextmanager
+from urllib.parse import parse_qs
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from app.core.config import STATIC_DIR
@@ -31,15 +32,21 @@ async def lifespan(application: FastAPI):
 
 
 class _RevalidatedStaticFiles(StaticFiles):
-    """App-shell files carry no version in their URL, so without Cache-Control
-    browsers heuristically keep serving the previous deploy. no-cache still
-    allows caching but revalidates via ETag (a cheap 304 when unchanged)."""
+    """Unversioned app-shell files revalidate via ETag (no-cache) so a deploy is
+    picked up at once; ?v=<hash> URLs change with their content, so they are
+    cached for good."""
     _REVALIDATE_SUFFIXES = (".js", ".css", ".html", ".json")
+    _MEDIA_SUFFIXES = (".png", ".svg", ".webp", ".jpg", ".jpeg", ".ico", ".woff2")
 
-    def file_response(self, full_path, *args, **kwargs):
-        response = super().file_response(full_path, *args, **kwargs)
-        if str(full_path).endswith(self._REVALIDATE_SUFFIXES):
+    def file_response(self, full_path, stat_result, scope, *args, **kwargs):
+        response = super().file_response(full_path, stat_result, scope, *args, **kwargs)
+        path = str(full_path)
+        if "v" in parse_qs(scope.get("query_string", b"").decode()):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif path.endswith(self._REVALIDATE_SUFFIXES):
             response.headers["Cache-Control"] = "no-cache"
+        elif path.endswith(self._MEDIA_SUFFIXES):
+            response.headers["Cache-Control"] = "public, max-age=604800"
         return response
 
 

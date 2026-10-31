@@ -1,0 +1,78 @@
+/* Source for static/css/app.css — rebuild with tailwind/build.sh after changing classes in static/ */
+@import "tailwindcss" source(none);
+@import "../static/css/mini-player.css";
+@import "../static/css/themes.css";
+@import "../static/css/ui-extras.css";
+@import "../static/css/luxury-editorial.css";
+
+@source "../static/index.html";
+@source "../static/app.js";
+@source "../static/js";
+
+@theme {
+    --font-cinzel: "Playfair Display", "Be Vietnam Pro", Georgia, serif;
+    --font-serif-royal: "Playfair Display", "Be Vietnam Pro", Georgia, serif;
+    --font-reading: var(--reader-font-family, "Be Vietnam Pro", "Literata", sans-serif);
+    --font-inter: "Be Vietnam Pro", "Inter", sans-serif;
+    --color-primary: var(--theme-primary, #E5A93C);
+    --color-primary-dim: var(--theme-primary-dim, #B45309);
+    --color-bg-dark: var(--theme-bg, #0B0F19);
+    --color-surface-low: var(--theme-surface, #111827);
+    --color-surface-high: var(--theme-surface-high, #1F2937);
+    --color-glass: var(--theme-glass, rgba(17, 24, 39, 0.90));
+    --color-glass-border: var(--theme-glass-border, rgba(255, 255, 255, 0.08));
+    --color-text-main: var(--theme-text, #F8FAFC);
+    --color-text-reading: var(--theme-text-reading, #E2E8F0);
+}
+@layer base {
+    body { 
+        @apply font-inter bg-bg-dark antialiased selection:bg-primary/30 selection:text-[#F5EFEB];
+        color: var(--theme-text, #F5EFEB);
+        transition: background-color 0.28s ease, color 0.28s ease;
+    }
+}
+@layer components {
+    .glass { 
+        @apply bg-glass backdrop-blur-xl border border-glass-border;
+    }
+    .btn-primary { 
+        @apply px-6 py-2.5 bg-gradient-to-r from-[#D4AF37] via-[#E5C378] to-[#CD7F32] text-black font-black rounded-xl shadow-[0_4px_16px_rgba(212,175,55,0.28)] hover:shadow-[0_6px_24px_rgba(212,175,55,0.45)] hover:scale-[1.02] transition-all duration-200 active:scale-95 border border-[#F5EFEB]/20 cursor-pointer;
+    }
+    .chunk-text { 
+        @apply cursor-pointer px-5 py-3 rounded-2xl;
+        font-family: var(--font-reading);
+        border-left: 4px solid transparent;
+        display: block;
+        width: 100%;
+        margin: 0 0 1.25rem;
+        background-color: transparent;
+        transition: background-color 0.22s ease,
+                    border-color 0.22s ease,
+                    color 0.22s ease,
+                    box-shadow 0.22s ease;
+        will-change: background-color, border-color;
+    }
+    .chunk-active { 
+        background: linear-gradient(90deg, color-mix(in srgb, var(--theme-primary, #D4AF37) 18%, transparent) 0%, color-mix(in srgb, var(--theme-primary, #D4AF37) 5%, transparent) 100%) !important;
+        border-left-color: var(--theme-primary, #D4AF37) !important;
+        color: var(--theme-text, #F5EFEB) !important;
+        box-shadow: 0 4px 20px color-mix(in srgb, var(--theme-primary, #D4AF37) 14%, transparent) !important;
+        filter: brightness(1.04);
+    }
+    .sidebar-item {
+        @apply flex items-center gap-3 p-3 rounded-xl transition-all hover:bg-white/5 active:scale-[0.98];
+    }
+    .sidebar-item.active {
+        @apply bg-primary/10 text-[#F5EFEB] border border-primary/30;
+    }
+    .book-active {
+        @apply border-primary bg-primary/10 shadow-lg shadow-primary/15 scale-[1.01] z-10 !border-l-4;
+    }
+    .toc-active {
+        @apply border-l-4 border-primary bg-primary/20 font-bold text-primary shadow-lg shadow-primary/20 relative z-10;
+    }
+    .reader-copy {
+        width: 100%;
+        max-width: 100%;
+    }
+}

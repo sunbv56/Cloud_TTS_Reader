@@ -35,3 +35,7 @@ memory/
 *_backup*.*
 *.mp3
 tests/output_samples/
+
+# Tailwind build tooling
+tailwind/node_modules/
+!tailwind/package.json

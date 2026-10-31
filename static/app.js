@@ -628,7 +628,7 @@ const APP_STATUS = {
         toast.innerHTML = `
             <div class="flex-shrink-0 mt-0.5">${iconHtml}</div>
             <div class="flex-1 min-w-0 pr-1">
-                <div class="font-bold text-[11px] uppercase tracking-wider opacity-80 mb-0.5 text-white">${titleText}</div>
+                <div class="font-bold text-xs uppercase tracking-wider opacity-80 mb-0.5 text-white">${titleText}</div>
                 <div class="text-slate-200 text-xs leading-relaxed break-words">${message}</div>
             </div>
             <button type="button" class="text-slate-400 hover:text-white p-1 -mr-1 -mt-1 text-xs opacity-70 hover:opacity-100 transition-opacity" aria-label="Đóng">
@@ -2472,7 +2472,7 @@ async function renderImageManager() {
         const thumb = document.createElement('img');
         thumb.className = 'w-16 h-16 rounded-xl object-cover bg-black/20 shrink-0';
         thumb.alt = image.alt || 'Ảnh minh họa';
-        thumb.src = await getImageURL(bookId, image) || '/static/icon.svg';
+        thumb.src = await getImageURL(bookId, image) || '/static/icon-192.png';
         const info = document.createElement('div');
         info.className = 'min-w-0 flex-1';
         const name = document.createElement('div');
@@ -4366,7 +4366,7 @@ function renderTOC() {
         checkbox.onchange = () => updateDownloadBar();
 
         const badge = document.createElement('span');
-        badge.className = `text-[11px] font-bold px-2 py-0.5 rounded-md shrink-0 transition-colors ${
+        badge.className = `text-xs font-bold px-2 py-0.5 rounded-md shrink-0 transition-colors ${
             isActive 
                 ? 'bg-primary text-black font-black shadow-sm' 
                 : 'bg-white/5 text-primary border border-primary/20'
@@ -4385,7 +4385,7 @@ function renderTOC() {
 
         const editBtn = document.createElement('button');
         editBtn.className = `icon-btn w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-primary hover:bg-white/10 transition-all pointer-events-auto shrink-0 ${isSelectMode ? 'hidden' : ''}`;
-        editBtn.innerHTML = '<i class="fas fa-pen text-[11px]"></i>';
+        editBtn.innerHTML = '<i class="fas fa-pen text-xs"></i>';
         editBtn.title = 'Edit Chapter';
         editBtn.setAttribute('aria-label', `Sửa chương ${i + 1}`);
         editBtn.onclick = (e) => {
@@ -6224,7 +6224,7 @@ function updateMediaSession() {
             artist: STATE.currentBook.title,
             album: `Chapter ${STATE.currentChapterIndex + 1}`,
             artwork: [
-                { src: '/static/icon.svg', sizes: '512x512', type: 'image/svg+xml' },
+                { src: '/static/icon-512.png', sizes: '512x512', type: 'image/png' },
                 { src: 'https://cdn-icons-png.flaticon.com/512/3771/3771417.png', sizes: '512x512', type: 'image/png' }
             ]
         });

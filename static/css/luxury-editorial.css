@@ -133,7 +133,7 @@ nav {
 #discovery-mode > div:first-child > p {
     color: var(--theme-text-muted, var(--luxury-muted)) !important;
     font-family: "Be Vietnam Pro", sans-serif !important;
-    font-size: 0.68rem !important;
+    font-size: 0.75rem !important;
     font-style: normal !important;
     letter-spacing: 0.19em !important;
     text-transform: uppercase;

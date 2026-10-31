@@ -16,7 +16,7 @@
             } catch (_) {}
         })();
     </script>
-    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+    <meta name="description" content="Aureum Cloud TTS Reader: nghe truyện, sách EPUB/TXT bằng giọng đọc AI tiếng Việt, đồng bộ tiến độ đọc trên mọi thiết bị.">
 
     <!-- PWA Config -->
     <link rel="manifest" href="/static/manifest.json">
@@ -24,92 +24,22 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="apple-touch-icon" href="/static/icon.svg">
+    <link rel="apple-touch-icon" href="/static/icon-192.png">
 
     <!-- Favicon Integration -->
-    <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
-    <!-- Font Awesome for Icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <!-- Mini Player Widget (floating YouTube-style player) -->
-    <link rel="stylesheet" href="/static/css/mini-player.css?v=14">
-    <!-- Modular Master Stylesheet -->
-    <link rel="stylesheet" href="/static/css/main.css?v=14">
-    <!-- Luxury editorial surface and motion-ready visual tokens -->
-    <link rel="stylesheet" href="/static/css/luxury-editorial.css?v=14">
-    <!-- Google Fonts: 8 Luxury Fonts with 100% Vietnamese Support -->
+    <link rel="icon" type="image/png" sizes="192x192" href="/static/icon-192.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,600&family=Inter:wght@300;400;500;600;700;800&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;0,7..72,600;0,7..72,700;1,7..72,400&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400&family=Montserrat:wght@400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,600;0,700;0,800;0,900;1,400;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap"
-        rel="stylesheet">
-    <style type="text/tailwindcss">
-        @theme {
-            --font-cinzel: "Playfair Display", "Be Vietnam Pro", Georgia, serif;
-            --font-serif-royal: "Playfair Display", "Be Vietnam Pro", Georgia, serif;
-            --font-reading: var(--reader-font-family, "Be Vietnam Pro", "Literata", sans-serif);
-            --font-inter: "Be Vietnam Pro", "Inter", sans-serif;
-            --color-primary: var(--theme-primary, #E5A93C);
-            --color-primary-dim: var(--theme-primary-dim, #B45309);
-            --color-bg-dark: var(--theme-bg, #0B0F19);
-            --color-surface-low: var(--theme-surface, #111827);
-            --color-surface-high: var(--theme-surface-high, #1F2937);
-            --color-glass: var(--theme-glass, rgba(17, 24, 39, 0.90));
-            --color-glass-border: var(--theme-glass-border, rgba(255, 255, 255, 0.08));
-            --color-text-main: var(--theme-text, #F8FAFC);
-            --color-text-reading: var(--theme-text-reading, #E2E8F0);
-        }
-        @layer base {
-            body { 
-                @apply font-inter bg-bg-dark antialiased selection:bg-primary/30 selection:text-[#F5EFEB];
-                color: var(--theme-text, #F5EFEB);
-                transition: background-color 0.28s ease, color 0.28s ease;
-            }
-        }
-        @layer components {
-            .glass { 
-                @apply bg-glass backdrop-blur-xl border border-glass-border;
-            }
-            .btn-primary { 
-                @apply px-6 py-2.5 bg-gradient-to-r from-[#D4AF37] via-[#E5C378] to-[#CD7F32] text-black font-black rounded-xl shadow-[0_4px_16px_rgba(212,175,55,0.28)] hover:shadow-[0_6px_24px_rgba(212,175,55,0.45)] hover:scale-[1.02] transition-all duration-200 active:scale-95 border border-[#F5EFEB]/20 cursor-pointer;
-            }
-            .chunk-text { 
-                @apply cursor-pointer px-5 py-3 rounded-2xl;
-                font-family: var(--font-reading);
-                border-left: 4px solid transparent;
-                display: block;
-                width: 100%;
-                margin: 0 0 1.25rem;
-                background-color: transparent;
-                transition: background-color 0.22s ease,
-                            border-color 0.22s ease,
-                            color 0.22s ease,
-                            box-shadow 0.22s ease;
-                will-change: background-color, border-color;
-            }
-            .chunk-active { 
-                background: linear-gradient(90deg, color-mix(in srgb, var(--theme-primary, #D4AF37) 18%, transparent) 0%, color-mix(in srgb, var(--theme-primary, #D4AF37) 5%, transparent) 100%) !important;
-                border-left-color: var(--theme-primary, #D4AF37) !important;
-                color: var(--theme-text, #F5EFEB) !important;
-                box-shadow: 0 4px 20px color-mix(in srgb, var(--theme-primary, #D4AF37) 14%, transparent) !important;
-                filter: brightness(1.04);
-            }
-            .sidebar-item {
-                @apply flex items-center gap-3 p-3 rounded-xl transition-all hover:bg-white/5 active:scale-[0.98];
-            }
-            .sidebar-item.active {
-                @apply bg-primary/10 text-[#F5EFEB] border border-primary/30;
-            }
-            .book-active {
-                @apply border-primary bg-primary/10 shadow-lg shadow-primary/15 scale-[1.01] z-10 !border-l-4;
-            }
-            .toc-active {
-                @apply border-l-4 border-primary bg-primary/20 font-bold text-primary shadow-lg shadow-primary/20 relative z-10;
-            }
-            .reader-copy {
-                width: 100%;
-                max-width: 100%;
-            }
-        }
-    </style>
+    <link rel="preconnect" href="https://cdnjs.cloudflare.com">
+    <!-- Tailwind utilities + app stylesheets, prebuilt by tailwind/build.sh -->
+    <link rel="stylesheet" href="/static/css/app.css?v=b9f801fdd8">
+    <!-- Icons and fonts load without blocking first paint -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" media="print" onload="this.media='all'">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,600&family=Inter:wght@300;400;500;600;700;800&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;0,7..72,600;0,7..72,700;1,7..72,400&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400&family=Montserrat:wght@400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,600;0,700;0,800;0,900;1,400;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" media="print" onload="this.media='all'">
+    <noscript>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,400;1,600&family=Inter:wght@300;400;500;600;700;800&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,500;0,7..72,600;0,7..72,700;1,7..72,400&family=Lora:ital,wght@0,400;0,500;0,600;0,700;1,400;1,600&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400&family=Montserrat:wght@400;500;600;700;800;900&family=Playfair+Display:ital,wght@0,600;0,700;0,800;0,900;1,400;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+    </noscript>
 </head>
 
 <body class="h-screen h-[100dvh] flex flex-col overflow-hidden">
@@ -240,7 +170,7 @@
                     </h2>
                     <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
                         <button id="lang-btn"
-                            class="icon-btn w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary hover:bg-primary hover:text-black transition-all font-bold text-[11px] sm:text-xs"
+                            class="icon-btn w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary hover:bg-primary hover:text-black transition-all font-bold text-xs sm:text-xs"
                             title="Đổi ngôn ngữ" aria-label="Đổi ngôn ngữ">
                             VI
                         </button>
@@ -443,7 +373,7 @@
                         <label class="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center justify-between gap-3 cursor-pointer">
                             <span class="flex flex-col">
                                 <span class="text-xs font-bold text-slate-400">EDGE PROXY</span>
-                                <span class="text-[11px] text-slate-500">Thử thêm qua proxy khi kết nối thẳng chậm hoặc bị chặn</span>
+                                <span class="text-xs text-slate-500">Thử thêm qua proxy khi kết nối thẳng chậm hoặc bị chặn</span>
                             </span>
                             <span class="relative shrink-0">
                                 <input type="checkbox" id="proxy-toggle" class="sr-only peer">
@@ -454,7 +384,7 @@
                         <label class="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center justify-between gap-3 cursor-pointer">
                             <span class="flex flex-col">
                                 <span class="text-xs font-bold text-slate-400">GOOGLE TTS DỰ PHÒNG</span>
-                                <span class="text-[11px] text-slate-500">Đọc bằng Google khi Edge lỗi (giọng khác)</span>
+                                <span class="text-xs text-slate-500">Đọc bằng Google khi Edge lỗi (giọng khác)</span>
                             </span>
                             <span class="relative shrink-0">
                                 <input type="checkbox" id="gtts-toggle" class="sr-only peer">
@@ -477,7 +407,7 @@
                         <div class="bg-white/5 p-4 rounded-2xl border border-white/5 mt-4">
                             <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
                                 <span class="text-slate-400 uppercase tracking-tighter">Font Chữ (Tiếng Việt)</span>
-                                <span id="font-family-val" class="text-primary text-[11px] font-bold">Be Vietnam Pro</span>
+                                <span id="font-family-val" class="text-primary text-xs font-bold">Be Vietnam Pro</span>
                             </div>
                             <div class="relative">
                                 <select id="font-family-select"
@@ -791,7 +721,7 @@
                         <div id="reader-more-menu-dropdown"
                             class="hidden absolute right-0 top-full mt-2 w-72 sm:w-80 rounded-2xl bg-surface-low/95 backdrop-blur-2xl border border-white/10 shadow-2xl p-2.5 z-[120] flex flex-col gap-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
                             
-                            <div class="px-2 py-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
+                            <div class="px-2 py-1 text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
                                 <span>Tiện ích đọc sách</span>
                                 <span class="text-[9px] text-primary/70 font-mono">Tools</span>
                             </div>
@@ -859,10 +789,10 @@
 
                                 <!-- Presets Grid -->
                                 <div class="grid grid-cols-4 gap-1.5">
-                                    <button type="button" onclick="setSleepTimerPreset(15)" class="py-1 px-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-[11px] font-bold text-slate-300 transition-all text-center cursor-pointer">15p</button>
-                                    <button type="button" onclick="setSleepTimerPreset(30)" class="py-1 px-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-[11px] font-bold text-slate-300 transition-all text-center cursor-pointer">30p</button>
-                                    <button type="button" onclick="setSleepTimerPreset(45)" class="py-1 px-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-[11px] font-bold text-slate-300 transition-all text-center cursor-pointer">45p</button>
-                                    <button type="button" onclick="setSleepTimerPreset(60)" class="py-1 px-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-[11px] font-bold text-slate-300 transition-all text-center cursor-pointer">60p</button>
+                                    <button type="button" onclick="setSleepTimerPreset(15)" class="py-1 px-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-xs font-bold text-slate-300 transition-all text-center cursor-pointer">15p</button>
+                                    <button type="button" onclick="setSleepTimerPreset(30)" class="py-1 px-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-xs font-bold text-slate-300 transition-all text-center cursor-pointer">30p</button>
+                                    <button type="button" onclick="setSleepTimerPreset(45)" class="py-1 px-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-xs font-bold text-slate-300 transition-all text-center cursor-pointer">45p</button>
+                                    <button type="button" onclick="setSleepTimerPreset(60)" class="py-1 px-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-xs font-bold text-slate-300 transition-all text-center cursor-pointer">60p</button>
                                 </div>
 
                                 <!-- Active Countdown Controls -->
@@ -889,7 +819,7 @@
                     <div class="flex flex-col items-center justify-center h-full text-center max-w-md mx-auto">
                         <div class="w-20 h-20 mb-6 relative">
                             <div class="absolute inset-0 bg-primary/20 blur-2xl rounded-full"></div>
-                            <img src="/static/icon.svg" class="w-full h-full relative z-10 opacity-40">
+                            <img src="/static/icon-192.png" class="w-full h-full relative z-10 opacity-40" width="80" height="80" alt="" loading="lazy" decoding="async">
                         </div>
                         <h3 class="text-xl font-bold text-white mb-2" data-i18n="ready-to-start">Ready to Start?</h3>
                         <p class="text-slate-400 text-xs sm:text-sm" data-i18n="select-book-desc">Select a book from your library
@@ -930,7 +860,7 @@
                             <span id="player-title"
                                 class="font-bold font-inter text-[#F5EFEB] text-xs sm:text-sm truncate tracking-tight">System Ready</span>
                             <span id="player-sentence"
-                                class="hidden sm:block max-w-[16rem] lg:max-w-[22rem] truncate text-[11px] text-[#EADBCE]/70 font-reading italic mt-0.5"
+                                class="hidden sm:block max-w-[16rem] lg:max-w-[22rem] truncate text-xs text-[#EADBCE]/70 font-reading italic mt-0.5"
                                 title="">Chưa có câu đang đọc</span>
                             <span id="player-author"
                                 class="text-[9px] font-semibold text-primary/70 uppercase tracking-wider font-inter mt-0.5">Aureum Studio Audio</span>
@@ -1061,7 +991,7 @@
                     <div class="min-w-0 flex-1">
                         <div class="text-[10px] sm:text-xs font-black tracking-[0.14em] uppercase text-primary font-serif-royal">ĐANG NGHE</div>
                         <h2 id="discovery-continue-title" class="mt-0.5 sm:mt-1 text-sm sm:text-base md:text-lg font-bold text-main truncate font-cinzel">—</h2>
-                        <p id="discovery-continue-meta" class="mt-0.5 text-[11px] sm:text-xs md:text-sm text-slate-400 truncate">—</p>
+                        <p id="discovery-continue-meta" class="mt-0.5 text-xs sm:text-xs md:text-sm text-slate-400 truncate">—</p>
                         <div class="mt-2 sm:mt-2.5 h-1 sm:h-1.5 rounded-full overflow-hidden bg-surface-high border border-glass-border">
                             <div id="discovery-continue-progress" class="h-full bg-gradient-to-r from-primary/50 to-primary rounded-full transition-all duration-300" style="width: 0%"></div>
                         </div>
@@ -1130,7 +1060,7 @@
                         <p class="mt-3 text-xs leading-relaxed text-slate-400" data-i18n="chapter-format-hint">
                             Dùng dòng === để phân cách các chương. Nếu không có ===, toàn bộ file sẽ được nhập thành một chương.
                         </p>
-                        <pre class="mt-3 overflow-x-auto rounded-xl bg-black/20 p-3 text-[11px] leading-relaxed text-slate-300">Chương 1: Khởi đầu
+                        <pre class="mt-3 overflow-x-auto rounded-xl bg-black/20 p-3 text-xs leading-relaxed text-slate-300">Chương 1: Khởi đầu
 
 Nội dung chương một...
 
@@ -1290,16 +1220,16 @@ Nội dung chương hai...</pre>
     <script type="module" src="/static/js/main.js"></script>
     <script type="module" src="/static/app.js"></script>
     <!-- Reader-only Picture-in-Picture controls -->
-    <script src="/static/js/mini-player-widget.js"></script>
+    <script src="/static/js/mini-player-widget.js" defer></script>
     <!-- GSAP visual motion layer; does not participate in app logic -->
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-    <script src="/static/js/gsap-animations.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js" defer></script>
+    <script src="/static/js/gsap-animations.js" defer></script>
 
     <!-- PWA Registration -->
     <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/static/sw.js?v=13')
+                navigator.serviceWorker.register('/static/sw.js?v=15')
                     .then(reg => {
                         reg.update();
                         console.log('PWA Service Worker registered and updated:', reg.scope);
@@ -1363,7 +1293,7 @@ Nội dung chương hai...</pre>
             <div id="image-crop-stage" class="relative mx-auto mt-5 aspect-[1.35/1] w-full max-w-md touch-none overflow-hidden rounded-2xl border-2 border-primary/70 bg-black/50 shadow-[0_0_0_999px_rgba(0,0,0,0.18)]" aria-label="Vùng crop ảnh">
                 <img id="image-crop-preview" class="pointer-events-none absolute left-1/2 top-1/2 max-w-none select-none" alt="Xem trước vùng crop">
                 <div class="pointer-events-none absolute inset-0 border-[3px] border-white/30"></div>
-                <span class="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/55 px-3 py-1 text-[11px] font-bold text-white">Tỷ lệ artwork Discovery · kéo để căn khung</span>
+                <span class="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/55 px-3 py-1 text-xs font-bold text-white">Tỷ lệ artwork Discovery · kéo để căn khung</span>
             </div>
             <div class="mt-5">
                 <div class="mb-2 flex items-center justify-between text-xs font-bold text-slate-400"><label for="image-crop-zoom">Zoom</label><output id="image-crop-zoom-value">100%</output></div>
@@ -1386,7 +1316,7 @@ Nội dung chương hai...</pre>
                 <div class="absolute inset-2 border-4 border-primary/5 border-b-primary/40 rounded-full animate-spin-slow"></div>
                 <!-- Center icon -->
                 <div class="absolute inset-0 flex items-center justify-center">
-                    <img src="/static/icon.svg" class="w-8 h-8 animate-pulse" alt="Logo">
+                    <img src="/static/icon-192.png" class="w-8 h-8 animate-pulse" width="32" height="32" alt="Logo" loading="lazy" decoding="async">
                 </div>
             </div>
             <p id="loading-text" class="text-white font-bold text-base tracking-wide text-center">
@@ -1458,7 +1388,7 @@ Nội dung chương hai...</pre>
                     <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
                         <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
                             <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-font text-primary"></i> <span data-i18n="quick-font-family">Font chữ Tiếng Việt</span></span>
-                            <span id="quick-font-family-badge" class="text-primary text-[11px] font-bold">Be Vietnam Pro</span>
+                            <span id="quick-font-family-badge" class="text-primary text-xs font-bold">Be Vietnam Pro</span>
                         </div>
                         <div class="relative">
                             <select id="quick-font-family-select"
@@ -1474,7 +1404,7 @@ Nội dung chương hai...</pre>
                             </select>
                             <i class="fas fa-chevron-down absolute right-3.5 top-1/2 -translate-y-1/2 text-primary/70 pointer-events-none text-xs"></i>
                         </div>
-                        <p class="mt-2 text-[11px] text-slate-400 italic px-1" id="quick-font-sample-preview" style="font-family: 'Be Vietnam Pro', sans-serif;">
+                        <p class="mt-2 text-xs text-slate-400 italic px-1" id="quick-font-sample-preview" style="font-family: 'Be Vietnam Pro', sans-serif;">
                             "Trăm năm trong cõi người ta, chữ tài chữ mệnh khéo là ghét nhau."
                         </p>
                     </div>
@@ -1511,7 +1441,7 @@ Nội dung chương hai...</pre>
                     <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
                         <div class="flex items-center justify-between text-xs font-bold px-1 mb-3">
                             <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-crown text-primary"></i> <span data-i18n="quick-theme-header">Chủ đề Hoàng gia (Themes)</span></span>
-                            <span id="quick-theme-current-name" class="text-primary text-[11px] font-bold">Vàng Hoàng Gia</span>
+                            <span id="quick-theme-current-name" class="text-primary text-xs font-bold">Vàng Hoàng Gia</span>
                         </div>
                         <div class="grid grid-cols-2 sm:grid-cols-3 gap-2" id="quick-theme-grid">
                             <button type="button" class="quick-theme-btn p-2 rounded-xl border border-primary/40 bg-primary/10 flex items-center gap-2 text-left transition-all active:scale-95" data-theme="default">
@@ -1560,7 +1490,7 @@ Nội dung chương hai...</pre>
                     <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
                         <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
                             <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-microphone-lines text-primary"></i> <span data-i18n="quick-voice-header">Giọng đọc AI</span></span>
-                            <span id="quick-voice-badge" class="text-primary text-[11px] font-bold">Hoài My</span>
+                            <span id="quick-voice-badge" class="text-primary text-xs font-bold">Hoài My</span>
                         </div>
                         <div class="relative">
                             <select id="quick-voice-select"
@@ -1613,7 +1543,7 @@ Nội dung chương hai...</pre>
                             <div class="flex items-center gap-2 text-xs font-bold text-white mb-0.5">
                                 <i class="fas fa-bolt text-amber-400"></i> <span data-i18n="quick-lite-mode-title">Chế độ Siêu Tiết Kiệm (Lite Mode)</span>
                             </div>
-                            <p class="text-[11px] text-slate-400" data-i18n="quick-lite-mode-desc">Tắt hiệu ứng mờ GPU, tối ưu pin và siêu mượt cho máy cấu hình yếu.</p>
+                            <p class="text-xs text-slate-400" data-i18n="quick-lite-mode-desc">Tắt hiệu ứng mờ GPU, tối ưu pin và siêu mượt cho máy cấu hình yếu.</p>
                         </div>
                         <label class="relative inline-flex items-center cursor-pointer shrink-0">
                             <input type="checkbox" id="quick-lite-mode-toggle" class="sr-only peer">
@@ -1627,7 +1557,7 @@ Nội dung chương hai...</pre>
                             <div class="flex items-center gap-2 text-xs font-bold text-white mb-0.5">
                                 <i class="fas fa-spa text-emerald-400"></i> <span data-i18n="quick-zen-mode-title">Chế độ Đọc Tập Trung (Zen Mode)</span>
                             </div>
-                            <p class="text-[11px] text-slate-400" data-i18n="quick-zen-mode-desc">Ẩn các thanh công cụ thừa, mang lại không gian đọc thuần khiết.</p>
+                            <p class="text-xs text-slate-400" data-i18n="quick-zen-mode-desc">Ẩn các thanh công cụ thừa, mang lại không gian đọc thuần khiết.</p>
                         </div>
                         <label class="relative inline-flex items-center cursor-pointer shrink-0">
                             <input type="checkbox" id="quick-zen-mode-toggle" class="sr-only peer">
@@ -1641,7 +1571,7 @@ Nội dung chương hai...</pre>
                             <div class="flex items-center gap-2 text-xs font-bold text-white mb-0.5">
                                 <i class="fas fa-sun text-yellow-400"></i> <span data-i18n="quick-wakelock-title">Giữ Màn Hình Luôn Sáng (WakeLock)</span>
                             </div>
-                            <p class="text-[11px] text-slate-400" data-i18n="quick-wakelock-desc">Ngăn thiết bị tự động khóa hoặc tắt màn hình trong khi đang đọc.</p>
+                            <p class="text-xs text-slate-400" data-i18n="quick-wakelock-desc">Ngăn thiết bị tự động khóa hoặc tắt màn hình trong khi đang đọc.</p>
                         </div>
                         <label class="relative inline-flex items-center cursor-pointer shrink-0">
                             <input type="checkbox" id="quick-wakelock-toggle" class="sr-only peer">
@@ -1655,11 +1585,11 @@ Nội dung chương hai...</pre>
                             <div class="flex items-center gap-2 text-xs font-bold text-white mb-0.5">
                                 <i class="fas fa-language text-sky-400"></i> <span data-i18n="quick-lang-title">Ngôn ngữ Giao diện (Language)</span>
                             </div>
-                            <p class="text-[11px] text-slate-400" data-i18n="quick-lang-desc">Chuyển đổi giữa Tiếng Việt và English.</p>
+                            <p class="text-xs text-slate-400" data-i18n="quick-lang-desc">Chuyển đổi giữa Tiếng Việt và English.</p>
                         </div>
                         <div class="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10 shrink-0">
-                            <button type="button" id="quick-lang-vi-btn" class="px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all bg-primary text-black">VI</button>
-                            <button type="button" id="quick-lang-en-btn" class="px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all text-slate-400 hover:text-white">EN</button>
+                            <button type="button" id="quick-lang-vi-btn" class="px-2.5 py-1 text-xs font-bold rounded-lg transition-all bg-primary text-black">VI</button>
+                            <button type="button" id="quick-lang-en-btn" class="px-2.5 py-1 text-xs font-bold rounded-lg transition-all text-slate-400 hover:text-white">EN</button>
                         </div>
                     </div>
                 </div>
@@ -1701,7 +1631,7 @@ Nội dung chương hai...</pre>
             <div class="flex flex-col gap-1 w-full px-2">
                 <p id="pocket-book-title" class="text-sm sm:text-base font-bold text-white/90 truncate"></p>
                 <p id="pocket-chapter-title" class="text-xs text-primary/80 truncate"></p>
-                <p id="pocket-sentence-preview" class="text-[11px] text-white/50 italic line-clamp-2 mt-2 px-2"></p>
+                <p id="pocket-sentence-preview" class="text-xs text-white/50 italic line-clamp-2 mt-2 px-2"></p>
             </div>
             <!-- Minimal Playback Controls -->
             <div class="flex items-center gap-5 sm:gap-6 mt-1">

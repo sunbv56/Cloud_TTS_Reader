@@ -669,11 +669,11 @@ export const QuickSettingsController = {
         const enBtn = document.getElementById('quick-lang-en-btn');
         if (viBtn && enBtn) {
             if (lang === 'vi') {
-                viBtn.className = 'px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all bg-primary text-black';
-                enBtn.className = 'px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all text-slate-400 hover:text-white';
+                viBtn.className = 'px-2.5 py-1 text-xs font-bold rounded-lg transition-all bg-primary text-black';
+                enBtn.className = 'px-2.5 py-1 text-xs font-bold rounded-lg transition-all text-slate-400 hover:text-white';
             } else {
-                enBtn.className = 'px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all bg-primary text-black';
-                viBtn.className = 'px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all text-slate-400 hover:text-white';
+                enBtn.className = 'px-2.5 py-1 text-xs font-bold rounded-lg transition-all bg-primary text-black';
+                viBtn.className = 'px-2.5 py-1 text-xs font-bold rounded-lg transition-all text-slate-400 hover:text-white';
             }
         }
     }
