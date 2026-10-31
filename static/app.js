@@ -698,10 +698,10 @@ const APP_STATUS = {
             info: '<i class="fas fa-info-circle text-primary text-base"></i>'
         };
         const titles = {
-            success: 'Thành công',
-            error: 'Thông báo lỗi',
-            warning: 'Cảnh báo',
-            info: 'Hệ thống'
+            success: tr('toast-success', 'Thành công'),
+            error: tr('toast-error', 'Thông báo lỗi'),
+            warning: tr('toast-warning', 'Cảnh báo'),
+            info: tr('toast-info', 'Hệ thống')
         };
 
         const kindClass = `toast-kind-${kind || 'info'}`;
@@ -717,7 +717,7 @@ const APP_STATUS = {
                 <div class="font-bold text-[11px] uppercase tracking-wider opacity-80 mb-0.5 text-white">${titleText}</div>
                 <div class="text-slate-200 text-xs leading-relaxed break-words">${message}</div>
             </div>
-            <button type="button" class="text-slate-400 hover:text-white p-1 -mr-1 -mt-1 text-xs opacity-70 hover:opacity-100 transition-opacity" aria-label="Đóng">
+            <button type="button" class="text-slate-400 hover:text-white p-1 -mr-1 -mt-1 text-xs opacity-70 hover:opacity-100 transition-opacity" aria-label="${tr('close', 'Đóng')}">
                 <i class="fas fa-times"></i>
             </button>
             <div class="toast-progress-track">
@@ -1984,7 +1984,7 @@ function applyTOCSearch() {
     const rawVal = tocSearchInput.value.trim();
     const query = removeVietnameseTones(rawVal.toLowerCase());
     // "12", "c.12", "chương 12" and "chapter 12" all search by number.
-    const numberQuery = query.replace(/^(c\.?|chuong|chapter|ch\.?)\s*/, '');
+    const numberQuery = query.replace(/^(chuong|chapter|ch\.?|c\.?)\s*/, '');
     const isNumber = /^\d+$/.test(numberQuery);
     const tocList = document.getElementById('toc-list');
     let visible = 0;
@@ -2250,7 +2250,10 @@ function safeViewTransition(callback) {
     // element, so in lite mode the chapter text flashed through the black
     // pocket overlay on each auto chapter change. Skip the animation there,
     // and in hidden tabs where it only aborts with "Document hidden".
-    if (document.startViewTransition && !STATE.isLiteMode && document.visibilityState !== 'hidden') {
+    // Chromium's renderer crashes when a transition runs while #toc-sheet is open
+    // with its sticky current-chapter row pinned, so skip it there too.
+    const tocSheetOpen = document.getElementById('toc-sheet')?.hidden === false;
+    if (document.startViewTransition && !STATE.isLiteMode && !tocSheetOpen && document.visibilityState !== 'hidden') {
         return document.startViewTransition(callback);
     } else {
         return callback();
@@ -5100,6 +5103,7 @@ function updateTOCCount() {
 function renderTOC() {
     const tocList = document.getElementById('toc-list');
     if (!tocList) return;
+    const checked = new Set([...tocList.querySelectorAll('.toc-chapter-checkbox:checked')].map(cb => cb.dataset.chapterIndex));
     tocList.innerHTML = '';
 
     const labelEl = document.getElementById('toc-book-label');
@@ -5119,6 +5123,10 @@ function renderTOC() {
         fragment.appendChild(buildTOCRow(chap, i, i === STATE.currentChapterIndex));
     });
     tocList.appendChild(fragment);
+    if (checked.size) {
+        tocList.querySelectorAll('.toc-chapter-checkbox').forEach(cb => { cb.checked = checked.has(cb.dataset.chapterIndex); });
+    }
+    if (isTOCSelectMode()) updateDownloadBar();
 
     // Re-apply TOC search if query exists
     applyTOCSearch();
@@ -5187,8 +5195,10 @@ function scrollTOCCurrentChapter() {
     const activeItem = document.getElementById(`toc-item-${STATE.currentChapterIndex}`);
     const tocList = document.getElementById('toc-list');
     if (!activeItem || !tocList) return;
-    // The pinned row sticks to an edge, so scroll by its layout position, not its box.
+    // offsetTop of a sticky row includes its pinned offset: measure it unstuck.
+    activeItem.style.position = 'static';
     const target = activeItem.offsetTop - (tocList.clientHeight - activeItem.offsetHeight) / 2;
+    activeItem.style.position = '';
     const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches || STATE.isLiteMode;
     tocList.scrollTo({ top: Math.max(0, target), behavior: reduce ? 'auto' : 'smooth' });
 }
@@ -5312,13 +5322,13 @@ function setTOCDownloadButton(button, state) {
 async function downloadSelectedChapters() {
     const checkboxes = document.querySelectorAll('.toc-chapter-checkbox:checked');
     if (checkboxes.length === 0) {
-        APP_STATUS.toast('Vui lòng chọn ít nhất một chương.', 'warning');
+        APP_STATUS.toast(tr('toc-select-none', 'Vui lòng chọn ít nhất một chương.'), 'warning');
         return;
     }
 
     const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.chapterIndex));
     if (selectedIndices.length > 5) {
-        APP_STATUS.toast('Tối đa chỉ cho tải 5 chương trong một lần tải để đảm bảo tốc độ siêu tốc và kết nối ổn định. Vui lòng chọn tối đa 5 chương.', 'warning');
+        APP_STATUS.toast(tr('toc-select-max', 'Mỗi lần tải tối đa 5 chương. Hãy bỏ bớt chương đã chọn.'), 'warning');
         return;
     }
 
@@ -7803,7 +7813,7 @@ if (zenToggleBtn) {
         AudioHapticFX.trigger(12);
         const nextState = !STATE.zenModeEnabled;
         setZenMode(nextState, true);
-        APP_STATUS.toast(nextState ? 'Đã bật chế độ tập trung (Zen Mode).' : 'Đã tắt chế độ tập trung (Zen Mode).', 'info');
+        APP_STATUS.toast(nextState ? tr('zen-on', 'Đã bật chế độ tập trung.') : tr('zen-off', 'Đã tắt chế độ tập trung.'), 'info');
     });
 }
 

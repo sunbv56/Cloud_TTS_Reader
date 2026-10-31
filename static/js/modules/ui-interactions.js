@@ -281,10 +281,16 @@ function onTOCSheetKey(event) {
     if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
-        closeTOCSheet();
+        dismissTOCSheet();
         return;
     }
     trapTab(sheet, event);
+}
+
+// User-initiated close: closeTOC also leaves select mode before closing the sheet.
+function dismissTOCSheet() {
+    if (typeof window.closeTOC === 'function') window.closeTOC();
+    else closeTOCSheet();
 }
 
 function onTOCSheetResize() {
@@ -572,8 +578,8 @@ export function initUIInteractions() {
         openQuickTOC();
     });
 
-    document.getElementById('toc-close-btn')?.addEventListener('click', () => closeTOCSheet());
-    document.getElementById('toc-sheet-scrim')?.addEventListener('click', () => closeTOCSheet());
+    document.getElementById('toc-close-btn')?.addEventListener('click', dismissTOCSheet);
+    document.getElementById('toc-sheet-scrim')?.addEventListener('click', dismissTOCSheet);
 
     // Reader Utilities Dropdown (Consolidated 3-dot Menu)
     initReaderMoreMenu();
@@ -585,7 +591,9 @@ export function initReaderMoreMenu() {
     if (!moreBtn || !menu) return;
     let isOpen = false;
 
-    const items = () => [...menu.querySelectorAll('[role^="menuitem"]:not(:disabled)')];
+    // Skip items inside hidden groups (e.g. the sleep-timer cancel row).
+    const items = () => [...menu.querySelectorAll('[role^="menuitem"]:not(:disabled)')]
+        .filter(item => item.getClientRects().length > 0);
 
     function onOutside(event) {
         if (!menu.contains(event.target) && !moreBtn.contains(event.target)) setOpen(false);
@@ -613,7 +621,9 @@ export function initReaderMoreMenu() {
     // Toggles and timer presets keep the menu open so the new state is visible.
     menu.addEventListener('click', (event) => {
         const item = event.target.closest('[role^="menuitem"]');
-        if (item && !item.hasAttribute('data-keep-open')) setOpen(false);
+        // Focus moves back to ⋮ before the item's handler runs, so dialogs it
+        // opens record a visible element to return focus to.
+        if (item && !item.hasAttribute('data-keep-open')) setOpen(false, { restoreFocus: true });
     }, true);
     menu.addEventListener('keydown', (event) => {
         const list = items();
