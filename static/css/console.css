@@ -125,6 +125,7 @@
 
 :root {
     --cover-aspect: 5 / 7;
+    --color-scrim-solid: color-mix(in oklch, var(--color-paper) 88%, transparent);
     --font-ui: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", sans-serif;
     --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
     --font-read: var(--reader-font-family, "Source Serif 4", Georgia, serif);
@@ -318,6 +319,10 @@
     .icon-btn:active { transform: translateY(1px); }
     .icon-btn:disabled { color: var(--color-muted); opacity: .45; cursor: not-allowed; transform: none; background: transparent; }
     .icon-btn[aria-haspopup][aria-expanded="true"] { background: var(--color-surface); }
+    /* loading: glyph swaps to a download arrow; success: a check in the ok colour */
+    .icon-btn[aria-busy="true"],
+    .icon-btn[aria-busy="true"]:disabled { color: var(--color-accent); background: var(--color-surface); opacity: 1; cursor: progress; }
+    .icon-btn.is-success { color: var(--color-ok); }
 
     .chip {
         position: relative;
@@ -2390,6 +2395,7 @@
     .lib-tools { display: flex; gap: var(--space-2); }
     .lib-tools .search-field { flex: 1; }
     .lib-filter { flex: none; }
+    .lib-sync { flex: none; margin: 0; font-size: var(--text-xs); color: var(--color-muted); }
     .lib-list {
         flex: 0 1 auto;
         min-height: 0;
@@ -2752,6 +2758,9 @@
     .modal.hidden { display: none; }
     .modal--top { z-index: var(--z-modal-top); }
     .modal__scrim { position: absolute; inset: 0; background: var(--color-scrim); animation: cc-fade var(--dur) var(--ease-out); }
+    /* A dialog opened from the phone drawer: hide the drawer behind it instead of
+       leaving its header and close button floating above the sheet. */
+    body:has(.sidebar.open) .modal:not(.hidden) > .modal__scrim { background: var(--color-scrim-solid); }
     .modal > .modal-card {
         display: flex;
         flex-direction: column;
