@@ -140,6 +140,7 @@ export function toggleSidebar(show) {
     const sidebar = document.getElementById('sidebar-container');
     const overlay = document.getElementById('sidebar-overlay');
     if (!sidebar || !overlay) return;
+    document.getElementById('mobile-menu-btn')?.setAttribute('aria-expanded', String(!!show));
     if (show) {
         sidebar.classList.remove('hidden');
         sidebar.classList.add('open');
@@ -506,9 +507,18 @@ export function initUIInteractions() {
     const overlay = document.getElementById('sidebar-overlay');
     const closeSidebar = document.getElementById('close-sidebar');
 
-    mobileMenuBtn?.addEventListener('click', () => toggleSidebar(true));
-    overlay?.addEventListener('click', () => toggleSidebar(false));
-    closeSidebar?.addEventListener('click', () => toggleSidebar(false));
+    const closeDrawer = () => {
+        toggleSidebar(false);
+        mobileMenuBtn?.focus({ preventScroll: true });
+    };
+    mobileMenuBtn?.addEventListener('click', () => {
+        toggleSidebar(true);
+        const sidebar = document.getElementById('sidebar-container');
+        const target = sidebar?.querySelector('#sidebar-tabs [aria-selected="true"]') || closeSidebar;
+        target?.focus({ preventScroll: true });
+    });
+    overlay?.addEventListener('click', closeDrawer);
+    closeSidebar?.addEventListener('click', closeDrawer);
 
     window.addEventListener('resize', () => {
         if (window.innerWidth >= 1024) toggleSidebar(false);

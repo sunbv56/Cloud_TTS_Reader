@@ -35,8 +35,15 @@ function i18nText(tag, className, key) {
     return node;
 }
 
+const LEGACY_FALLBACK_NAME = 'Tài khoản Google';
+
+function profileName(profile) {
+    const name = profile?.name && profile.name !== LEGACY_FALLBACK_NAME ? profile.name : '';
+    return name || profile?.email || t('account-fallback-name');
+}
+
 function avatar(profile, className = 'acct-avatar') {
-    const initial = el('span', `${className} acct-avatar--initial`, (profile.name || profile.email || '?').trim().charAt(0).toUpperCase());
+    const initial = el('span', `${className} acct-avatar--initial`, (profileName(profile) || '?').trim().charAt(0).toUpperCase());
     initial.setAttribute('aria-hidden', 'true');
     if (!profile.photo) return initial;
     const img = el('img', className);
@@ -75,8 +82,8 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         trigger.setAttribute('aria-haspopup', 'menu');
         trigger.setAttribute('aria-controls', 'account-menu');
         trigger.setAttribute('aria-expanded', String(isOpen));
-        trigger.setAttribute('aria-label', `${profile.name} — ${t('account-menu-title')}`);
-        info?.replaceChildren(avatar(profile, 'acct-avatar acct-avatar--sm'), el('span', 'acct-info__name', profile.name));
+        trigger.setAttribute('aria-label', `${profileName(profile)} — ${t('account-menu-title')}`);
+        info?.replaceChildren(avatar(profile, 'acct-avatar acct-avatar--sm'), el('span', 'acct-info__name', profileName(profile)));
     }
 
     function renderMenu() {
@@ -97,7 +104,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
             if (account.uid === pendingUid) item.dataset.state = 'loading';
 
             const text = el('span', 'acct-item__text');
-            text.append(el('span', 'acct-item__name', account.name));
+            text.append(el('span', 'acct-item__name', profileName(account)));
             if (account.email) text.append(el('span', 'acct-item__email', account.email));
 
             const mark = account.uid === pendingUid
@@ -165,7 +172,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         try {
             await sessions.add();
         } catch (err) {
-            reportAuthError(err, 'Đăng nhập thất bại');
+            reportAuthError(err, t('sign-in-failed'));
         }
         render();
     }
@@ -182,7 +189,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
             await sessions.switchTo(uid);
             closeMenu({ restoreFocus: true });
         } catch (err) {
-            reportAuthError(err, 'Chuyển tài khoản thất bại');
+            reportAuthError(err, t('account-switch-failed'));
         } finally {
             pendingUid = null;
             render();
@@ -194,7 +201,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         try {
             await sessions.signOutActive();
         } catch (err) {
-            reportAuthError(err, 'Đăng xuất thất bại');
+            reportAuthError(err, t('sign-out-failed'));
         }
         render();
     }

@@ -502,7 +502,7 @@ async function handleAccountSession(session) {
     void STATS_MANAGER.load();
     await refreshLibrary();
     initWebSocket();
-    APP_STATUS.set('Ready');
+    APP_STATUS.set(tr('status-ready', 'Ready'));
 }
 
 /**
@@ -736,6 +736,7 @@ const APP_STATUS = {
         let removeTimer = null;
         const dismiss = () => {
             if (removeTimer) clearTimeout(removeTimer);
+            toast.dataset.leaving = 'true';
             if (window.MotionLayer?.animateToastOut) {
                 window.MotionLayer.animateToastOut(toast);
             } else {
@@ -748,6 +749,12 @@ const APP_STATUS = {
             dismiss();
         });
         toast.addEventListener('click', dismiss);
+        toast.dismissToast = dismiss;
+
+        // Keep the stack short so it never buries the reader on a phone: drop the oldest first.
+        const maxToasts = window.matchMedia('(max-width: 639.98px)').matches ? 2 : 3;
+        const live = [...region.children].filter(node => !node.dataset.leaving);
+        live.slice(0, Math.max(0, live.length - maxToasts + 1)).forEach(node => (node.dismissToast ? node.dismissToast() : node.remove()));
 
         region.appendChild(toast);
         if (window.MotionLayer?.animateToastIn) {
@@ -769,7 +776,7 @@ function updateNetworkStatus() {
     const banner = document.getElementById('network-status');
     if (!banner) return;
     banner.classList.toggle('hidden', navigator.onLine);
-    APP_STATUS.set(navigator.onLine ? 'Ready' : tr('status-offline', 'Ngoại tuyến'));
+    APP_STATUS.set(navigator.onLine ? tr('status-ready', 'Ready') : tr('status-offline', 'Ngoại tuyến'));
 }
 window.addEventListener('offline', updateNetworkStatus);
 window.addEventListener('online', () => {
@@ -1089,6 +1096,7 @@ function createCoverElement(entry, size) {
     cover.className = `cover cover--${size} cover--text`;
     cover.setAttribute('aria-hidden', 'true');
     cover.dataset.coverFor = entry.id;
+    cover.dataset.coverTitle = entry.title;
     cover.style.setProperty('--cover-h', String(titleHue(entry.title)));
     const initials = document.createElement('span');
     initials.className = 'cover__initials';
@@ -1688,7 +1696,7 @@ function updateDiscoveryContinueCard() {
     }
     card.dataset.bookId = entry.id;
     const oldCover = document.getElementById('discovery-continue-cover');
-    if (oldCover?.dataset.coverFor !== entry.id) {
+    if (oldCover?.dataset.coverFor !== entry.id || oldCover.dataset.coverTitle !== entry.title) {
         const cover = createCoverElement(entry, 'resume');
         cover.id = 'discovery-continue-cover';
         oldCover?.replaceWith(cover);
@@ -1740,7 +1748,7 @@ async function renameLibraryBook(entry) {
         APP_STATUS.toast(tr('rename-done', 'Đã đổi tên truyện.'), 'success');
     } catch (err) {
         console.error('[Title] Rename failed:', err);
-        APP_STATUS.error(`Không thể lưu tên truyện: ${err.message}`);
+        APP_STATUS.error(tr('rename-failed', 'Không thể lưu tên truyện: {reason}', { reason: err.message }));
     }
 }
 
@@ -2342,7 +2350,7 @@ async function resetAudioEngine() {
     }
 
     // 6. Reset UI indicators
-    document.getElementById('status-indicator').innerText = "Ready";
+    document.getElementById('status-indicator').innerText = tr('status-ready', 'Ready');
     setPlayIcon(false);
 
     // 7. Reset stall counters
@@ -2665,7 +2673,7 @@ async function initWebSocket() {
 
     STATE.ws.onopen = () => {
         console.log("Connected to WebSocket");
-        document.getElementById('status-indicator').innerText = "Ready";
+        document.getElementById('status-indicator').innerText = tr('status-ready', 'Ready');
         socket.send(JSON.stringify({ type: "AUTH", token }));
 
         // --- FIXED: Clear existing heartbeat to avoid PING interval leaks ---
@@ -2816,7 +2824,7 @@ async function initWebSocket() {
                         if (typeof dispatchDownloadQueue === 'function') dispatchDownloadQueue();
                     }
                 } else {
-                    document.getElementById('status-indicator').innerText = "Ready";
+                    document.getElementById('status-indicator').innerText = tr('status-ready', 'Ready');
                 }
 
                 // Update UI using buffer health logic
@@ -3797,7 +3805,7 @@ function getLocalIndices(globalIdx) {
 async function refreshLibrary() {
     if (!STATE.user) {
         if (window.APP_STATUS?.toast) {
-            window.APP_STATUS.toast('Vui lòng đăng nhập để đồng bộ thư viện đám mây.', 'info');
+            window.APP_STATUS.toast(tr('sync-sign-in-required', 'Vui lòng đăng nhập để đồng bộ thư viện đám mây.'), 'info');
         }
         return;
     }
@@ -3865,7 +3873,7 @@ async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
     if (btn) setButtonLoading(btn, true, 'Đang chuẩn bị...');
 
     const status = document.getElementById('status-indicator');
-    const previousStatus = status?.innerText || 'Ready';
+    const previousStatus = status?.innerText || tr('status-ready', 'Ready');
     if (status) status.innerText = 'Preparing TXT...';
     APP_STATUS.toast('Đang xuất file TXT toàn bộ tác phẩm...', 'info');
 
@@ -3908,7 +3916,7 @@ async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
         if (btn) setButtonLoading(btn, false);
         setTimeout(() => {
             if (status && (status.innerText === 'TXT download started' || status.innerText === 'TXT download failed')) {
-                status.innerText = previousStatus || 'Ready';
+                status.innerText = previousStatus || tr('status-ready', 'Ready');
             }
         }, 2500);
     }
@@ -3916,48 +3924,35 @@ async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
 
 // ── Feature 1: Delete Book ───────────────────────────────────────────────────
 
-/**
- * Deletes a book's Firestore document AND Storage file in parallel.
- * Gracefully handles the case where the Storage file doesn't exist.
- */
 async function deleteBook(bookId, filename, title, bypassConfirm = false) {
     closeAllKebabMenus(); // close menu first
 
     if (!bypassConfirm && !confirm(tr('delete-book-confirm', 'Xóa truyện "{title}"?\n\nHành động này sẽ xóa vĩnh viễn dữ liệu trên Cloud. Không thể hoàn tác!', { title }))) return;
     if (!STATE.user) return;
 
-    document.getElementById('status-indicator').innerText = 'Đang xóa...';
+    APP_STATUS.set(tr('status-deleting', 'Đang xóa...'));
 
     try {
-        // ── 1. Firestore delete ──────────────────────────────────────────────
-        const deleteFirestore = deleteDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId));
-
-        // ── 2. Delete all file/segment/image objects through the backend ─────
+        // Storage first: on failure the progress doc stays, so the book is still listed and the delete can be retried.
         const storageQuery = filename ? `?filename=${encodeURIComponent(filename)}` : '';
-        const deleteStorage = authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/storage${storageQuery}`, { method: 'DELETE' }).then(response => {
-            if (!response.ok) throw new Error(`Storage delete failed (${response.status})`);
-        });
-
-        // ── 3. Run Firestore and storage cleanup in parallel ────────────────
-        await Promise.all([deleteFirestore, deleteStorage]);
+        const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/storage${storageQuery}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error(tr('delete-storage-failed', 'Không xóa được dữ liệu lưu trữ (lỗi {status}). Truyện vẫn còn, hãy thử lại sau.', { status: response.status }));
+        await deleteDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId));
         console.log(`[Delete] "${title}" deleted successfully.`);
 
-        // ── 4. If the deleted book is currently open, reset the reader ────────
         if (STATE.currentBookId === bookId) {
             await handlePlaybackStall(); // This handles WS close, RAM/ROM clear, and UI reset
             closeCurrentBook();
         }
 
-        // ── 5. Refresh library sidebar ────────────────────────────────────────
         await refreshLibrary();
-        document.getElementById('status-indicator').innerText = 'Đã xóa!';
-        setTimeout(() => document.getElementById('status-indicator').innerText = 'Ready', 2500);
+        APP_STATUS.set(tr('status-deleted', 'Đã xóa!'));
+        setTimeout(() => APP_STATUS.set(tr('status-ready', 'Ready')), 2500);
 
     } catch (err) {
         console.error('[Delete] Error:', err);
-        APP_STATUS.error(`Xóa thất bại: ${err.message}`);
-        document.getElementById('status-indicator').innerText = 'Error';
-        setTimeout(() => document.getElementById('status-indicator').innerText = 'Ready', 3000);
+        APP_STATUS.error(tr('delete-failed', 'Xóa thất bại: {reason}', { reason: err?.message || err }));
+        setTimeout(() => APP_STATUS.set(tr('status-ready', 'Ready')), 3000);
     }
 }
 
@@ -4344,7 +4339,7 @@ async function loadBookFromStorage(bookId, bookData) {
             // migration remains available as an explicit backend operation.
         }
         markLoad('first_render');
-        document.getElementById('status-indicator').innerText = "Ready";
+        document.getElementById('status-indicator').innerText = tr('status-ready', 'Ready');
         markLoad('ready');
 
         // Older segmented stories were written as 100-chapter unversioned
@@ -4881,7 +4876,7 @@ async function fetchChapterSentences(index, expectedLoadGeneration = STATE.loadG
         if (data.sentences) {
             STATE.currentBook.chapters[index].sentences = data.sentences;
             STATE.currentBook.chapters[index].count = data.sentences.length; // Ensure count is correct
-            document.getElementById('status-indicator').innerText = "Ready";
+            document.getElementById('status-indicator').innerText = tr('status-ready', 'Ready');
         } else {
             throw new Error(data.error || "Failed to load chapter content.");
         }
@@ -6107,7 +6102,7 @@ async function editTitle() {
         document.getElementById('current-title').title = previousTitle;
         updateUI();
         console.error('[Title] Save failed:', err);
-        APP_STATUS.error(`Không thể lưu tên truyện: ${err.message}`);
+        APP_STATUS.error(tr('rename-failed', 'Không thể lưu tên truyện: {reason}', { reason: err.message }));
     }
 }
 
@@ -6498,6 +6493,16 @@ const toggleFullscreen = () => {
 const fullscreenBtn = document.getElementById('fullscreen-btn');
 if (fullscreenBtn) {
     fullscreenBtn.onclick = toggleFullscreen;
+    document.addEventListener('fullscreenchange', () => {
+        const active = !!document.fullscreenElement;
+        const key = active ? 'menu-fullscreen-exit' : 'menu-fullscreen';
+        const label = fullscreenBtn.querySelector('[data-i18n]');
+        if (label) {
+            label.dataset.i18n = key;
+            label.textContent = tr(key, active ? 'Thoát toàn màn hình' : 'Toàn màn hình');
+        }
+        fullscreenBtn.querySelector('use')?.setAttribute('href', active ? '#i-full-exit' : '#i-full');
+    });
 }
 
 // Performance / Lite Mode (Chế độ Chỉ Nghe Audio / Pocket Mode)
@@ -7254,11 +7259,11 @@ async function triggerManualSave() {
         });
 
         setSaveState('ok', 'i-check');
-        APP_STATUS.toast('Đã lưu tiến độ đọc lên đám mây.', 'success');
+        APP_STATUS.toast(tr('progress-saved-cloud', 'Đã lưu tiến độ đọc lên đám mây.'), 'success');
         setTimeout(() => setSaveState('', 'i-cloud-up'), 2000);
     } catch (e) {
         console.error("Manual save failed:", e);
-        APP_STATUS.error(e, 'Không thể lưu tiến độ lên Firestore.');
+        APP_STATUS.error(e, tr('progress-save-failed', 'Không thể lưu tiến độ lên Firestore.'));
         setSaveState('error', 'i-x');
         setTimeout(() => setSaveState('', 'i-cloud-up'), 2000);
     }
@@ -7580,7 +7585,7 @@ async function openEditChapterModal(index, triggerBtn = null) {
             modal.classList.remove('hidden');
             textarea.scrollTop = 0;
             textarea.focus({ preventScroll: true });
-            if (statusIndicator) statusIndicator.innerText = "Ready";
+            if (statusIndicator) statusIndicator.innerText = tr('status-ready', 'Ready');
         } else {
             throw new Error(data.error || "Failed to fetch content");
         }
@@ -7672,7 +7677,7 @@ async function saveChapterEdit() {
             closeEditModal();
             if (statusIndicator) {
                 statusIndicator.innerText = "Changes saved!";
-                setTimeout(() => statusIndicator.innerText = "Ready", 3000);
+                setTimeout(() => statusIndicator.innerText = tr('status-ready', 'Ready'), 3000);
             }
         } else {
             throw new Error(data.error || "Failed to save changes");

@@ -264,7 +264,7 @@ export class AccountSessions {
         const profile = {
             uid: user.uid,
             appName,
-            name: user.displayName || user.email || 'Tài khoản Google',
+            name: user.displayName || user.email || '',
             email: user.email || '',
             photo: safePhotoURL(user.photoURL)
         };
