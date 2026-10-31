@@ -186,11 +186,11 @@
 
         <!-- Account switcher: trigger + menu are rendered by js/modules/account-menu.js -->
         <div class="acct-switch">
-            <button id="auth-btn" type="button" class="btn-primary" aria-label="Tài khoản">
+            <button id="auth-btn" type="button" class="btn-primary" aria-label="Sign In">
                 <i class="fab fa-google"></i>
                 <span class="hidden sm:inline" data-i18n="sign-in">Sign In</span>
             </button>
-            <div id="account-menu" class="acct-menu" role="menu" aria-label="Tài khoản" hidden></div>
+            <div id="account-menu" class="acct-menu" role="menu" aria-label="Account" data-i18n-aria="account" hidden></div>
         </div>
     </header>
 
@@ -1151,19 +1151,7 @@ Nội dung chương hai...</pre>
     <!-- Reader-only Picture-in-Picture controls -->
     <script src="/static/js/mini-player-widget.js"></script>
 
-    <!-- PWA Registration -->
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('/static/sw.js?v=13')
-                    .then(reg => {
-                        reg.update();
-                        console.log('PWA Service Worker registered and updated:', reg.scope);
-                    })
-                    .catch(err => console.log('PWA Service Worker registration failed:', err));
-            });
-        }
-    </script>
+    <!-- PWA: the service worker is registered (scope '/') at the end of app.js -->
     <!-- Edit chapter: raw text of one chapter -->
     <div id="edit-chapter-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="edit-chapter-title">
         <div class="modal__scrim"></div>
