@@ -527,6 +527,7 @@ async function leaveAccount({ save }) {
     STATE.progressSaveChain = Promise.resolve();
     STATS_MANAGER._saveChain = Promise.resolve();
     STATS_MANAGER._loadedUid = null;
+    db = null;
     if (leavingDb) terminate(leavingDb).catch(err => console.warn('[Accounts] Firestore terminate failed:', err));
 
     if (STATE.progressRetryTimer) clearTimeout(STATE.progressRetryTimer);
@@ -550,7 +551,6 @@ async function leaveAccount({ save }) {
     STATE.imageURLCache.forEach(url => URL.revokeObjectURL(url));
     STATE.imageURLCache.clear();
     discoveryLibrary = [];
-    db = null;
     auth = null;
     app = null;
 }
