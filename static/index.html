@@ -15,6 +15,11 @@
                 var stored = localStorage.getItem('reader-theme');
                 if (stored) savedTheme = THEMES[stored] ? stored : (LEGACY[stored] || 'slate');
                 if (stored && stored !== savedTheme) localStorage.setItem('reader-theme', savedTheme);
+                // Reading line height and column width (Aa panel), applied before first paint.
+                var leading = localStorage.getItem('reader-line-height');
+                var measure = localStorage.getItem('reader-measure');
+                if (/^1\.\d{1,2}$/.test(leading || '')) document.documentElement.style.setProperty('--reader-leading', leading);
+                if (/^\d{2}ch$/.test(measure || '')) document.documentElement.style.setProperty('--reader-measure', measure);
             } catch (_) {}
             document.documentElement.setAttribute('data-theme', savedTheme);
             var meta = document.querySelector('meta[name="theme-color"]');
@@ -48,7 +53,7 @@
     <!-- Mini player widget (Document PiP); colours come from the console tokens -->
     <link rel="stylesheet" href="/static/css/mini-player.css?v=15">
     <!-- Console design system: tokens, components, app shell -->
-    <link rel="stylesheet" href="/static/css/console.css?v=2">
+    <link rel="stylesheet" href="/static/css/console.css?v=3">
     <style type="text/tailwindcss">
         @theme {
             --font-reading: var(--font-read);
@@ -108,6 +113,17 @@
         <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6.5C10 5 7 4.5 4 5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V5c-3-.5-6 0-8 1.5zM12 6.5v13"/></symbol>
         <symbol id="i-crop" viewBox="0 0 24 24"><path d="M7 3v14h14M3 7h14v14"/></symbol>
         <symbol id="i-swap" viewBox="0 0 24 24"><path d="M5 8h13M14.5 4.5L18 8l-3.5 3.5M19 16H6M9.5 12.5L6 16l3.5 3.5"/></symbol>
+        <symbol id="i-aa" viewBox="0 0 24 24"><path d="M2.5 19L8 5h1l5.5 14M4.6 14h7.8"/><path d="M16.2 12.3c.6-.7 1.4-1 2.3-1 1.6 0 2.5.9 2.5 2.5V19M21 15.6c-1.2-.3-4.8-.3-4.8 1.8 0 1 .8 1.6 1.9 1.6 1.5 0 2.9-.9 2.9-2.6"/></symbol>
+        <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></symbol>
+        <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19.5 14.5A8 8 0 1 1 9.5 4.5a6.5 6.5 0 0 0 10 10z"/></symbol>
+        <symbol id="i-cloud-up" viewBox="0 0 24 24"><path d="M7 18.5a4.5 4.5 0 0 1-.6-9A6 6 0 0 1 18 10.6a3.9 3.9 0 0 1-.5 7.9M12 12.5v7M9.5 15L12 12.5l2.5 2.5"/></symbol>
+        <symbol id="i-focus" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/></symbol>
+        <symbol id="i-screen-off" viewBox="0 0 24 24"><rect x="6.5" y="3" width="11" height="18" rx="2"/><path d="M3.5 3.5l17 17"/></symbol>
+        <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"/></symbol>
+        <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 7.6-1.7"/></symbol>
+        <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" stroke="none"/></symbol>
+        <symbol id="i-checks" viewBox="0 0 24 24"><path d="M3 12.5l4 4L15.5 8M11 16.5l1 1L21 8"/></symbol>
+        <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3.5H7a1.5 1.5 0 0 0-1.5 1.5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8L14 3.5zM14 3.5V8h4.5M9 13h6M9 16.5h4"/></symbol>
     </svg>
 
     <header class="app-header" id="app-header">
@@ -229,92 +245,68 @@
                     </div>
                 </div>
 
-            <!-- Panel: Table of Contents -->
-            <div id="panel-toc" role="tabpanel" aria-labelledby="tab-toc" hidden
-                class="glass flex-1 min-h-0 flex flex-col overflow-hidden rounded-3xl">
-                <div class="p-3 sm:p-4 border-b border-glass-border bg-white/5 flex items-center justify-between gap-2 shrink-0">
-                    <div class="min-w-0 flex-1">
-                        <h2 class="font-bold flex items-center gap-2 text-[#dae2fd] text-sm sm:text-base truncate">
-                            <i class="fas fa-list-ul text-primary"></i>
-                            <span id="toc-book-label" class="truncate">Chưa mở truyện</span>
-                        </h2>
+            <!-- Panel: Mục lục chương (tab "Chương" ≥1024px; moves into #toc-sheet on smaller screens) -->
+            <div id="panel-toc" role="tabpanel" aria-labelledby="tab-toc" class="toc-panel" hidden>
+                <div class="toc-head">
+                    <div class="toc-head__text">
+                        <p class="toc-head__kicker" data-i18n="toc-title">Mục lục</p>
+                        <h2 id="toc-book-label" class="toc-head__title">Chưa mở truyện</h2>
                     </div>
-                    <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                        <button id="toc-download-txt-btn"
-                            class="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-bold bg-white/5 hover:bg-primary/20 hover:text-primary transition-all flex items-center gap-1.5 sm:gap-2"
-                            title="Download source TXT">
-                            <i class="fas fa-file-download text-xs"></i>
-                            <span data-i18n="download-source-txt">TXT</span>
-                        </button>
-                        <button id="toc-select-mode-btn"
-                            class="px-2.5 sm:px-3 py-1.5 sm:py-2 rounded-xl text-xs font-bold bg-white/5 hover:bg-primary/20 hover:text-primary transition-all flex items-center gap-1.5 sm:gap-2"
-                            title="Select chapters for offline download">
-                            <i class="fas fa-check-double text-xs"></i>
-                            <span>Select</span>
-                        </button>
-                    </div>
+                    <button id="toc-download-txt-btn" type="button" class="icon-btn toc-head__txt"
+                        title="Tải file TXT gốc" aria-label="Tải file TXT gốc" data-i18n-aria="download-source-txt-long">
+                        <svg class="ic ic--sm" aria-hidden="true"><use href="#i-file"/></svg>
+                    </button>
+                    <button id="toc-close-btn" type="button" class="icon-btn toc-close" aria-label="Đóng mục lục" data-i18n-aria="toc-close">
+                        <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+                    </button>
                 </div>
-                <!-- TOC quick search -->
-                <div class="px-3 pt-2.5 shrink-0">
-                    <div class="relative">
-                        <i class="fas fa-search absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs pointer-events-none"></i>
-                        <input type="text" id="toc-search" autocomplete="off"
-                            placeholder="Tìm chương..."
-                            aria-label="Tìm chương trong mục lục"
-                            class="w-full min-h-[38px] bg-black/30 border border-white/10 rounded-xl pl-9 pr-9 text-xs sm:text-sm placeholder:text-slate-600 focus:border-primary/50 focus:outline-none transition-colors"
-                            style="background-color: var(--theme-surface); color: var(--theme-text);">
-                        <button id="toc-clear-search" type="button" hidden
-                            class="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-lg flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/10 transition-all"
-                            aria-label="Xóa tìm kiếm mục lục">
-                            <i class="fas fa-times text-xs"></i>
+                <div class="toc-tools">
+                    <div class="search-field">
+                        <svg class="ic ic--sm" aria-hidden="true"><use href="#i-search"/></svg>
+                        <input type="text" id="toc-search" autocomplete="off" enterkeyhint="search" inputmode="search"
+                            placeholder="Tìm chương" aria-label="Tìm chương theo số hoặc tên"
+                            data-i18n-placeholder="toc-search-placeholder" data-i18n-aria="toc-search-label">
+                        <button id="toc-clear-search" type="button" class="search-field__clear" hidden
+                            aria-label="Xoá tìm kiếm" data-i18n-aria="clear-search">
+                            <svg class="ic ic--sm" aria-hidden="true"><use href="#i-x"/></svg>
                         </button>
                     </div>
+                    <button id="toc-select-mode-btn" type="button" class="btn toc-tools__btn" aria-pressed="false"
+                        title="Chọn nhiều chương để xoá hoặc tải MP3" data-i18n-aria="toc-select-hint">
+                        <svg class="ic ic--sm" aria-hidden="true"><use href="#i-checks"/></svg>
+                        <span data-toc-select-label data-i18n="toc-select">Chọn</span>
+                    </button>
                 </div>
-                <div id="toc-list" class="flex-1 overflow-y-auto p-2.5 sm:p-4 flex flex-col gap-2 min-h-0">
+                <p id="toc-count" class="toc-count" aria-live="polite"></p>
+                <div id="toc-list" class="toc-list" role="list" aria-labelledby="toc-book-label">
                     <!-- Chapters injected here -->
                 </div>
-                <!-- Floating Download Action Bar -->
-                <div id="toc-download-bar"
-                    class="hidden border-t border-white/10 p-4 bg-surface-low/80 backdrop-blur-xl shrink-0">
-                    <div class="flex items-center justify-between mb-3">
-                        <span id="toc-selected-count" class="text-xs font-bold text-slate-400"><span
-                                data-i18n="0-chapters">0 chapters</span>
-                            <span data-i18n="selected">selected</span></span>
-                        <div class="flex items-center gap-2">
-                            <button id="toc-select-all-btn"
-                                class="text-[10px] font-bold text-primary hover:underline cursor-pointer">Select
-                                All</button>
-                            <span class="text-slate-600">|</span>
-                            <button id="toc-deselect-all-btn"
-                                class="text-[10px] font-bold text-slate-400 hover:text-white cursor-pointer">Deselect</button>
-                        </div>
+                <!-- Select mode: delete / download MP3 -->
+                <div id="toc-download-bar" class="toc-bar hidden">
+                    <div class="toc-bar__row">
+                        <span id="toc-selected-count" class="toc-bar__count" aria-live="polite">0</span>
+                        <button id="toc-select-all-btn" type="button" class="link-btn" data-i18n="select-all">Chọn tất cả</button>
+                        <button id="toc-deselect-all-btn" type="button" class="link-btn" data-i18n="deselect-all">Bỏ chọn</button>
                     </div>
-                    <div class="flex flex-col gap-2">
-                        <button id="toc-delete-btn"
-                            class="w-full py-3 rounded-2xl bg-red-500/10 border border-red-500/20 text-red-400 font-bold flex items-center justify-center gap-3 hover:bg-red-500/20 transition-all active:scale-95">
-                            <i class="fas fa-trash-alt"></i>
-                            <span data-i18n="delete-selected">Delete Selected</span>
+                    <div class="toc-bar__actions">
+                        <button id="toc-delete-btn" type="button" class="btn btn--danger">
+                            <svg class="ic ic--sm" aria-hidden="true"><use href="#i-trash"/></svg>
+                            <span data-i18n="toc-delete">Xoá</span>
                         </button>
-                        <button id="toc-download-btn"
-                            class="w-full btn-primary flex items-center justify-center gap-3 py-3 rounded-2xl">
-                            <i class="fas fa-download"></i>
-                            <span data-i18n="download-offline-mp3">Download Offline MP3</span>
+                        <button id="toc-download-btn" type="button" class="btn btn--primary">
+                            <svg class="ic ic--sm" aria-hidden="true"><use href="#i-download"/></svg>
+                            <span data-i18n="toc-download-mp3">Tải MP3</span>
                         </button>
                     </div>
-                    <div id="toc-download-progress" class="hidden mt-3">
-                        <div class="flex items-center justify-between mb-1.5">
-                            <span id="toc-download-chapter-info"
-                                class="text-[10px] font-bold text-slate-400 truncate max-w-[70%]">Chapter 1/5</span>
-                            <span id="toc-download-percent"
-                                class="text-[10px] font-mono text-primary font-bold">0%</span>
+                    <p class="toc-bar__hint" data-i18n="toc-mp3-limit">MP3 tối đa 5 chương mỗi lần, dùng giọng và tốc độ hiện tại.</p>
+                    <div id="toc-download-progress" class="toc-progress hidden">
+                        <div class="toc-progress__meta">
+                            <span id="toc-download-chapter-info">—</span>
+                            <span id="toc-download-percent">0%</span>
                         </div>
-                        <div class="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                            <div id="toc-download-progress-bar"
-                                class="h-full bg-gradient-to-r from-primary/50 to-primary rounded-full transition-all duration-500 ease-out"
-                                style="width: 0%"></div>
-                        </div>
+                        <div class="bar"><div id="toc-download-progress-bar" class="bar__fill" style="width: 0%"></div></div>
                     </div>
-                    <p id="toc-download-status" class="text-[10px] text-center text-slate-500 mt-2 hidden"></p>
+                    <p id="toc-download-status" class="toc-bar__status hidden" role="status"></p>
                 </div>
             </div>
 
@@ -574,125 +566,168 @@
             </div>
         </aside>
 
-        <!-- Main Reader Section (Studio Reading Canvas) -->
-        <section id="reader-container" class="reader hidden">
+        <!-- Reader: top bar (title, chapter, Mục lục, ⋮), 66ch text column, position ruler (≥1024px) -->
+        <section id="reader-container" class="reader hidden" aria-labelledby="current-title">
             <header id="reader-header" class="reader-top">
                 <div class="reader-top__titles">
-                    <div class="flex items-center gap-1 min-w-0">
-                        <h2 id="current-title" class="reader-title truncate"
+                    <div class="reader-top__line">
+                        <h2 id="current-title" class="reader-title"
                             title="Select a Masterpiece" data-i18n="select-masterpiece">Select a Masterpiece</h2>
-                        <button id="edit-title-btn" type="button"
-                            class="icon-btn hidden" aria-label="Đổi tên truyện" title="Đổi tên truyện">
-                            <i class="fas fa-pen text-[11px]"></i>
+                        <button id="edit-title-btn" type="button" class="icon-btn reader-top__pen hidden"
+                            aria-label="Đổi tên truyện" title="Đổi tên truyện" data-i18n-aria="rename-book-long">
+                            <svg class="ic ic--sm" aria-hidden="true"><use href="#i-pen"/></svg>
                         </button>
                     </div>
-                    <p id="current-chapter" class="reader-chapter mono truncate" data-i18n="standby-mode">Standby Mode</p>
+                    <p id="current-chapter" class="reader-chapter" data-i18n="standby-mode">Standby Mode</p>
                 </div>
-                <div class="flex items-center shrink-0">
-                    <button id="reader-toc-toggle-btn" type="button" class="icon-btn"
-                        title="Mục lục chương" aria-label="Mở mục lục chương">
-                        <svg class="ic" aria-hidden="true"><use href="#i-list"/></svg>
+                <button id="reader-toc-toggle-btn" type="button" class="icon-btn"
+                    title="Mục lục chương" aria-label="Mở mục lục chương" data-i18n-aria="toc-open">
+                    <svg class="ic" aria-hidden="true"><use href="#i-list"/></svg>
+                </button>
+                <div class="reader-more" id="reader-more-menu-container">
+                    <button id="reader-more-menu-btn" type="button" class="icon-btn"
+                        title="Tiện ích trang đọc" aria-label="Tiện ích trang đọc" data-i18n-aria="reader-tools"
+                        aria-expanded="false" aria-haspopup="menu" aria-controls="reader-more-menu-dropdown">
+                        <svg class="ic" aria-hidden="true"><use href="#i-dots"/></svg>
+                        <span id="reader-more-active-dot" class="badge-dot hidden" aria-hidden="true"></span>
                     </button>
-                    <div class="relative" id="reader-more-menu-container">
-                        <button id="reader-more-menu-btn" type="button" class="icon-btn"
-                            title="Tiện ích đọc sách" aria-label="Mở tiện ích đọc sách" aria-expanded="false" aria-haspopup="true">
-                            <i class="fas fa-ellipsis-v"></i>
-                            <span id="reader-more-active-dot" class="badge-dot hidden"></span>
+
+                    <!-- Reader tools: every reader action lives here -->
+                    <div id="reader-more-menu-dropdown" class="menu reader-menu" role="menu" aria-label="Tiện ích trang đọc" data-i18n-aria="reader-tools" hidden>
+                        <p class="menu__label" data-i18n="reader-tools">Tiện ích trang đọc</p>
+                        <button id="reader-type-btn" type="button" class="menu-item" role="menuitem" aria-haspopup="dialog">
+                            <svg class="ic" aria-hidden="true"><use href="#i-aa"/></svg>
+                            <span data-i18n="reader-type">Giao diện chữ</span>
+                            <span id="reader-type-summary" class="menu-item__value">19px</span>
                         </button>
-
-                        <!-- Popover Menu -->
-                        <div id="reader-more-menu-dropdown"
-                            class="menu hidden flex flex-col gap-1">
-                            
-                            <div class="px-2 py-1 text-[11px] font-bold text-slate-400 uppercase tracking-wider flex items-center justify-between">
-                                <span>Tiện ích đọc sách</span>
-                                <span class="text-[9px] text-primary/70 font-mono">Tools</span>
+                        <button id="reader-edit-chapter-btn" type="button" class="menu-item" role="menuitem">
+                            <svg class="ic" aria-hidden="true"><use href="#i-pen"/></svg>
+                            <span data-i18n="edit-this-chapter">Sửa chương này</span>
+                        </button>
+                        <button id="reader-rename-btn" type="button" class="menu-item" role="menuitem">
+                            <svg class="ic" aria-hidden="true"><use href="#i-book"/></svg>
+                            <span data-i18n="rename-book-long">Đổi tên truyện</span>
+                        </button>
+                        <button id="reader-images-btn" type="button" class="menu-item" role="menuitem">
+                            <svg class="ic" aria-hidden="true"><use href="#i-image"/></svg>
+                            <span data-i18n="images-title">Ảnh &amp; bìa</span>
+                        </button>
+                        <hr class="menu__rule">
+                        <button id="zen-mode-toggle-btn" type="button" class="menu-item" role="menuitemcheckbox" aria-checked="false" data-keep-open>
+                            <svg class="ic" aria-hidden="true"><use href="#i-focus"/></svg>
+                            <span class="menu-item__text">
+                                <span data-i18n="zen-title">Chế độ tập trung</span>
+                                <small data-i18n="zen-desc">Làm mờ các đoạn khác</small>
+                            </span>
+                            <span id="zen-mode-status-pill" class="menu-item__state" data-i18n="state-off">Tắt</span>
+                        </button>
+                        <button id="wake-lock-btn" type="button" class="menu-item" role="menuitemcheckbox" aria-checked="false" data-keep-open>
+                            <svg id="wake-lock-icon" class="ic" aria-hidden="true"><use href="#i-sun"/></svg>
+                            <span class="menu-item__text">
+                                <span data-i18n="wake-title">Giữ màn hình sáng</span>
+                                <small data-i18n="wake-desc">Không tự khoá khi đang đọc</small>
+                            </span>
+                            <span id="wake-lock-status-pill" class="menu-item__state" data-i18n="state-off">Tắt</span>
+                        </button>
+                        <button id="reader-pocket-btn" type="button" class="menu-item" role="menuitem">
+                            <svg class="ic" aria-hidden="true"><use href="#i-screen-off"/></svg>
+                            <span class="menu-item__text">
+                                <span data-i18n="pocket-title">Nghe tắt màn hình</span>
+                                <small data-i18n="pocket-desc">Màn đen, khoá chống chạm nhầm</small>
+                            </span>
+                        </button>
+                        <button id="manual-save-btn" type="button" class="menu-item" role="menuitem" data-keep-open>
+                            <svg id="manual-save-icon" class="ic" aria-hidden="true"><use href="#i-cloud-up"/></svg>
+                            <span class="menu-item__text">
+                                <span data-i18n="cloud-save-title">Lưu tiến độ lên đám mây</span>
+                                <small data-i18n="cloud-save-desc">Ghi ngay và đọc lại để kiểm tra</small>
+                            </span>
+                        </button>
+                        <hr class="menu__rule">
+                        <div class="sleep-block" role="group" aria-labelledby="sleep-timer-label">
+                            <div class="sleep-block__head">
+                                <svg id="sleep-timer-icon" class="ic" aria-hidden="true"><use href="#i-moon"/></svg>
+                                <span id="sleep-timer-label" data-i18n="sleep-title">Hẹn giờ tắt</span>
+                                <span id="sleep-timer-badge" class="menu-item__state" data-i18n="state-off">Tắt</span>
                             </div>
-
-                            <!-- 1. Zen Mode -->
-                            <button id="zen-mode-toggle-btn" type="button"
-                                class="w-full flex items-center justify-between p-2 rounded-xl hover:bg-white/5 active:bg-white/10 transition-all text-left group cursor-pointer">
-                                <div class="flex items-center gap-2.5">
-                                    <div class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-slate-400 group-hover:text-primary group-hover:bg-primary/10 transition-colors">
-                                        <i class="fas fa-bullseye text-sm"></i>
-                                    </div>
-                                    <div>
-                                        <p class="text-xs font-bold text-slate-200 group-hover:text-white transition-colors">Chế độ tập trung</p>
-                                        <p class="text-[10px] text-slate-400">Ẩn toàn bộ thanh công cụ</p>
-                                    </div>
-                                </div>
-                                <span id="zen-mode-status-pill" class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 text-slate-400">Tắt</span>
-                            </button>
-
-                            <!-- 2. Manual Cloud Sync -->
-                            <button id="manual-save-btn" type="button"
-                                class="w-full flex items-center justify-between p-2 rounded-xl hover:bg-white/5 active:bg-white/10 transition-all text-left group cursor-pointer">
-                                <div class="flex items-center gap-2.5">
-                                    <div class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-slate-400 group-hover:text-primary group-hover:bg-primary/10 transition-colors">
-                                        <i id="manual-save-icon" class="fas fa-cloud-upload-alt text-sm"></i>
-                                    </div>
-                                    <div>
-                                        <p class="text-xs font-bold text-slate-200 group-hover:text-white transition-colors">Lưu lên đám mây</p>
-                                        <p class="text-[10px] text-slate-400">Đồng bộ tiến độ đọc</p>
-                                    </div>
-                                </div>
-                                <span class="text-[10px] text-slate-400 px-2 py-0.5 rounded-md bg-white/5 font-semibold">Lưu</span>
-                            </button>
-
-                            <!-- 3. Screen Wake Lock -->
-                            <button id="wake-lock-btn" type="button"
-                                class="w-full flex items-center justify-between p-2 rounded-xl hover:bg-white/5 active:bg-white/10 transition-all text-left group cursor-pointer">
-                                <div class="flex items-center gap-2.5">
-                                    <div class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-slate-400 group-hover:text-primary group-hover:bg-primary/10 transition-colors">
-                                        <i id="wake-lock-icon" class="far fa-sun text-sm"></i>
-                                    </div>
-                                    <div>
-                                        <p class="text-xs font-bold text-slate-200 group-hover:text-white transition-colors">Giữ màn hình sáng</p>
-                                        <p class="text-[10px] text-slate-400">Ngăn màn hình tự tắt</p>
-                                    </div>
-                                </div>
-                                <span id="wake-lock-status-pill" class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 text-slate-400">Tắt</span>
-                            </button>
-
-                            <div class="h-px bg-white/5 my-0.5"></div>
-
-                            <!-- 4. Sleep Timer Container -->
-                            <div class="p-2.5 rounded-xl bg-white/[0.03] border border-white/5 flex flex-col gap-2">
-                                <div class="flex items-center justify-between">
-                                    <div class="flex items-center gap-2.5">
-                                        <div class="w-7 h-7 rounded-lg bg-white/5 flex items-center justify-center text-slate-400">
-                                            <i id="sleep-timer-icon" class="fas fa-moon text-xs"></i>
-                                        </div>
-                                        <div>
-                                            <p class="text-xs font-bold text-slate-200">Hẹn giờ tắt</p>
-                                        </div>
-                                    </div>
-                                    <span id="sleep-timer-badge" class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 text-slate-400 opacity-0 transition-opacity">0</span>
-                                </div>
-
-                                <!-- Presets Grid -->
-                                <div class="grid grid-cols-4 gap-1.5">
-                                    <button type="button" onclick="setSleepTimerPreset(15)" class="py-1 px-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-[11px] font-bold text-slate-300 transition-all text-center cursor-pointer">15p</button>
-                                    <button type="button" onclick="setSleepTimerPreset(30)" class="py-1 px-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-[11px] font-bold text-slate-300 transition-all text-center cursor-pointer">30p</button>
-                                    <button type="button" onclick="setSleepTimerPreset(45)" class="py-1 px-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-[11px] font-bold text-slate-300 transition-all text-center cursor-pointer">45p</button>
-                                    <button type="button" onclick="setSleepTimerPreset(60)" class="py-1 px-1 rounded-lg bg-white/5 hover:bg-primary hover:text-black text-[11px] font-bold text-slate-300 transition-all text-center cursor-pointer">60p</button>
-                                </div>
-
-                                <!-- Active Countdown Controls -->
-                                <div id="sleep-timer-active-controls" class="hidden border-t border-white/5 pt-2 mt-0.5">
-                                    <div class="flex items-center justify-between mb-1.5">
-                                        <span class="text-[10px] text-slate-400">Còn lại</span>
-                                        <span id="sleep-timer-remaining" class="text-xs font-mono font-bold text-primary">00:00:00</span>
-                                    </div>
-                                    <button type="button" onclick="cancelSleepTimer()" class="w-full py-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-bold rounded-lg transition-colors cursor-pointer">
-                                        Hủy hẹn giờ
-                                    </button>
-                                </div>
+                            <div class="seg sleep-block__presets">
+                                <button type="button" role="menuitem" data-keep-open onclick="setSleepTimerPreset(15)">15′</button>
+                                <button type="button" role="menuitem" data-keep-open onclick="setSleepTimerPreset(30)">30′</button>
+                                <button type="button" role="menuitem" data-keep-open onclick="setSleepTimerPreset(45)">45′</button>
+                                <button type="button" role="menuitem" data-keep-open onclick="setSleepTimerPreset(60)">60′</button>
+                            </div>
+                            <div id="sleep-timer-active-controls" class="sleep-block__active hidden">
+                                <span class="muted" data-i18n="sleep-left">Còn lại</span>
+                                <span id="sleep-timer-remaining" class="mono">00:00:00</span>
+                                <button type="button" class="btn btn--sm btn--danger" role="menuitem" data-keep-open onclick="cancelSleepTimer()" data-i18n="sleep-cancel">Huỷ hẹn giờ</button>
                             </div>
                         </div>
                     </div>
                 </div>
             </header>
+
+            <!-- Aa: reading type settings. Popover under the top bar; bottom sheet on phones. -->
+            <div id="reader-type-scrim" class="sheet-scrim sheet-scrim--clear" hidden></div>
+            <div id="reader-type-panel" class="type-panel" role="dialog" aria-modal="false" aria-labelledby="reader-type-title" hidden>
+                <div class="sheet__grab" aria-hidden="true"></div>
+                <div class="type-panel__head">
+                    <h3 id="reader-type-title" class="type-panel__title" data-i18n="reader-type">Giao diện chữ</h3>
+                    <button id="reader-type-close" type="button" class="icon-btn" aria-label="Đóng" data-i18n-aria="close">
+                        <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+                    </button>
+                </div>
+                <div class="type-row">
+                    <label for="reader-type-font" class="type-row__label" data-i18n="type-font">Font chữ</label>
+                    <select id="reader-type-font" class="select">
+                        <option value="Source Serif 4">Source Serif 4</option>
+                        <option value="Literata">Literata</option>
+                        <option value="Lora">Lora</option>
+                        <option value="Merriweather">Merriweather</option>
+                        <option value="Playfair Display">Playfair Display</option>
+                        <option value="Be Vietnam Pro">Be Vietnam Pro</option>
+                        <option value="Plus Jakarta Sans">Plus Jakarta Sans</option>
+                        <option value="Inter">Inter</option>
+                        <option value="Montserrat">Montserrat</option>
+                    </select>
+                </div>
+                <div class="type-row">
+                    <span id="reader-type-size-label" class="type-row__label" data-i18n="type-size">Cỡ chữ</span>
+                    <div class="stepper" role="group" aria-labelledby="reader-type-size-label">
+                        <button id="reader-type-size-dec" type="button" class="icon-btn" aria-label="Giảm cỡ chữ" data-i18n-aria="type-size-dec"><span aria-hidden="true" class="stepper__glyph stepper__glyph--sm">A</span></button>
+                        <output id="reader-type-size-val" class="mono" aria-live="polite">19px</output>
+                        <button id="reader-type-size-inc" type="button" class="icon-btn" aria-label="Tăng cỡ chữ" data-i18n-aria="type-size-inc"><span aria-hidden="true" class="stepper__glyph">A</span></button>
+                    </div>
+                </div>
+                <div class="type-row type-row--stack">
+                    <span id="reader-type-leading-label" class="type-row__label" data-i18n="type-leading">Giãn dòng</span>
+                    <div class="seg" role="group" aria-labelledby="reader-type-leading-label" data-type-group="leading">
+                        <button type="button" data-value="1.55" aria-pressed="false" data-i18n="type-tight">Gọn</button>
+                        <button type="button" data-value="1.72" aria-pressed="true" data-i18n="type-normal">Vừa</button>
+                        <button type="button" data-value="1.9" aria-pressed="false" data-i18n="type-loose">Thoáng</button>
+                    </div>
+                </div>
+                <div class="type-row type-row--stack">
+                    <span id="reader-type-measure-label" class="type-row__label" data-i18n="type-measure">Độ rộng cột chữ</span>
+                    <div class="seg" role="group" aria-labelledby="reader-type-measure-label" data-type-group="measure">
+                        <button type="button" data-value="52ch" aria-pressed="false" data-i18n="type-narrow">Hẹp</button>
+                        <button type="button" data-value="60ch" aria-pressed="false" data-i18n="type-medium">Vừa</button>
+                        <button type="button" data-value="66ch" aria-pressed="true" data-i18n="type-wide">Rộng</button>
+                    </div>
+                </div>
+                <div class="type-row type-row--stack">
+                    <span id="reader-type-theme-label" class="type-row__label" data-i18n="quick-theme-header">Màu giao diện</span>
+                    <div class="type-themes" role="group" aria-labelledby="reader-type-theme-label">
+                        <button type="button" class="theme-swatch" data-theme="slate" aria-pressed="true"><span class="theme-dot" data-swatch="slate" aria-hidden="true"><span></span></span><span data-i18n="theme-slate-name">Slate</span></button>
+                        <button type="button" class="theme-swatch" data-theme="slate-deep" aria-pressed="false"><span class="theme-dot" data-swatch="slate-deep" aria-hidden="true"><span></span></span><span data-i18n="theme-slate-deep-name">Slate sâu</span></button>
+                        <button type="button" class="theme-swatch" data-theme="mist" aria-pressed="false"><span class="theme-dot" data-swatch="mist" aria-hidden="true"><span></span></span><span data-i18n="theme-mist-name">Sương</span></button>
+                        <button type="button" class="theme-swatch" data-theme="sepia" aria-pressed="false"><span class="theme-dot" data-swatch="sepia" aria-hidden="true"><span></span></span><span data-i18n="theme-sepia-name">Sepia</span></button>
+                    </div>
+                </div>
+                <button id="reader-type-more" type="button" class="btn btn--block type-panel__more">
+                    <svg class="ic ic--sm" aria-hidden="true"><use href="#i-gear"/></svg>
+                    <span data-i18n="type-more">Màu chữ và cài đặt khác</span>
+                </button>
+            </div>
 
             <div class="reader-body">
                 <div id="text-container">
@@ -702,13 +737,14 @@
                     </div>
                 </div>
 
-                <!-- Position ruler (≥1024px): one mark per sentence, click to scroll without playing -->
+                <!-- Position ruler (≥1024px): one mark per paragraph; click scrolls there without playing -->
                 <div id="minimap-container" class="hidden lg:flex flex-col" aria-hidden="true">
                     <div id="minimap-nodes"></div>
                     <div id="minimap-viewport"></div>
                 </div>
             </div>
         </section>
+
         <!-- Discovery = Home / kệ sách: Nghe tiếp, search, filter, sort, grid ⇄ list -->
         <section id="discovery-mode" class="discovery" aria-labelledby="discovery-heading">
             <div class="shelf">
@@ -856,6 +892,13 @@
             </footer>
         </div>
     </main>
+
+    <!-- Mục lục chương on phones and tablets: #panel-toc moves in here while open -->
+    <div id="toc-sheet-scrim" class="sheet-scrim" hidden></div>
+    <section id="toc-sheet" class="toc-sheet" role="dialog" aria-modal="true" aria-label="Mục lục chương" data-i18n-aria="toc-title-long" hidden>
+        <div class="sheet__grab" aria-hidden="true"></div>
+    </section>
+
 
 
     <!-- Hidden Native Audio -->
@@ -1077,27 +1120,23 @@ Nội dung chương hai...</pre>
             });
         }
     </script>
-    <!-- Edit Chapter Modal -->
-    <div id="edit-chapter-modal"
-        class="fixed inset-0 z-[100] bg-black/80 backdrop-blur-md hidden flex items-center justify-center p-4">
-        <div class="glass w-full max-w-4xl h-[80vh] flex flex-col rounded-[2rem] shadow-2xl overflow-hidden">
-            <div class="p-6 border-b border-white/10 flex items-center justify-between bg-white/5">
-                <h3 class="text-xl font-bold text-white flex items-center gap-3">
-                    <i class="fas fa-edit text-primary"></i> Edit Chapter Content
-                </h3>
-                <button id="close-edit-modal"
-                    class="w-10 h-10 rounded-full hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all">
-                    <i class="fas fa-times"></i>
+    <!-- Edit chapter: raw text of one chapter -->
+    <div id="edit-chapter-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="edit-chapter-title">
+        <div class="modal__scrim"></div>
+        <div class="modal-card modal-card--lg edit-card">
+            <div class="modal-head">
+                <div class="modal-head__text">
+                    <h2 id="edit-chapter-title" class="modal-title" data-i18n="edit-chapter">Sửa chương</h2>
+                    <p id="edit-chapter-sub" class="modal-sub mono">—</p>
+                </div>
+                <button id="close-edit-modal" type="button" class="icon-btn" aria-label="Đóng" data-i18n-aria="close">
+                    <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
                 </button>
             </div>
-            <div class="flex-1 overflow-hidden p-6">
-                <textarea id="edit-chapter-textarea"
-                    class="w-full h-full bg-black/40 border border-white/10 rounded-2xl p-6 text-slate-300 focus:outline-none focus:border-primary/50 font-inter leading-relaxed resize-none"></textarea>
-            </div>
-            <div class="p-6 border-t border-white/10 flex justify-end gap-4 bg-white/5">
-                <button id="cancel-edit-btn"
-                    class="px-6 py-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/5 transition-all">Cancel</button>
-                <button id="save-edit-btn" class="btn-primary">Save Changes</button>
+            <textarea id="edit-chapter-textarea" class="input edit-text" aria-labelledby="edit-chapter-title" spellcheck="false"></textarea>
+            <div class="modal-actions">
+                <button id="cancel-edit-btn" type="button" class="btn" data-i18n="cancel">Huỷ</button>
+                <button id="save-edit-btn" type="button" class="btn btn--primary" data-i18n="save-changes">Lưu thay đổi</button>
             </div>
         </div>
     </div>
@@ -1418,52 +1457,43 @@ Nội dung chương hai...</pre>
         </div>
     </div>
 
-    <!-- Audio-Only / Pocket Mode Overlay (AMOLED Battery Saver with Pocket Protection) -->
-    <div id="pocket-mode-overlay" class="fixed inset-0 bg-black z-[999] hidden flex-col items-center justify-between p-6 sm:p-10 select-none cursor-pointer transition-all duration-300">
-        <!-- Top Hint & Accidental Touch Badge -->
-        <div class="flex flex-col items-center gap-2 pointer-events-none">
-            <div class="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-white/70 text-xs font-medium border border-white/10">
-                <i class="fas fa-shield-alt text-primary text-xs"></i>
-                <span data-i18n="pocket-mode-active">Chế độ chỉ nghe (Khóa chống chạm nhầm)</span>
-            </div>
-            <!-- Unlock Prompt Pill (Appears on first tap) -->
-            <div id="pocket-wake-prompt" class="opacity-0 transition-opacity duration-200 px-4 py-1.5 rounded-full bg-primary/20 border border-primary/40 text-primary text-xs font-bold flex items-center gap-1.5 shadow-lg">
-                <i class="fas fa-fingerprint animate-bounce"></i>
+    <!-- Nghe tắt màn hình (Pocket): near-black screen, double tap to unlock -->
+    <div id="pocket-mode-overlay" class="pocket hidden" role="dialog" aria-modal="true" aria-labelledby="pocket-book-title" data-awake="false">
+        <div class="pocket__top">
+            <p class="pocket__badge">
+                <svg class="ic ic--sm" aria-hidden="true"><use href="#i-lock"/></svg>
+                <span data-i18n="pocket-mode-active">Chế độ chỉ nghe (Đang khóa chống chạm nhầm)</span>
+            </p>
+            <p id="pocket-wake-prompt" class="pocket__prompt" aria-live="polite">
                 <span id="pocket-wake-prompt-text" data-i18n="pocket-double-tap-hint">Chạm thêm lần nữa để mở khóa</span>
-            </div>
+            </p>
         </div>
 
-        <!-- Center Minimal Controls (Dimmed when idle, brightened on tap) -->
-        <div id="pocket-controls-container" class="flex flex-col items-center gap-6 text-center max-w-sm w-full pointer-events-auto opacity-40 transition-opacity duration-300" onclick="event.stopPropagation()">
-            <div class="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-primary/80 shadow-inner">
-                <i class="fas fa-headphones text-2xl"></i>
+        <div id="pocket-controls-container" class="pocket__center" onclick="event.stopPropagation()">
+            <div class="pocket__meta">
+                <p id="pocket-book-title" class="pocket__book"></p>
+                <p id="pocket-chapter-title" class="pocket__chapter"></p>
+                <p id="pocket-sentence-preview" class="pocket__sentence"></p>
             </div>
-            <div class="flex flex-col gap-1 w-full px-2">
-                <p id="pocket-book-title" class="text-sm sm:text-base font-bold text-white/90 truncate"></p>
-                <p id="pocket-chapter-title" class="text-xs text-primary/80 truncate"></p>
-                <p id="pocket-sentence-preview" class="text-[11px] text-white/50 italic line-clamp-2 mt-2 px-2"></p>
-            </div>
-            <!-- Minimal Playback Controls -->
-            <div class="flex items-center gap-5 sm:gap-6 mt-1">
-                <button id="pocket-prev-chunk-btn" type="button" class="w-11 h-11 rounded-full bg-white/5 border border-white/10 text-white/80 hover:text-primary flex items-center justify-center cursor-pointer active:scale-90 transition-transform" title="Câu trước">
-                    <i class="fas fa-step-backward text-sm"></i>
+            <div class="pocket__controls">
+                <button id="pocket-prev-chunk-btn" type="button" class="pocket__btn" aria-label="Câu trước" title="Câu trước" data-i18n-aria="prev-sentence">
+                    <svg class="ic" aria-hidden="true"><use href="#i-rw"/></svg>
                 </button>
-                <button id="pocket-play-btn" type="button" class="w-16 h-16 rounded-full bg-primary text-black flex items-center justify-center text-2xl shadow-lg active:scale-95 transition-transform cursor-pointer" title="Phát / Tạm dừng">
-                    <i id="pocket-play-icon" class="fas fa-play ml-1"></i>
+                <button id="pocket-play-btn" type="button" class="pocket__btn pocket__btn--play" aria-label="Phát hoặc tạm dừng" title="Phát hoặc tạm dừng" data-i18n-aria="play-pause">
+                    <svg id="pocket-play-icon" class="ic" aria-hidden="true"><use href="#i-play"/></svg>
                 </button>
-                <button id="pocket-next-chunk-btn" type="button" class="w-11 h-11 rounded-full bg-white/5 border border-white/10 text-white/80 hover:text-primary flex items-center justify-center cursor-pointer active:scale-90 transition-transform" title="Câu kế">
-                    <i class="fas fa-step-forward text-sm"></i>
+                <button id="pocket-next-chunk-btn" type="button" class="pocket__btn" aria-label="Câu kế" title="Câu kế" data-i18n-aria="next-sentence">
+                    <svg class="ic" aria-hidden="true"><use href="#i-ff"/></svg>
                 </button>
             </div>
         </div>
 
-        <!-- Bottom Wake Button & Protection Hint -->
-        <div class="flex flex-col items-center gap-2 pointer-events-auto">
-            <button id="pocket-exit-btn" type="button" class="px-6 py-2.5 rounded-full bg-white/15 hover:bg-white/25 active:scale-95 text-white font-semibold text-xs sm:text-sm border border-white/20 shadow-lg flex items-center gap-2 transition-all cursor-pointer">
-                <i id="pocket-exit-icon" class="fas fa-lock text-primary"></i>
+        <div class="pocket__bottom">
+            <button id="pocket-exit-btn" type="button" class="pocket__exit">
+                <svg id="pocket-exit-icon" class="ic ic--sm" aria-hidden="true"><use href="#i-lock"/></svg>
                 <span id="pocket-exit-label" data-i18n="pocket-mode-exit">Chạm 2 lần để mở màn hình</span>
             </button>
-            <span class="text-[10px] text-white/40 pointer-events-none" data-i18n="pocket-anti-accidental-hint">Chống chạm nhầm khi để trong túi quần</span>
+            <span class="pocket__hint" data-i18n="pocket-anti-accidental-hint">Chống chạm nhầm khi để trong túi quần</span>
         </div>
     </div>
 

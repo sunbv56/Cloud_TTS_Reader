@@ -268,6 +268,75 @@ export function switchSidebarTab(tabName) {
     }
 }
 
+// Below 1024px the chapter list opens as a bottom sheet: #panel-toc moves into
+// #toc-sheet while it is open and goes back to the sidebar when it closes.
+let tocSheetReturnFocus = null;
+
+function onTOCSheetKey(event) {
+    const sheet = document.getElementById('toc-sheet');
+    if (!sheet || sheet.hidden) return;
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        closeTOCSheet();
+        return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = [...sheet.querySelectorAll('button:not(:disabled), input:not(:disabled), [tabindex]:not([tabindex="-1"])')]
+        .filter(el => el.offsetParent !== null);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+    }
+}
+
+function onTOCSheetResize() {
+    if (window.innerWidth >= 1024) closeTOCSheet({ restoreFocus: false });
+}
+
+export function openTOCSheet() {
+    const sheet = document.getElementById('toc-sheet');
+    const scrim = document.getElementById('toc-sheet-scrim');
+    const panel = document.getElementById('panel-toc');
+    if (!sheet || !panel || !sheet.hidden) return;
+    tocSheetReturnFocus = document.activeElement;
+    toggleSidebar(false);
+    sheet.appendChild(panel);
+    panel.hidden = false;
+    sheet.hidden = false;
+    if (scrim) scrim.hidden = false;
+    window.renderTOC?.();
+    requestAnimationFrame(() => window.scrollTOCCurrentChapter?.());
+    document.getElementById('toc-close-btn')?.focus({ preventScroll: true });
+    document.addEventListener('keydown', onTOCSheetKey, true);
+    window.addEventListener('resize', onTOCSheetResize);
+}
+
+export function closeTOCSheet({ restoreFocus = true } = {}) {
+    const sheet = document.getElementById('toc-sheet');
+    const scrim = document.getElementById('toc-sheet-scrim');
+    const panel = document.getElementById('panel-toc');
+    const sidebar = document.getElementById('sidebar-container');
+    if (!sheet || sheet.hidden) return false;
+    sheet.hidden = true;
+    if (scrim) scrim.hidden = true;
+    if (panel && sidebar) {
+        sidebar.insertBefore(panel, document.getElementById('panel-voice'));
+        panel.hidden = document.getElementById('tab-toc')?.getAttribute('aria-selected') !== 'true';
+    }
+    document.removeEventListener('keydown', onTOCSheetKey, true);
+    window.removeEventListener('resize', onTOCSheetResize);
+    if (restoreFocus && tocSheetReturnFocus?.isConnected) tocSheetReturnFocus.focus({ preventScroll: true });
+    tocSheetReturnFocus = null;
+    return true;
+}
+
 export function openQuickTOC() {
     const discoveryMode = document.getElementById('discovery-mode');
     if (discoveryMode && !discoveryMode.classList.contains('hidden')) {
@@ -276,13 +345,11 @@ export function openQuickTOC() {
         }
     }
 
-    const sidebar = document.getElementById('sidebar-container');
-    if (sidebar) {
-        sidebar.classList.remove('hidden');
-        if (window.innerWidth < 1024) {
-            toggleSidebar(true);
-        }
+    if (window.innerWidth < 1024) {
+        openTOCSheet();
+        return;
     }
+    document.getElementById('sidebar-container')?.classList.remove('hidden');
     switchSidebarTab('toc');
 }
 
@@ -884,43 +951,79 @@ export function initUIInteractions() {
         openQuickTOC();
     });
 
+    document.getElementById('toc-close-btn')?.addEventListener('click', () => closeTOCSheet());
+    document.getElementById('toc-sheet-scrim')?.addEventListener('click', () => closeTOCSheet());
+
     // Reader Utilities Dropdown (Consolidated 3-dot Menu)
     initReaderMoreMenu();
 }
 
 export function initReaderMoreMenu() {
     const moreBtn = document.getElementById('reader-more-menu-btn');
-    const dropdown = document.getElementById('reader-more-menu-dropdown');
-    const container = document.getElementById('reader-more-menu-container');
+    const menu = document.getElementById('reader-more-menu-dropdown');
+    if (!moreBtn || !menu) return;
+    let isOpen = false;
 
-    if (!moreBtn || !dropdown) return;
+    const items = () => [...menu.querySelectorAll('[role^="menuitem"]:not(:disabled)')];
 
-    function toggleMenu(force) {
-        const isShow = typeof force === 'boolean' ? force : dropdown.classList.contains('hidden');
-        dropdown.classList.toggle('hidden', !isShow);
-        moreBtn.setAttribute('aria-expanded', isShow ? 'true' : 'false');
+    function onOutside(event) {
+        if (!menu.contains(event.target) && !moreBtn.contains(event.target)) setOpen(false);
     }
 
-    moreBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        toggleMenu();
-    });
+    function setOpen(next, { restoreFocus = false } = {}) {
+        if (isOpen === next) return;
+        isOpen = next;
+        if (next) document.dispatchEvent(new CustomEvent('reader-menu-open'));
+        menu.hidden = !next;
+        moreBtn.setAttribute('aria-expanded', String(next));
+        if (next) {
+            document.addEventListener('pointerdown', onOutside, true);
+            items()[0]?.focus();
+        } else {
+            document.removeEventListener('pointerdown', onOutside, true);
+            if (restoreFocus) moreBtn.focus();
+        }
+    }
 
-    document.addEventListener('click', (e) => {
-        if (!dropdown.classList.contains('hidden') && container && !container.contains(e.target)) {
-            toggleMenu(false);
+    moreBtn.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setOpen(!isOpen);
+    });
+    // Toggles and timer presets keep the menu open so the new state is visible.
+    menu.addEventListener('click', (event) => {
+        const item = event.target.closest('[role^="menuitem"]');
+        if (item && !item.hasAttribute('data-keep-open')) setOpen(false);
+    }, true);
+    menu.addEventListener('keydown', (event) => {
+        const list = items();
+        const index = list.indexOf(document.activeElement);
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            event.stopPropagation();
+            setOpen(false, { restoreFocus: true });
+        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            const step = event.key === 'ArrowDown' ? 1 : -1;
+            list[(index + step + list.length) % list.length]?.focus();
+        } else if (event.key === 'Home' || event.key === 'End') {
+            event.preventDefault();
+            list[event.key === 'Home' ? 0 : list.length - 1]?.focus();
+        } else if (event.key === 'Tab') {
+            setOpen(false);
         }
     });
-
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && !dropdown.classList.contains('hidden')) {
-            toggleMenu(false);
-        }
+    // Escape with focus outside the menu (e.g. after a pointer open).
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && isOpen) setOpen(false, { restoreFocus: true });
     });
+
+    window.closeReaderMenu = () => setOpen(false);
 }
 
 // Global window exposure for inter-module communication
 window.switchSidebarTab = switchSidebarTab;
 window.openQuickTOC = openQuickTOC;
+window.openTOCSheet = openTOCSheet;
+window.closeTOCSheet = closeTOCSheet;
 window.initReaderMoreMenu = initReaderMoreMenu;
 

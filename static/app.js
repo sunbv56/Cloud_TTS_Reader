@@ -1953,13 +1953,16 @@ function applyTOCSearch() {
     if (!tocSearchInput) return;
     const rawVal = tocSearchInput.value.trim();
     const query = removeVietnameseTones(rawVal.toLowerCase());
+    // "12", "c.12", "chương 12" and "chapter 12" all search by number.
+    const numberQuery = query.replace(/^(c\.?|chuong|chapter|ch\.?)\s*/, '');
+    const isNumber = /^\d+$/.test(numberQuery);
     const tocList = document.getElementById('toc-list');
     let visible = 0;
 
     document.querySelectorAll('#toc-list > [data-chapter-title]').forEach(card => {
         const titleData = card.dataset.chapterTitle || '';
         const chapIdxStr = `${parseInt(card.dataset.chapterIndex, 10) + 1}`;
-        const hit = !query || titleData.includes(query) || chapIdxStr === query || chapIdxStr.includes(query);
+        const hit = !query || titleData.includes(query) || (isNumber && chapIdxStr.includes(numberQuery));
         card.style.display = hit ? '' : 'none';
         if (hit) visible += 1;
     });
@@ -1969,13 +1972,16 @@ function applyTOCSearch() {
 
     let emptyEl = tocList.querySelector('[data-toc-empty]');
     if (!emptyEl && query) {
-        emptyEl = document.createElement('div');
+        emptyEl = document.createElement('p');
         emptyEl.dataset.tocEmpty = '';
-        emptyEl.className = 'text-center p-8 text-slate-500 italic text-sm';
-        emptyEl.textContent = 'Không tìm thấy chương phù hợp.';
+        emptyEl.className = 'toc-empty';
         tocList.appendChild(emptyEl);
     }
-    if (emptyEl) emptyEl.classList.toggle('hidden', visible > 0 || !query);
+    if (emptyEl) {
+        emptyEl.textContent = tr('toc-search-empty', 'Không tìm thấy chương phù hợp.');
+        emptyEl.classList.toggle('hidden', visible > 0 || !query);
+    }
+    updateTOCCount();
 }
 
 tocSearchInput?.addEventListener('input', applyTOCSearch);
@@ -2367,6 +2373,8 @@ const WORKER_STEPS = [1, 2, 3];
 const audio = document.getElementById('main-audio');
 const playBtn = document.getElementById('play-btn');
 const textContainer = document.getElementById('text-container');
+// Kept so the empty reader state can come back after a book is closed.
+const readerEmptyTemplate = textContainer?.querySelector('.reader-empty')?.cloneNode(true) || null;
 const fileInput = document.getElementById('file-input');
 const imageInput = document.getElementById('image-input');
 
@@ -3914,7 +3922,8 @@ function closeCurrentBook() {
     STATE.currentSentenceIndex = 0;
     document.getElementById('current-title').innerText = 'Select a Masterpiece';
     document.getElementById('current-chapter').innerText = 'Standby Mode';
-    document.getElementById('text-container').innerHTML = '';
+    textContainer.replaceChildren(...(readerEmptyTemplate ? [readerEmptyTemplate.cloneNode(true)] : []));
+    document.getElementById('minimap-nodes')?.replaceChildren();
     document.getElementById('edit-title-btn').classList.add('hidden');
     const playerTitle = document.getElementById('player-title');
     const playerAuthor = document.getElementById('player-author');
@@ -4835,16 +4844,15 @@ async function renderChapterImages(index) {
         const url = await getImageURL(STATE.currentBookId, image);
         if (!url) continue;
         const figure = document.createElement('figure');
-        figure.className = 'my-4 flex flex-col items-center gap-2';
+        figure.className = 'reader-figure';
         const img = document.createElement('img');
         img.src = url;
-        img.alt = image.alt || 'Ảnh minh họa';
+        img.alt = image.alt || tr('illustration', 'Ảnh minh hoạ');
         img.loading = 'lazy';
-        img.className = 'max-h-80 max-w-full rounded-2xl object-contain border border-white/10 shadow-lg';
+        img.decoding = 'async';
         figure.appendChild(img);
         if (image.alt) {
             const caption = document.createElement('figcaption');
-            caption.className = 'text-xs text-slate-500 italic';
             caption.textContent = image.alt;
             figure.appendChild(caption);
         }
@@ -4873,26 +4881,26 @@ async function renderChapter(index, expectedLoadGeneration = STATE.loadGeneratio
     trimReaderContentCache(index);
 
     const chapter = STATE.currentBook.chapters[index];
-    document.getElementById('current-chapter').innerText = chapter.title;
-    document.getElementById('current-chapter').title = chapter.title;
+    const chapterCount = STATE.currentBook.chapters.length;
+    const chapterTitle = chapter.title || `${tr('chapter-word', 'Chương')} ${index + 1}`;
+    const chapterLabel = document.getElementById('current-chapter');
+    chapterLabel.innerText = `C.${index + 1}/${chapterCount} · ${chapterTitle}`;
+    chapterLabel.title = chapterTitle;
 
     // Lazy load sentences if missing
     if (!chapter.sentences) {
-        textContainer.innerHTML = `
-            <div class="space-y-4 p-4 lg:p-8 max-w-3xl mx-auto w-full">
-                <div class="skeleton-line skeleton-shimmer w-1/3 h-7 mb-6"></div>
-                <div class="skeleton-line skeleton-shimmer w-full h-4"></div>
-                <div class="skeleton-line skeleton-shimmer w-11/12 h-4"></div>
-                <div class="skeleton-line skeleton-shimmer w-4/5 h-4 mb-6"></div>
-                <div class="skeleton-line skeleton-shimmer w-full h-4"></div>
-                <div class="skeleton-line skeleton-shimmer w-10/12 h-4"></div>
-                <div class="skeleton-line skeleton-shimmer w-3/4 h-4"></div>
-            </div>`;
-        window.MotionLayer?.animateSkeletonEntrance?.(textContainer);
+        textContainer.setAttribute('aria-busy', 'true');
+        textContainer.innerHTML = '<div class="reader-skeleton" aria-hidden="true">' + '<span></span>'.repeat(8) + '</div>';
         try {
             await fetchChapterSentences(index, expectedLoadGeneration, expectedBookId);
         } catch (e) {
-            textContainer.innerHTML = `<div class="text-center p-8 text-red-500 italic">Không thể tải nội dung: ${e.message}</div>`;
+            textContainer.removeAttribute('aria-busy');
+            textContainer.innerHTML = '';
+            const error = document.createElement('p');
+            error.className = 'reader-error';
+            error.setAttribute('role', 'alert');
+            error.textContent = tr('chapter-load-error', 'Không thể tải nội dung chương: {reason}', { reason: e.message });
+            textContainer.appendChild(error);
             return false;
         }
         if (!isCurrentChapterRender()) return false;
@@ -4900,25 +4908,42 @@ async function renderChapter(index, expectedLoadGeneration = STATE.loadGeneratio
 
     const chapterFigures = await renderChapterImages(index);
     await safeViewTransition(() => {
+        textContainer.removeAttribute('aria-busy');
         textContainer.innerHTML = '';
-        chapterFigures.forEach(figure => textContainer.appendChild(figure));
         const readerCopy = document.createElement('div');
         readerCopy.className = 'reader-copy';
-        textContainer.appendChild(readerCopy);
+        const kicker = document.createElement('p');
+        kicker.className = 'reader-kicker';
+        kicker.textContent = `${tr('chapter-word', 'Chương').toUpperCase()} ${index + 1} / ${chapterCount}`;
+        readerCopy.appendChild(kicker);
+        chapterFigures.forEach(figure => readerCopy.appendChild(figure));
+        // The first chunk usually repeats the chapter title: show it as the heading.
+        const titleKey = (chapter.title || '').replace(/\s+/g, ' ').trim();
         chapter.sentences.forEach((text, i) => {
             const span = document.createElement('span');
             span.id = `sentence-${i}`;
-            span.className = 'chunk-text';
-            span.innerText = text;
-            span.onclick = () => playFromSentence(i);
+            span.className = i === 0 && titleKey && text.replace(/\s+/g, ' ').trim() === titleKey
+                ? 'chunk-text chunk-heading'
+                : 'chunk-text';
+            span.textContent = text;
             readerCopy.appendChild(span);
         });
+        textContainer.appendChild(readerCopy);
 
         textContainer.scrollTop = 0;
         renderMinimap(index);
     });
     return true;
 }
+
+// Tap a paragraph to play from it (one delegated listener instead of one per chunk).
+textContainer.addEventListener('click', event => {
+    const chunk = event.target.closest('.chunk-text');
+    if (!chunk || !textContainer.contains(chunk)) return;
+    if (window.getSelection?.().toString()) return;
+    const index = Number(chunk.id.slice('sentence-'.length));
+    if (Number.isInteger(index)) playFromSentence(index);
+});
 
 function renderMinimap(index) {
     if (STATE.isLiteMode) return;
@@ -4968,164 +4993,213 @@ document.getElementById('text-container').addEventListener('scroll', () => {
     if (!STATE.isLiteMode) syncMinimapScroll();
 });
 
+function isTOCSelectMode() {
+    return document.getElementById('toc-select-mode-btn')?.classList.contains('active') === true;
+}
+
+function tocChapterLabel(chap, i) {
+    return chap?.title || `${tr('chapter-word', 'Chương')} ${i + 1}`;
+}
+
+function buildTOCRow(chap, i, isActive) {
+    const title = tocChapterLabel(chap, i);
+    const row = document.createElement('div');
+    row.className = 'toc-row';
+    row.id = `toc-item-${i}`;
+    row.setAttribute('role', 'listitem');
+    row.dataset.chapterIndex = i;
+    row.dataset.chapterTitle = removeVietnameseTones((chap?.title || '').toLowerCase()) + ' ' + (chap?.title || '').toLowerCase();
+    if (isActive) row.setAttribute('aria-current', 'true');
+
+    const check = document.createElement('label');
+    check.className = 'toc-row__check';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'toc-chapter-checkbox';
+    checkbox.dataset.chapterIndex = i;
+    checkbox.setAttribute('aria-label', tr('toc-select-chapter', 'Chọn chương {n}', { n: i + 1 }));
+    check.appendChild(checkbox);
+
+    const main = document.createElement('button');
+    main.type = 'button';
+    main.className = 'toc-row__main';
+    main.dataset.tocJump = '';
+    const num = document.createElement('span');
+    num.className = 'toc-row__num';
+    num.textContent = `C.${i + 1}`;
+    const name = document.createElement('span');
+    name.className = 'toc-row__title';
+    name.textContent = title;
+    name.title = chap?.title || '';
+    main.append(num, name);
+    if (isActive) main.appendChild(buildTOCNowLabel());
+
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'icon-btn toc-row__edit';
+    edit.dataset.tocEdit = '';
+    edit.title = tr('edit-chapter-n', 'Sửa chương {n}', { n: i + 1 });
+    edit.setAttribute('aria-label', edit.title);
+    edit.innerHTML = '<svg class="ic ic--sm" aria-hidden="true"><use href="#i-pen"/></svg>';
+
+    row.append(check, main, edit);
+    return row;
+}
+
+function buildTOCNowLabel() {
+    const now = document.createElement('span');
+    now.className = 'toc-row__now';
+    now.textContent = tr('toc-now', 'đang nghe');
+    return now;
+}
+
+function updateTOCCount() {
+    const countEl = document.getElementById('toc-count');
+    if (!countEl) return;
+    const total = STATE.currentBook?.chapters?.length || 0;
+    if (!total) {
+        countEl.textContent = '';
+        return;
+    }
+    const shown = document.querySelectorAll('#toc-list > .toc-row:not([style*="none"])').length;
+    const query = tocSearchInput?.value.trim();
+    countEl.textContent = query
+        ? tr('toc-count-filtered', '{shown}/{total} chương', { shown, total })
+        : tr('toc-count', '{total} chương · đang nghe C.{current}', { total, current: STATE.currentChapterIndex + 1 });
+}
+
 function renderTOC() {
     const tocList = document.getElementById('toc-list');
     if (!tocList) return;
     tocList.innerHTML = '';
 
     const labelEl = document.getElementById('toc-book-label');
-    if (labelEl) labelEl.textContent = STATE.currentBook?.title || 'Chưa mở truyện';
-
-    const isSelectMode = document.getElementById('toc-select-mode-btn')?.classList.contains('active');
+    if (labelEl) labelEl.textContent = STATE.currentBook?.title || tr('toc-no-book', 'Chưa mở truyện');
 
     if (!STATE.currentBook || !Array.isArray(STATE.currentBook.chapters) || STATE.currentBook.chapters.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'text-center p-8 text-slate-500 italic text-sm';
-        empty.innerHTML = '<i class="fas fa-list-ul text-2xl mb-3 opacity-40 block"></i>Mở một truyện từ Thư viện để xem mục lục.';
+        const empty = document.createElement('p');
+        empty.className = 'toc-empty';
+        empty.textContent = tr('toc-empty', 'Mở một truyện từ Thư viện để xem mục lục.');
         tocList.appendChild(empty);
+        updateTOCCount();
         return;
     }
 
+    const fragment = document.createDocumentFragment();
     STATE.currentBook.chapters.forEach((chap, i) => {
-        const div = document.createElement('div');
-        const isActive = i === STATE.currentChapterIndex;
-        div.id = `toc-item-${i}`;
-        div.dataset.chapterIndex = i;
-        div.dataset.chapterTitle = removeVietnameseTones((chap.title || '').toLowerCase()) + ' ' + (chap.title || '').toLowerCase();
-        div.className = `toc-card p-3 glass cursor-pointer transition-all flex flex-col gap-1.5 ${isActive ? 'toc-active' : ''}`;
-
-        // Top Row: Checkbox / Index Badge / Status / Edit Button
-        const headerRow = document.createElement('div');
-        headerRow.className = 'flex items-center justify-between gap-2 min-w-0 pointer-events-none';
-
-        const leftGroup = document.createElement('div');
-        leftGroup.className = 'flex items-center gap-2 min-w-0 pointer-events-auto';
-
-        const checkbox = document.createElement('input');
-        checkbox.type = 'checkbox';
-        checkbox.className = `toc-chapter-checkbox accent-primary w-4 h-4 rounded cursor-pointer shrink-0 ${isSelectMode ? '' : 'hidden'}`;
-        checkbox.dataset.chapterIndex = i;
-        checkbox.onclick = (e) => e.stopPropagation();
-        checkbox.onchange = () => updateDownloadBar();
-
-        const badge = document.createElement('span');
-        badge.className = `text-[11px] font-bold px-2 py-0.5 rounded-md shrink-0 transition-colors ${
-            isActive 
-                ? 'bg-primary text-black font-black shadow-sm' 
-                : 'bg-white/5 text-primary border border-primary/20'
-        }`;
-        badge.innerText = `#${i + 1}`;
-
-        leftGroup.appendChild(checkbox);
-        leftGroup.appendChild(badge);
-
-        if (isActive) {
-            const activeBadge = document.createElement('span');
-            activeBadge.className = 'text-[10px] font-semibold text-emerald-400 flex items-center gap-1 shrink-0';
-            activeBadge.innerHTML = '<i class="fas fa-headphones text-[9px] animate-pulse"></i><span>Đang đọc</span>';
-            leftGroup.appendChild(activeBadge);
-        }
-
-        const editBtn = document.createElement('button');
-        editBtn.className = `icon-btn w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 hover:text-primary hover:bg-white/10 transition-all pointer-events-auto shrink-0 ${isSelectMode ? 'hidden' : ''}`;
-        editBtn.innerHTML = '<i class="fas fa-pen text-[11px]"></i>';
-        editBtn.title = 'Edit Chapter';
-        editBtn.setAttribute('aria-label', `Sửa chương ${i + 1}`);
-        editBtn.onclick = (e) => {
-            e.stopPropagation();
-            openEditChapterModal(i, editBtn);
-        };
-
-        headerRow.appendChild(leftGroup);
-        headerRow.appendChild(editBtn);
-
-        // Bottom Row: Full Width Multi-line Chapter Title
-        const titleDiv = document.createElement('div');
-        titleDiv.className = `toc-title-multiline text-xs sm:text-sm font-medium transition-colors ${
-            isActive ? 'text-white font-bold' : 'text-slate-200'
-        }`;
-        titleDiv.innerText = chap.title || `Chương ${i + 1}`;
-        titleDiv.title = chap.title || '';
-
-        div.appendChild(headerRow);
-        div.appendChild(titleDiv);
-
-        div.onclick = async () => {
-            const selectMode = document.getElementById('toc-select-mode-btn')?.classList.contains('active');
-            if (selectMode) {
-                checkbox.checked = !checkbox.checked;
-                updateDownloadBar();
-                return;
-            }
-            div.classList.add('toc-loading');
-            try {
-                await switchChapter(i, 0, true);
-                closeTOC();
-            } catch (err) {
-                console.error('[TOC] Switch chapter error:', err);
-            } finally {
-                div.classList.remove('toc-loading');
-            }
-        };
-        tocList.appendChild(div);
+        fragment.appendChild(buildTOCRow(chap, i, i === STATE.currentChapterIndex));
     });
+    tocList.appendChild(fragment);
 
     // Re-apply TOC search if query exists
     applyTOCSearch();
 }
 
-function scrollTOCCurrentChapter() {
-    const activeItem = document.getElementById(`toc-item-${STATE.currentChapterIndex}`);
-    const tocList = document.getElementById('toc-list');
-    if (activeItem && tocList) {
-        activeItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+// Chapter changed while the list is already built: move the marker instead of rebuilding.
+function refreshTOCCurrent() {
+    const rows = document.querySelectorAll('#toc-list > .toc-row');
+    if (!STATE.currentBook || rows.length !== STATE.currentBook.chapters.length) {
+        renderTOC();
+        return;
+    }
+    document.querySelectorAll('#toc-list > .toc-row[aria-current]').forEach(row => {
+        row.removeAttribute('aria-current');
+        row.querySelector('.toc-row__now')?.remove();
+    });
+    const row = document.getElementById(`toc-item-${STATE.currentChapterIndex}`);
+    if (row) {
+        row.setAttribute('aria-current', 'true');
+        row.querySelector('.toc-row__main')?.appendChild(buildTOCNowLabel());
+    }
+    updateTOCCount();
+}
+
+function isTOCVisible() {
+    const panel = document.getElementById('panel-toc');
+    return !!panel && !panel.hidden && panel.offsetParent !== null;
+}
+
+async function jumpToTOCChapter(row) {
+    const i = Number(row.dataset.chapterIndex);
+    if (!Number.isInteger(i) || row.classList.contains('toc-loading')) return;
+    row.classList.add('toc-loading');
+    try {
+        await switchChapter(i, 0, true);
+        closeTOC();
+    } catch (err) {
+        console.error('[TOC] Switch chapter error:', err);
+    } finally {
+        row.classList.remove('toc-loading');
     }
 }
 
+document.getElementById('toc-list')?.addEventListener('click', event => {
+    const row = event.target.closest('.toc-row');
+    if (!row) return;
+    if (event.target.closest('[data-toc-edit]')) {
+        event.stopPropagation();
+        openEditChapterModal(Number(row.dataset.chapterIndex), event.target.closest('[data-toc-edit]'));
+        return;
+    }
+    if (!event.target.closest('[data-toc-jump]')) return;
+    if (isTOCSelectMode()) {
+        const checkbox = row.querySelector('.toc-chapter-checkbox');
+        if (checkbox) checkbox.checked = !checkbox.checked;
+        updateDownloadBar();
+        return;
+    }
+    void jumpToTOCChapter(row);
+});
+document.getElementById('toc-list')?.addEventListener('change', event => {
+    if (event.target.classList?.contains('toc-chapter-checkbox')) updateDownloadBar();
+});
+
+function scrollTOCCurrentChapter() {
+    const activeItem = document.getElementById(`toc-item-${STATE.currentChapterIndex}`);
+    const tocList = document.getElementById('toc-list');
+    if (!activeItem || !tocList) return;
+    // The pinned row sticks to an edge, so scroll by its layout position, not its box.
+    const target = activeItem.offsetTop - (tocList.clientHeight - activeItem.offsetHeight) / 2;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches || STATE.isLiteMode;
+    tocList.scrollTo({ top: Math.max(0, target), behavior: reduce ? 'auto' : 'smooth' });
+}
+
 /**
- * Leaves the TOC view: resets select mode, restores the media player if it
- * was auto-minimized, and hides the sidebar drawer on small screens.
+ * Leaves the TOC view: resets select mode and closes the phone sheet or drawer.
  */
 function closeTOC() {
-    // Reset select mode when leaving TOC
-    const selectBtn = document.getElementById('toc-select-mode-btn');
-    if (selectBtn?.classList.contains('active')) {
+    if (isTOCSelectMode() && !STATE.isDownloading) {
         toggleSelectMode();
     }
 
-    // Trả về trạng thái cũ cho trình phát nếu được thu gọn tự động bởi TOC
-    if (STATE.tocAutoMinimized) {
-        toggleMinimize(false);
-        STATE.tocAutoMinimized = false;
-    }
-
-    // TOC giờ là tab trong sidebar: trên mobile (<lg) hãy thu drawer lại
     if (window.innerWidth < 1024) {
+        if (typeof window.closeTOCSheet === 'function' && window.closeTOCSheet()) return;
         toggleSidebar(false);
     }
 }
 window.renderTOC = renderTOC;
+window.refreshTOCCurrent = refreshTOCCurrent;
 window.scrollTOCCurrentChapter = scrollTOCCurrentChapter;
 window.closeTOC = closeTOC;
 
 // --- Offline Download Logic ---
 function toggleSelectMode() {
     const btn = document.getElementById('toc-select-mode-btn');
+    const panel = document.getElementById('panel-toc');
     const isActive = btn.classList.contains('active');
     btn.classList.toggle('active', !isActive);
-
-    if (!isActive) {
-        btn.classList.add('bg-primary/20', 'text-primary');
-        btn.innerHTML = '<i class="fas fa-times text-xs"></i><span>Cancel</span>';
-    } else {
-        btn.classList.remove('bg-primary/20', 'text-primary');
-        btn.innerHTML = '<i class="fas fa-check-double text-xs"></i><span>Select</span>';
+    btn.setAttribute('aria-pressed', String(!isActive));
+    if (panel) panel.dataset.selecting = String(!isActive);
+    const label = btn.querySelector('[data-toc-select-label]');
+    if (label) {
+        const key = isActive ? 'toc-select' : 'toc-select-done';
+        label.dataset.i18n = key;
+        label.textContent = tr(key, isActive ? 'Chọn' : 'Xong');
     }
 
-    document.querySelectorAll('.toc-chapter-checkbox').forEach(cb => {
-        cb.classList.toggle('hidden', isActive);
-        if (isActive) cb.checked = false;
-    });
+    if (isActive) {
+        document.querySelectorAll('.toc-chapter-checkbox').forEach(cb => { cb.checked = false; });
+    }
 
     updateDownloadBar();
 }
@@ -5134,11 +5208,10 @@ function updateDownloadBar() {
     const checkboxes = document.querySelectorAll('.toc-chapter-checkbox:checked');
     const bar = document.getElementById('toc-download-bar');
     const countEl = document.getElementById('toc-selected-count');
-    const isSelectMode = document.getElementById('toc-select-mode-btn')?.classList.contains('active');
 
-    if (isSelectMode) {
+    if (isTOCSelectMode()) {
         bar.classList.remove('hidden');
-        countEl.innerText = `${checkboxes.length} chapter${checkboxes.length !== 1 ? 's' : ''} selected`;
+        countEl.innerText = tr('toc-selected', '{n} chương đã chọn', { n: checkboxes.length });
     } else {
         bar.classList.add('hidden');
     }
@@ -5192,6 +5265,21 @@ function dispatchDownloadQueue() {
     }
 }
 
+// Download button: idle "Tải MP3", amber while preparing, red "Dừng tải" while it can be stopped.
+function setTOCDownloadButton(button, state) {
+    if (!button) return;
+    const states = {
+        preparing: { icon: 'i-download', key: 'toc-preparing', text: 'Đang chuẩn bị…' },
+        stop: { icon: 'i-stop', key: 'toc-stop-download', text: 'Dừng tải' },
+        '': { icon: 'i-download', key: 'toc-download-mp3', text: 'Tải MP3' }
+    };
+    const next = states[state] || states[''];
+    if (state) button.dataset.state = state;
+    else delete button.dataset.state;
+    button.innerHTML = `<svg class="ic ic--sm" aria-hidden="true"><use href="#${next.icon}"/></svg><span data-i18n="${next.key}"></span>`;
+    button.querySelector('span').textContent = tr(next.key, next.text);
+}
+
 async function downloadSelectedChapters() {
     const checkboxes = document.querySelectorAll('.toc-chapter-checkbox:checked');
     if (checkboxes.length === 0) {
@@ -5215,8 +5303,7 @@ async function downloadSelectedChapters() {
 
     // --- IMMEDIATE FEEDBACK ---
     STATE.isDownloading = true; // Set early to capture next click as "Stop"
-    downloadBtn.innerHTML = '<i class="fas fa-circle-notch fa-spin"></i><span>Preparing...</span>';
-    downloadBtn.classList.add('!bg-amber-500/20', '!text-amber-400', '!border-amber-500/30');
+    setTOCDownloadButton(downloadBtn, 'preparing');
 
     // Show progress bar early with "Preparing" message
     statusEl.classList.remove('hidden');
@@ -5258,9 +5345,7 @@ async function downloadSelectedChapters() {
         const rate = `${Math.round((speed - 1) * 100) >= 0 ? '+' : ''}${Math.round((speed - 1) * 100)}%`;
 
         // Switch to Active Download UI
-        downloadBtn.innerHTML = '<i class="fas fa-stop"></i><span>Stop Download</span>';
-        downloadBtn.classList.remove('!bg-amber-500/20', '!text-amber-400', '!border-amber-500/30');
-        downloadBtn.classList.add('!bg-red-500/20', '!text-red-400', '!border-red-500/30');
+        setTOCDownloadButton(downloadBtn, 'stop');
 
         // --- Prepare download state ---
         // 1. Pause audio
@@ -5390,8 +5475,7 @@ async function downloadSelectedChapters() {
         STATE.downloadReject = null;
         STATE.downloadChunkMeta = new Map();
         STATE.downloadRetryCount = new Map();
-        downloadBtn.innerHTML = '<i class="fas fa-download"></i><span>Download Offline MP3</span>';
-        downloadBtn.classList.remove('!bg-red-500/20', '!text-red-400', '!border-red-500/30', '!bg-amber-500/20', '!text-amber-400', '!border-amber-500/30');
+        setTOCDownloadButton(downloadBtn, '');
 
         // Close WebSocket after download (free backend resources)
         closeWebSocketIntentionally();
@@ -6027,8 +6111,8 @@ audio.ontimeupdate = async () => {
                 await renderChapter(currentChunk.chapterIndex);
 
                 // [FIX]: Chỉ cập nhật Mục lục nếu tab Mục lục đang mở, tránh lỗi tự động trượt ra trên di động do hàm scrollIntoView
-                if (document.getElementById('tab-toc')?.classList.contains('active')) {
-                    renderTOC();
+                if (isTOCVisible()) {
+                    refreshTOCCurrent();
                     scrollTOCCurrentChapter();
                 }
 
@@ -6375,63 +6459,50 @@ function updatePocketModeInfo() {
     const playIcon = document.getElementById('pocket-play-icon');
 
     if (STATE.currentBook) {
-        if (bookTitleEl) bookTitleEl.innerText = STATE.currentBook.title || 'Cloud TTS Reader';
+        if (bookTitleEl) bookTitleEl.textContent = STATE.currentBook.title || 'Cloud TTS Reader';
         const chap = STATE.currentBook.chapters?.[STATE.currentChapterIndex];
-        if (chapterTitleEl) chapterTitleEl.innerText = chap?.title || `Chương ${STATE.currentChapterIndex + 1}`;
+        if (chapterTitleEl) chapterTitleEl.textContent = `C.${STATE.currentChapterIndex + 1} · ${chap?.title || `${tr('chapter-word', 'Chương')} ${STATE.currentChapterIndex + 1}`}`;
         if (sentenceEl) {
             const curSentence = chap?.sentences?.[STATE.currentSentenceIndex];
-            sentenceEl.innerText = curSentence ? `"${curSentence}"` : '';
+            sentenceEl.textContent = curSentence ? `“${curSentence}”` : '';
         }
     } else {
-        if (bookTitleEl) bookTitleEl.innerText = 'Chưa chọn sách';
-        if (chapterTitleEl) chapterTitleEl.innerText = 'Sẵn sàng phát';
-        if (sentenceEl) sentenceEl.innerText = '';
+        if (bookTitleEl) bookTitleEl.textContent = tr('pocket-no-book', 'Chưa chọn sách');
+        if (chapterTitleEl) chapterTitleEl.textContent = tr('pocket-ready', 'Sẵn sàng phát');
+        if (sentenceEl) sentenceEl.textContent = '';
     }
 
-    if (playIcon) {
-        playIcon.className = STATE.isPlaying ? 'fas fa-pause text-black text-xl' : 'fas fa-play ml-1 text-black text-xl';
-    }
+    playIcon?.querySelector('use')?.setAttribute('href', STATE.isPlaying ? '#i-pause' : '#i-play');
 }
 window.updatePocketModeInfo = updatePocketModeInfo;
 
 // --- Anti-Accidental Touch Protection State (Chống chạm nhầm khi bỏ túi quần) ---
 let pocketWakeTapCount = 0;
+let pocketReturnFocus = null;
 let pocketWakeTapTimer = null;
 let pocketActiveDimTimer = null;
 
-function brightenPocketOverlay() {
-    const controls = document.getElementById('pocket-controls-container');
-    const prompt = document.getElementById('pocket-wake-prompt');
-    const exitBtn = document.getElementById('pocket-exit-btn');
+function setPocketAwake(isAwake) {
+    const overlay = document.getElementById('pocket-mode-overlay');
     const exitIcon = document.getElementById('pocket-exit-icon');
     const exitLabel = document.getElementById('pocket-exit-label');
-
-    if (controls) controls.classList.remove('opacity-40');
-    if (prompt) prompt.classList.remove('opacity-0');
-    if (exitBtn) {
-        exitBtn.classList.add('ring-2', 'ring-primary', 'bg-primary/25');
-        if (exitIcon) exitIcon.className = 'fas fa-unlock text-primary animate-pulse';
-        if (exitLabel) exitLabel.innerText = 'Chạm lần nữa để mở khóa';
+    if (overlay) overlay.dataset.awake = isAwake ? 'true' : 'false';
+    exitIcon?.querySelector('use')?.setAttribute('href', isAwake ? '#i-unlock' : '#i-lock');
+    if (exitLabel) {
+        const key = isAwake ? 'pocket-tap-again' : 'pocket-mode-exit';
+        exitLabel.dataset.i18n = key;
+        exitLabel.textContent = tr(key, isAwake ? 'Chạm lần nữa để mở khóa' : 'Chạm 2 lần để mở màn hình');
     }
+}
 
+function brightenPocketOverlay() {
+    setPocketAwake(true);
     if (pocketActiveDimTimer) clearTimeout(pocketActiveDimTimer);
     pocketActiveDimTimer = setTimeout(dimPocketOverlay, 2400);
 }
 
 function dimPocketOverlay() {
-    const controls = document.getElementById('pocket-controls-container');
-    const prompt = document.getElementById('pocket-wake-prompt');
-    const exitBtn = document.getElementById('pocket-exit-btn');
-    const exitIcon = document.getElementById('pocket-exit-icon');
-    const exitLabel = document.getElementById('pocket-exit-label');
-
-    if (controls) controls.classList.add('opacity-40');
-    if (prompt) prompt.classList.add('opacity-0');
-    if (exitBtn) {
-        exitBtn.classList.remove('ring-2', 'ring-primary', 'bg-primary/25');
-        if (exitIcon) exitIcon.className = 'fas fa-lock text-primary';
-        if (exitLabel) exitLabel.innerText = 'Chạm 2 lần để mở màn hình';
-    }
+    setPocketAwake(false);
     pocketWakeTapCount = 0;
 }
 
@@ -6455,7 +6526,7 @@ function handlePocketWakeRequest(e) {
         pocketWakeTapCount = 0;
         dimPocketOverlay();
         applyLiteMode(false);
-        if (window.APP_STATUS) APP_STATUS.toast('Đã mở lại màn hình đọc sách.', 'info');
+        if (window.APP_STATUS) APP_STATUS.toast(tr('pocket-unlocked', 'Đã mở lại màn hình đọc sách.'), 'info');
         if (window.AudioHapticFX) AudioHapticFX.trigger(12);
     }
 }
@@ -6500,7 +6571,7 @@ function initPocketModeControls() {
         if (e.key === 'Escape' && STATE.isLiteMode) {
             dimPocketOverlay();
             applyLiteMode(false);
-            if (window.APP_STATUS) APP_STATUS.toast('Đã mở lại màn hình đọc sách.', 'info');
+            if (window.APP_STATUS) APP_STATUS.toast(tr('pocket-unlocked', 'Đã mở lại màn hình đọc sách.'), 'info');
         }
     });
 }
@@ -6519,14 +6590,19 @@ function applyLiteMode(isLite) {
 
     const pocketOverlay = document.getElementById('pocket-mode-overlay');
     if (pocketOverlay) {
+        const wasOpen = !pocketOverlay.classList.contains('hidden');
         if (STATE.isLiteMode) {
+            if (!wasOpen) pocketReturnFocus = document.activeElement;
             pocketOverlay.classList.remove('hidden');
             pocketOverlay.classList.add('flex');
             updatePocketModeInfo();
+            if (!wasOpen) document.getElementById('pocket-play-btn')?.focus({ preventScroll: true });
         } else {
             pocketOverlay.classList.add('hidden');
             pocketOverlay.classList.remove('flex');
             dimPocketOverlay();
+            if (wasOpen && pocketReturnFocus?.isConnected) pocketReturnFocus.focus({ preventScroll: true });
+            pocketReturnFocus = null;
         }
     }
 
@@ -6559,8 +6635,8 @@ function applyLiteMode(isLite) {
 
     if (STATE.isLiteMode) {
         // Clear minimap DOM to free up memory & layout cost
-        const minimap = document.getElementById('minimap-container');
-        if (minimap) minimap.innerHTML = '';
+        const minimapNodes = document.getElementById('minimap-nodes');
+        if (minimapNodes) minimapNodes.innerHTML = '';
     } else {
         // Re-render minimap if currentBook is loaded
         if (STATE.currentBook && STATE.currentChapterIndex !== undefined) {
@@ -6817,8 +6893,8 @@ async function switchChapter(targetChapterIndex, startSentenceIndex = 0, autoPla
         }
 
         // 3. Cập nhật TOC UI nếu đang mở
-        if (document.getElementById('tab-toc')?.classList.contains('active')) {
-            renderTOC();
+        if (isTOCVisible()) {
+            refreshTOCCurrent();
             scrollTOCCurrentChapter();
         }
 
@@ -6966,26 +7042,21 @@ function toggleWakeLock() {
     }
 }
 
+// Toggle rows in the reader menu: aria-checked drives the look, the state chip says Bật/Tắt.
+function setMenuToggleState(button, pill, isOn) {
+    if (button) button.setAttribute('aria-checked', isOn ? 'true' : 'false');
+    if (pill) {
+        const key = isOn ? 'state-on' : 'state-off';
+        pill.dataset.i18n = key;
+        pill.textContent = tr(key, isOn ? 'Bật' : 'Tắt');
+    }
+}
+
 function updateWakeLockUI(isActive) {
     const btn = document.getElementById('wake-lock-btn');
-    const icon = document.getElementById('wake-lock-icon');
-    if (!btn || !icon) return;
-
-    if (isActive) {
-        btn.title = "Keep Screen Awake (On)";
-        icon.className = "fas fa-sun text-sm sm:text-base text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.6)] transition-all duration-300";
-    } else {
-        btn.title = "Keep Screen Awake (Off)";
-        icon.className = "far fa-sun text-sm sm:text-base transition-all duration-300";
-    }
-
-    const pill = document.getElementById('wake-lock-status-pill');
-    if (pill) {
-        pill.textContent = isActive ? "Bật" : "Tắt";
-        pill.className = isActive 
-            ? "text-[10px] font-bold px-2 py-0.5 rounded-md bg-yellow-400/20 text-yellow-300" 
-            : "text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 text-slate-400";
-    }
+    if (!btn) return;
+    btn.title = isActive ? tr('wake-on-title', 'Giữ màn hình sáng: đang bật') : tr('wake-off-title', 'Giữ màn hình sáng: đang tắt');
+    setMenuToggleState(btn, document.getElementById('wake-lock-status-pill'), !!isActive);
 
     const qWake = document.getElementById('quick-wakelock-toggle') || document.getElementById('quick-wakeLockEnabled');
     if (qWake && qWake.checked !== !!isActive) {
@@ -7108,34 +7179,24 @@ function formatTime(seconds) {
 }
 
 function updateSleepTimerUI(isActive, seconds = 0) {
-    const btn = document.getElementById('sleep-timer-btn');
-    const icon = document.getElementById('sleep-timer-icon');
+    const block = document.querySelector('.sleep-block');
     const badge = document.getElementById('sleep-timer-badge');
     const controls = document.getElementById('sleep-timer-active-controls');
     const remainingText = document.getElementById('sleep-timer-remaining');
 
-    if (isActive) {
-        if (icon) icon.className = "fas fa-moon text-xs text-primary";
-        if (badge) {
-            badge.innerText = seconds > 60 ? Math.ceil(seconds / 60) + "m" : seconds + "s";
-            badge.className = "text-[10px] font-bold px-2 py-0.5 rounded-md bg-primary/20 text-primary";
-            badge.classList.remove('opacity-0');
+    if (block) block.dataset.on = isActive ? 'true' : 'false';
+    if (badge) {
+        badge.dataset.on = isActive ? 'true' : 'false';
+        if (isActive) {
+            delete badge.dataset.i18n;
+            badge.textContent = seconds > 60 ? `${Math.ceil(seconds / 60)}′` : `${seconds}s`;
+        } else {
+            badge.dataset.i18n = 'state-off';
+            badge.textContent = tr('state-off', 'Tắt');
         }
-        if (btn) btn.classList.add('bg-primary/10');
-
-        if (controls) controls.classList.remove('hidden');
-        if (remainingText) remainingText.innerText = formatTime(seconds);
-    } else {
-        if (icon) icon.className = "fas fa-moon text-xs text-slate-400";
-        if (badge) {
-            badge.innerText = "Tắt";
-            badge.className = "text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 text-slate-400";
-            badge.classList.add('opacity-0');
-        }
-        if (btn) btn.classList.remove('bg-primary/10');
-
-        if (controls) controls.classList.add('hidden');
     }
+    if (controls) controls.classList.toggle('hidden', !isActive);
+    if (isActive && remainingText) remainingText.textContent = formatTime(seconds);
     updateReaderMoreActiveDot();
 }
 
@@ -7145,8 +7206,14 @@ async function triggerManualSave() {
     const expectedBookId = STATE.currentBookId;
     const expectedChunk = expectedBookId ? getGlobalIndex(STATE.currentChapterIndex, STATE.currentSentenceIndex) : null;
 
-    btn.classList.add('pointer-events-none');
-    icon.className = "fas fa-sync-alt fa-spin text-primary";
+    if (!btn || btn.dataset.state) return;
+    const setSaveState = (state, iconId) => {
+        if (state) btn.dataset.state = state;
+        else delete btn.dataset.state;
+        btn.setAttribute('aria-busy', state === 'busy' ? 'true' : 'false');
+        icon?.querySelector('use')?.setAttribute('href', `#${iconId}`);
+    };
+    setSaveState('busy', 'i-sync');
 
     try {
         // Force sync both progress and statistics
@@ -7169,23 +7236,14 @@ async function triggerManualSave() {
             lastReadChunk: persistedProgress.last_read_chunk
         });
 
-        icon.className = "fas fa-check text-green-400";
-        if (window.MotionLayer?.animateSuccessCheck) {
-            window.MotionLayer.animateSuccessCheck(icon);
-        }
+        setSaveState('ok', 'i-check');
         APP_STATUS.toast('Đã lưu tiến độ đọc lên đám mây.', 'success');
-        setTimeout(() => {
-            icon.className = "fas fa-cloud-upload-alt text-lg";
-            btn.classList.remove('pointer-events-none');
-        }, 2000);
+        setTimeout(() => setSaveState('', 'i-cloud-up'), 2000);
     } catch (e) {
         console.error("Manual save failed:", e);
         APP_STATUS.error(e, 'Không thể lưu tiến độ lên Firestore.');
-        icon.className = "fas fa-times text-red-500";
-        setTimeout(() => {
-            icon.className = "fas fa-cloud-upload-alt text-lg";
-            btn.classList.remove('pointer-events-none');
-        }, 2000);
+        setSaveState('error', 'i-x');
+        setTimeout(() => setSaveState('', 'i-cloud-up'), 2000);
     }
 }
 
@@ -7406,6 +7464,8 @@ document.addEventListener('keydown', async (e) => {
     // Bỏ qua nếu đang gõ trong input, textarea, hoặc contenteditable
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
+    // Menus, sheets and dialogs own their keys (Space activates the focused item there).
+    if (document.activeElement?.closest?.('[role="menu"], [role="dialog"]')) return;
 
     // Bỏ qua nếu chưa load sách
     if (!STATE.currentBook) return;
@@ -7448,6 +7508,7 @@ if ('serviceWorker' in navigator) {
 
 // --- Edit Chapter Logic ---
 let editingChapterIndex = -1;
+let editReturnFocus = null;
 
 async function openEditChapterModal(index, triggerBtn = null) {
     if (!STATE.user || !STATE.currentFilename) return;
@@ -7457,13 +7518,15 @@ async function openEditChapterModal(index, triggerBtn = null) {
     const textarea = document.getElementById('edit-chapter-textarea');
     const statusIndicator = document.getElementById('status-indicator');
 
-    const originalBtnHtml = triggerBtn ? triggerBtn.innerHTML : null;
+    editReturnFocus = triggerBtn || document.activeElement;
     if (triggerBtn) {
         triggerBtn.disabled = true;
-        triggerBtn.innerHTML = '<i class="fas fa-spinner fa-spin text-xs text-primary"></i>';
+        triggerBtn.setAttribute('aria-busy', 'true');
     }
 
-    const chapTitle = STATE.currentBook?.chapters?.[index]?.title || `Chương ${index + 1}`;
+    const chapTitle = STATE.currentBook?.chapters?.[index]?.title || `${tr('chapter-word', 'Chương')} ${index + 1}`;
+    const editSub = document.getElementById('edit-chapter-sub');
+    if (editSub) editSub.textContent = `C.${index + 1} · ${chapTitle}`;
     showLoading("Đang tải nội dung chương...", {
         subtext: `Chương ${index + 1}: ${chapTitle}`
     });
@@ -7486,6 +7549,8 @@ async function openEditChapterModal(index, triggerBtn = null) {
         if (data.content !== undefined) {
             textarea.value = data.content;
             modal.classList.remove('hidden');
+            textarea.scrollTop = 0;
+            textarea.focus({ preventScroll: true });
             if (statusIndicator) statusIndicator.innerText = "Ready";
         } else {
             throw new Error(data.error || "Failed to fetch content");
@@ -7498,7 +7563,7 @@ async function openEditChapterModal(index, triggerBtn = null) {
         hideLoading();
         if (triggerBtn) {
             triggerBtn.disabled = false;
-            triggerBtn.innerHTML = originalBtnHtml || '<i class="fas fa-pen text-xs"></i>';
+            triggerBtn.removeAttribute('aria-busy');
         }
     }
 }
@@ -7506,6 +7571,8 @@ async function openEditChapterModal(index, triggerBtn = null) {
 function closeEditModal() {
     document.getElementById('edit-chapter-modal').classList.add('hidden');
     editingChapterIndex = -1;
+    if (editReturnFocus?.isConnected) editReturnFocus.focus({ preventScroll: true });
+    editReturnFocus = null;
 }
 
 async function saveChapterEdit() {
@@ -7517,7 +7584,7 @@ async function saveChapterEdit() {
     const statusIndicator = document.getElementById('status-indicator');
 
     const originalText = saveBtn.innerText;
-    saveBtn.innerText = "Saving...";
+    saveBtn.innerText = tr("saving", "Đang lưu…");
     saveBtn.disabled = true;
     if (statusIndicator) statusIndicator.innerText = "Saving changes...";
 
@@ -7746,19 +7813,7 @@ window.updateReaderMoreActiveDot = updateReaderMoreActiveDot;
 function setZenMode(enabled, persist = true) {
     STATE.zenModeEnabled = !!enabled;
     document.body.classList.toggle('zen-focus-mode', STATE.zenModeEnabled);
-    const btn = document.getElementById('zen-mode-toggle-btn');
-    if (btn) {
-        btn.classList.toggle('text-primary', STATE.zenModeEnabled);
-        btn.classList.toggle('bg-primary/20', STATE.zenModeEnabled);
-        btn.setAttribute('aria-pressed', STATE.zenModeEnabled ? 'true' : 'false');
-    }
-    const zenPill = document.getElementById('zen-mode-status-pill');
-    if (zenPill) {
-        zenPill.textContent = STATE.zenModeEnabled ? "Bật" : "Tắt";
-        zenPill.className = STATE.zenModeEnabled 
-            ? "text-[10px] font-bold px-2 py-0.5 rounded-md bg-primary/20 text-primary" 
-            : "text-[10px] font-bold px-2 py-0.5 rounded-md bg-white/5 text-slate-400";
-    }
+    setMenuToggleState(document.getElementById('zen-mode-toggle-btn'), document.getElementById('zen-mode-status-pill'), STATE.zenModeEnabled);
     const qZenToggle = document.getElementById('quick-zen-mode-toggle');
     if (qZenToggle && qZenToggle.checked !== STATE.zenModeEnabled) {
         qZenToggle.checked = STATE.zenModeEnabled;
@@ -7781,6 +7836,147 @@ if (zenToggleBtn) {
         APP_STATUS.toast(nextState ? 'Đã bật chế độ tập trung (Zen Mode).' : 'Đã tắt chế độ tập trung (Zen Mode).', 'info');
     });
 }
+
+// --- Reader tools menu (⋮) ---
+function requireOpenBook() {
+    if (STATE.currentBook) return true;
+    APP_STATUS.toast(tr('need-open-book', 'Mở một truyện trước đã.'), 'info');
+    return false;
+}
+
+document.addEventListener('reader-menu-open', () => {
+    const hasBook = !!STATE.currentBook;
+    ['reader-edit-chapter-btn', 'reader-rename-btn', 'reader-images-btn', 'manual-save-btn'].forEach(id => {
+        const item = document.getElementById(id);
+        if (item) item.disabled = !hasBook;
+    });
+    syncReaderTypePanel();
+});
+document.getElementById('reader-edit-chapter-btn')?.addEventListener('click', () => {
+    if (requireOpenBook()) void openEditChapterModal(STATE.currentChapterIndex, null);
+});
+document.getElementById('reader-rename-btn')?.addEventListener('click', () => {
+    if (requireOpenBook()) void editTitle();
+});
+document.getElementById('reader-images-btn')?.addEventListener('click', () => {
+    if (requireOpenBook()) void openImageManager();
+});
+document.getElementById('reader-pocket-btn')?.addEventListener('click', () => applyLiteMode(true));
+
+// --- Aa: reading type panel (font, size, line height, column width, theme) ---
+const READER_TYPE_DEFAULTS = { leading: '1.72', measure: '66ch' };
+const READER_TYPE_KEYS = { leading: 'reader-line-height', measure: 'reader-measure' };
+const READER_TYPE_VARS = { leading: '--reader-leading', measure: '--reader-measure' };
+const READER_TYPE_ALLOWED = { leading: ['1.55', '1.72', '1.9'], measure: ['52ch', '60ch', '66ch'] };
+const readerTypePanel = document.getElementById('reader-type-panel');
+const readerTypeScrim = document.getElementById('reader-type-scrim');
+let readerTypeReturnFocus = null;
+
+function readerTypeValue(group) {
+    let value = null;
+    try { value = localStorage.getItem(READER_TYPE_KEYS[group]); } catch (_) {}
+    return READER_TYPE_ALLOWED[group].includes(value) ? value : READER_TYPE_DEFAULTS[group];
+}
+
+function syncReaderTypePanel() {
+    const size = Number(STATE.settings.fontSize) || 20;
+    let font = DEFAULT_READER_FONT;
+    try { font = localStorage.getItem('reader-font-family') || DEFAULT_READER_FONT; } catch (_) {}
+    const fontSelect = document.getElementById('reader-type-font');
+    if (fontSelect) fontSelect.value = font;
+    const sizeVal = document.getElementById('reader-type-size-val');
+    if (sizeVal) sizeVal.textContent = `${size}px`;
+    const range = document.getElementById('font-size-range');
+    const dec = document.getElementById('reader-type-size-dec');
+    const inc = document.getElementById('reader-type-size-inc');
+    if (dec) dec.disabled = size <= Number(range?.min || 10);
+    if (inc) inc.disabled = size >= Number(range?.max || 48);
+    Object.keys(READER_TYPE_KEYS).forEach(group => {
+        const current = readerTypeValue(group);
+        document.querySelectorAll(`[data-type-group="${group}"] > button`).forEach(btn => {
+            btn.setAttribute('aria-pressed', String(btn.dataset.value === current));
+        });
+    });
+    const summary = document.getElementById('reader-type-summary');
+    if (summary) summary.textContent = `${size}px`;
+}
+
+function setReaderFontSize(size) {
+    const range = document.getElementById('font-size-range');
+    if (!range) return;
+    const next = Math.min(Number(range.max) || 48, Math.max(Number(range.min) || 10, Math.round(size)));
+    range.value = String(next);
+    range.dispatchEvent(new Event('input'));
+    syncReaderTypePanel();
+}
+
+function setReaderTypeOption(group, value) {
+    if (!READER_TYPE_ALLOWED[group]?.includes(value)) return;
+    try { localStorage.setItem(READER_TYPE_KEYS[group], value); } catch (_) {}
+    document.documentElement.style.setProperty(READER_TYPE_VARS[group], value);
+    syncReaderTypePanel();
+}
+
+function onReaderTypeOutside(event) {
+    if (readerTypePanel?.contains(event.target) || event.target.closest?.('#reader-type-btn')) return;
+    closeReaderTypePanel();
+}
+
+function onReaderTypeKey(event) {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeReaderTypePanel({ restoreFocus: true });
+}
+
+function openReaderTypePanel() {
+    if (!readerTypePanel || !readerTypePanel.hidden) return;
+    readerTypeReturnFocus = document.getElementById('reader-more-menu-btn');
+    syncReaderTypePanel();
+    readerTypePanel.hidden = false;
+    const isSheet = window.matchMedia('(max-width: 639.98px)').matches;
+    if (readerTypeScrim) readerTypeScrim.hidden = !isSheet;
+    document.addEventListener('pointerdown', onReaderTypeOutside, true);
+    document.addEventListener('keydown', onReaderTypeKey, true);
+    document.getElementById('reader-type-font')?.focus({ preventScroll: true });
+}
+
+function closeReaderTypePanel({ restoreFocus = false } = {}) {
+    if (!readerTypePanel || readerTypePanel.hidden) return;
+    readerTypePanel.hidden = true;
+    if (readerTypeScrim) readerTypeScrim.hidden = true;
+    document.removeEventListener('pointerdown', onReaderTypeOutside, true);
+    document.removeEventListener('keydown', onReaderTypeKey, true);
+    if (restoreFocus && readerTypeReturnFocus?.isConnected) readerTypeReturnFocus.focus({ preventScroll: true });
+    readerTypeReturnFocus = null;
+}
+
+document.getElementById('reader-type-btn')?.addEventListener('click', () => {
+    // Let the menu close first, then open the panel in its place.
+    requestAnimationFrame(openReaderTypePanel);
+});
+document.getElementById('reader-type-close')?.addEventListener('click', () => closeReaderTypePanel({ restoreFocus: true }));
+readerTypeScrim?.addEventListener('click', () => closeReaderTypePanel());
+document.getElementById('reader-type-font')?.addEventListener('change', event => {
+    const select = document.getElementById('font-family-select');
+    if (select) {
+        select.value = event.target.value;
+        select.dispatchEvent(new Event('change'));
+    } else {
+        applyFontFamily(event.target.value);
+    }
+});
+document.getElementById('reader-type-size-dec')?.addEventListener('click', () => setReaderFontSize((Number(STATE.settings.fontSize) || 20) - 1));
+document.getElementById('reader-type-size-inc')?.addEventListener('click', () => setReaderFontSize((Number(STATE.settings.fontSize) || 20) + 1));
+document.querySelectorAll('[data-type-group] > button').forEach(btn => {
+    btn.addEventListener('click', () => setReaderTypeOption(btn.parentElement.dataset.typeGroup, btn.dataset.value));
+});
+document.getElementById('reader-type-more')?.addEventListener('click', () => {
+    closeReaderTypePanel();
+    window.QuickSettingsController?.open();
+    window.QuickSettingsController?.switchTab?.('appearance');
+});
+syncReaderTypePanel();
 
 // Apply initial settings to UI on startup
 applySettingsToUI();
