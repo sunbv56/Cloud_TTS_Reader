@@ -77,7 +77,7 @@
     </style>
 </head>
 
-<body class="app-body">
+<body class="app-body" data-view="discovery">
     <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
         <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.8v14.4L19 12z" fill="currentColor" stroke="none"/></symbol>
         <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></symbol>
@@ -170,6 +170,7 @@
                 <button id="stats-toggle-btn" type="button" class="menu-item" role="menuitem">
                     <svg class="ic" aria-hidden="true"><use href="#i-chart"/></svg>
                     <span data-i18n="menu-stats">Thống kê đọc</span>
+                    <span id="stats-streak-value" class="menu-item__value" hidden></span>
                 </button>
                 <button id="sync-btn" type="button" class="menu-item" role="menuitem">
                     <svg class="ic" aria-hidden="true"><use href="#i-sync"/></svg>
@@ -598,10 +599,10 @@
                     <button id="next-chunk-btn" type="button" class="icon-btn console-wide" aria-label="Câu kế (→)" title="Câu kế (→)" data-i18n-aria="next-sentence-key">
                         <svg class="ic" aria-hidden="true"><use href="#i-ff"/></svg>
                     </button>
-                    <button id="prev-btn" type="button" class="icon-btn console-wide" aria-label="Chương trước ([)" title="Chương trước ([)" data-i18n-aria="prev-chapter-key">
+                    <button id="prev-btn" type="button" class="icon-btn console-wide" aria-label="Chương trước ([ hoặc Shift+←)" title="Chương trước ([ hoặc Shift+←)" data-i18n-aria="prev-chapter-key">
                         <svg class="ic" aria-hidden="true"><use href="#i-chleft"/></svg>
                     </button>
-                    <button id="next-btn" type="button" class="icon-btn console-wide" aria-label="Chương kế (])" title="Chương kế (])" data-i18n-aria="next-chapter-key">
+                    <button id="next-btn" type="button" class="icon-btn console-wide" aria-label="Chương kế (] hoặc Shift+→)" title="Chương kế (] hoặc Shift+→)" data-i18n-aria="next-chapter-key">
                         <svg class="ic" aria-hidden="true"><use href="#i-chright"/></svg>
                     </button>
                 </div>
@@ -628,7 +629,7 @@
                     <span class="audio-wave-bars console-wide" aria-hidden="true">
                         <span class="audio-wave-bar"></span><span class="audio-wave-bar"></span><span class="audio-wave-bar"></span><span class="audio-wave-bar"></span>
                     </span>
-                    <span id="current-time-mock" class="console-count mono">— / —</span>
+                    <span id="current-time-mock" class="console-count mono">—</span>
                 </div>
 
                 <div id="player-utils-layer" class="console-utils">
@@ -836,7 +837,8 @@
     <section id="settings-sheet" class="settings" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
         <header class="settings__head">
             <button id="settings-close" type="button" class="icon-btn" aria-label="Đóng cài đặt" data-i18n-aria="settings-close">
-                <svg class="ic" aria-hidden="true"><use href="#i-back"/></svg>
+                <svg class="ic settings__close-back" aria-hidden="true"><use href="#i-back"/></svg>
+                <svg class="ic settings__close-x" aria-hidden="true"><use href="#i-x"/></svg>
             </button>
             <h2 id="settings-title" class="settings__title" data-i18n="settings-title">Cài đặt</h2>
         </header>
@@ -944,7 +946,7 @@
                             <button type="button" class="preset-color" style="--swatch: #3A3A3A" data-color="#3A3A3A" title="Than" aria-label="Than" aria-pressed="false" data-i18n-aria="color-charcoal"></button>
                             <button type="button" class="preset-color" style="--swatch: #5B4636" data-color="#5B4636" title="Nâu mực" aria-label="Nâu mực" aria-pressed="false" data-i18n-aria="color-ink-brown"></button>
                         </div>
-                        <button id="color-reset-btn" type="button" class="btn btn--sm" data-i18n="color-default">Theo theme</button>
+                        <button id="color-reset-btn" type="button" class="btn btn--sm" data-i18n="color-default">Theo giao diện</button>
                     </div>
                 </div>
                 <div class="set-row">
@@ -979,7 +981,7 @@
                     <input type="range" id="prefetch-range" class="range" min="0" max="2" step="1" value="1">
                 </div>
                 <label class="set-row set-row--switch">
-                    <span class="set-row__label"><span data-i18n="proxy-title">Edge proxy</span><small data-i18n="proxy-desc">Thử thêm qua proxy khi kết nối thẳng chậm hoặc bị chặn</small></span>
+                    <span class="set-row__label"><span data-i18n="proxy-title">Đi qua máy chủ trung gian (proxy)</span><small data-i18n="proxy-desc">Thử thêm qua proxy khi kết nối thẳng chậm hoặc bị chặn</small></span>
                     <input type="checkbox" id="proxy-toggle" class="switch-input">
                     <span class="switch" aria-hidden="true"></span>
                 </label>
@@ -1005,13 +1007,13 @@
             </section>
 
             <section id="settings-storage" class="set-group" aria-labelledby="settings-storage-h">
-                <h3 id="settings-storage-h" class="set-group__title" data-i18n="settings-storage">Bộ nhớ &amp; cache</h3>
+                <h3 id="settings-storage-h" class="set-group__title" data-i18n="settings-storage">Bộ nhớ</h3>
                 <div class="set-row">
                     <span class="set-row__label"><span data-i18n="offline-audio">Âm thanh đã lưu</span><small data-i18n="offline-audio-desc">Chỉ giữ trong lúc nghe liên tục; mở truyện hay nhảy câu sẽ xoá</small></span>
                     <span id="offline-usage-text" class="set-row__value mono">— MB</span>
                 </div>
                 <div class="set-row">
-                    <span class="set-row__label" data-i18n="clear-cache">Xoá cache âm thanh</span>
+                    <span class="set-row__label" data-i18n="clear-cache">Xoá âm thanh đã lưu tạm</span>
                     <button id="clear-offline-cache" type="button" class="btn btn--sm btn--danger" data-i18n="clear-short">Xoá</button>
                 </div>
             </section>
@@ -1121,20 +1123,6 @@ Nội dung chương hai...</pre>
         </div>
     </div>
 
-    <div id="confirm-modal" class="modal modal--top hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-body">
-        <div class="modal__scrim" data-confirm-cancel></div>
-        <div class="modal-card modal-card--sm">
-            <div class="modal-head">
-                <h2 id="confirm-title" class="modal-title"></h2>
-            </div>
-            <p id="confirm-body" class="modal-sub"></p>
-            <div class="modal-actions">
-                <button id="confirm-cancel-btn" type="button" class="btn" data-confirm-cancel data-autofocus data-i18n="cancel">Huỷ</button>
-                <button id="confirm-ok-btn" type="button" class="btn btn--destructive"></button>
-            </div>
-        </div>
-    </div>
-
     <div id="image-manager-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="image-manager-heading">
         <div class="modal__scrim" data-close-image-manager></div>
         <div class="modal-card modal-card--md img-manager">
@@ -1150,7 +1138,7 @@ Nội dung chương hai...</pre>
             </div>
             <div id="image-manager-list" class="img-list" title="Kéo thả hoặc dán ảnh vào đây"></div>
             <div class="modal-actions modal-actions--split">
-                <span class="field-hint" data-i18n="images-footer-hint">Ảnh tự chuyển WebP, tối đa 150 KB. Kéo thả hoặc dán (Ctrl+V) ảnh vào danh sách.</span>
+                <span class="field-hint" data-i18n="images-footer-hint">Ảnh được nén nhẹ tự động. Kéo thả hoặc dán (Ctrl+V) ảnh vào danh sách.</span>
                 <button id="image-manager-add-btn" type="button" class="btn btn--primary">
                     <svg class="ic ic--sm" aria-hidden="true"><use href="#i-plus"/></svg>
                     <span data-i18n="images-add">Thêm ảnh</span>
@@ -1190,6 +1178,26 @@ Nội dung chương hai...</pre>
     <script src="/static/js/mini-player-widget.js"></script>
 
     <!-- PWA: the service worker is registered (scope '/') at the end of app.js -->
+    <!-- Rename a book (replaces the browser's prompt()) -->
+    <div id="rename-modal" class="modal modal--top hidden" role="dialog" aria-modal="true" aria-labelledby="rename-modal-title">
+        <div class="modal__scrim" data-close-rename></div>
+        <form id="rename-form" class="modal-card modal-card--sm" novalidate>
+            <div class="modal-head">
+                <h2 id="rename-modal-title" class="modal-title" data-i18n="rename-book">Đổi tên</h2>
+                <button type="button" class="icon-btn" data-close-rename aria-label="Đóng" data-i18n-aria="close">
+                    <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+                </button>
+            </div>
+            <div class="field-stack">
+                <label class="field-label" for="rename-input" data-i18n="book-title-label">Tên truyện</label>
+                <input id="rename-input" class="input" type="text" autocomplete="off" spellcheck="false" maxlength="200" data-autofocus>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn" data-close-rename data-i18n="cancel">Huỷ</button>
+                <button type="submit" class="btn btn--primary" data-i18n="save">Lưu</button>
+            </div>
+        </form>
+    </div>
     <!-- Edit chapter: raw text of one chapter -->
     <div id="edit-chapter-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="edit-chapter-title">
         <div class="modal__scrim"></div>
@@ -1203,7 +1211,14 @@ Nội dung chương hai...</pre>
                     <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
                 </button>
             </div>
-            <textarea id="edit-chapter-textarea" class="input edit-text" aria-labelledby="edit-chapter-title" spellcheck="false"></textarea>
+            <div class="field-stack">
+                <label class="field-label" for="edit-chapter-name" data-i18n="chapter-name">Tên chương</label>
+                <input id="edit-chapter-name" class="input" type="text" autocomplete="off" spellcheck="false" maxlength="300">
+            </div>
+            <div class="field-stack edit-body">
+                <label class="field-label" for="edit-chapter-textarea" data-i18n="chapter-body">Nội dung</label>
+                <textarea id="edit-chapter-textarea" class="input edit-text" spellcheck="false"></textarea>
+            </div>
             <div class="modal-actions">
                 <button id="cancel-edit-btn" type="button" class="btn" data-i18n="cancel">Huỷ</button>
                 <button id="save-edit-btn" type="button" class="btn btn--primary" data-i18n="save-changes">Lưu thay đổi</button>
@@ -1251,9 +1266,17 @@ Nội dung chương hai...</pre>
                     <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
                 </button>
             </div>
-            <div id="image-crop-stage" class="crop-stage" aria-label="Vùng căn bìa">
-                <img id="image-crop-preview" class="crop-stage__img" alt="Xem trước vùng bìa">
+            <div id="image-crop-stage" class="crop-stage" tabindex="0" role="application"
+                aria-label="Vùng căn bìa — dùng phím mũi tên để dịch, + hoặc − để phóng" data-i18n-aria="crop-stage-label"
+                aria-describedby="image-crop-status">
+                <img id="image-crop-preview" class="crop-stage__img" alt="">
             </div>
+            <div class="crop-previews" aria-hidden="true">
+                <span id="image-crop-thumb" class="cover cover--thumb crop-preview"><img class="cover__img" alt="" draggable="false"></span>
+                <span id="image-crop-card" class="cover cover--grid crop-preview crop-preview--card"><img class="cover__img" alt="" draggable="false"></span>
+                <span class="field-hint" data-i18n="crop-preview-label">Bìa trong danh sách và lưới</span>
+            </div>
+            <p id="image-crop-status" class="sr-only-text" aria-live="polite"></p>
             <div class="crop-zoom">
                 <label for="image-crop-zoom" data-i18n="zoom">Phóng to</label>
                 <input id="image-crop-zoom" type="range" min="1" max="3" step="0.01" value="1" class="range">

@@ -6,6 +6,7 @@
  * STATE through window.MPW_BRIDGE.
  */
 import { trapTab } from './ui-interactions.js';
+import { shortChapterTitle } from './utils.js';
 
 const $ = (id) => document.getElementById(id);
 const bridge = () => window.MPW_BRIDGE || null;
@@ -340,6 +341,7 @@ function paintSleep(detail = sleepDetail) {
         chip.dataset.on = String(!!detail.active);
         chip.setAttribute('aria-label', t('sleep-chip-label', 'Hẹn giờ tắt: {v}. Chạm để đổi', { v: short }));
     }
+    // Off, the chip names itself ("Hẹn giờ") so it never reads as "turn off" next to "Tắt màn hình".
     if (chipLabel) {
         if (detail.active) delete chipLabel.dataset.i18n;
         else chipLabel.dataset.i18n = 'sleep-chip-off';
@@ -506,13 +508,14 @@ function chapterInfo() {
 }
 
 function paintChapterLabels() {
-    const info = chapterInfo();
+    // While a book opens, STATE still points at the previous chapter index.
+    const info = $('media-player')?.hasAttribute('data-loading') ? null : chapterInfo();
     const label = $('console-chapter');
     if (label) label.textContent = info ? `C.${info.index + 1} ·` : '';
     const book = $('cpanel-book');
     if (book) book.textContent = $('player-author')?.textContent || 'Cloud TTS';
     const chapter = $('cpanel-chapter');
-    if (chapter) chapter.textContent = info ? `C.${info.index + 1} · ${info.title}` : t('no-book-playing', 'Chưa phát truyện nào');
+    if (chapter) chapter.textContent = info ? `C.${info.index + 1} · ${shortChapterTitle(info.title)}` : t('no-book-playing', 'Chưa phát truyện nào');
     const pos = $('cpanel-chpos');
     if (pos) pos.textContent = info ? `C.${info.index + 1} / ${info.total}` : '—';
     const prev = $('cpanel-prev-ch');
@@ -534,7 +537,7 @@ function paintProgress() {
     const pct = progressPercent();
     const fill = document.querySelector('#cpanel-track .track__fill');
     if (fill) fill.style.width = `${pct}%`;
-    const count = $('current-time-mock')?.textContent || '— / —';
+    const count = $('current-time-mock')?.textContent || '—';
     const panelCount = $('cpanel-count');
     if (panelCount) panelCount.textContent = t('sentence-of', 'Câu {v}', { v: count });
     const now = info ? info.sentence + 1 : 1;
@@ -586,6 +589,13 @@ function observe(id, callback, options) {
 function initObservers() {
     const text = { childList: true, characterData: true, subtree: true };
     observe('status-indicator', paintStatus, text);
+    // The reader switched chapter (also while paused or blocked): follow it.
+    document.addEventListener('readerchapterchange', () => {
+        paintChapterLabels();
+        paintNavDisabled();
+        paintProgress();
+    });
+    observe('media-player', paintChapterLabels, { attributes: true, attributeFilter: ['data-loading'] });
     observe('player-title', paintChapterLabels, text);
     observe('player-author', paintChapterLabels, text);
     observe('progress-bar', paintProgress, { attributes: true, attributeFilter: ['style'] });

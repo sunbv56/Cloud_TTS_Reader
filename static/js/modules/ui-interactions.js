@@ -396,6 +396,14 @@ export const SettingsSheet = {
                 this.scrollTo(link.getAttribute('href').slice(1));
             });
         });
+        let spyFrame = 0;
+        document.getElementById('settings-body')?.addEventListener('scroll', () => {
+            if (spyFrame) return;
+            spyFrame = requestAnimationFrame(() => {
+                spyFrame = 0;
+                this.markSection();
+            });
+        }, { passive: true });
 
         document.querySelectorAll('#settings-lang [data-lang]').forEach(btn => {
             btn.addEventListener('click', () => this.setLanguage(btn.dataset.lang));
@@ -433,9 +441,39 @@ export const SettingsSheet = {
             document.addEventListener('keydown', this.onKey, true);
             window.refreshInsights?.();
         }
+        // Opened from "Thống kê đọc", the sheet is titled for what it shows.
+        const title = document.getElementById('settings-title');
+        if (title) {
+            title.dataset.i18n = section === 'stats' ? 'settings-stats' : 'settings-title';
+            const lang = currentUiLang();
+            title.textContent = window.translations?.[lang]?.[title.dataset.i18n] || (section === 'stats' ? 'Thống kê' : 'Cài đặt');
+        }
         requestAnimationFrame(() => {
             this.scrollTo(`settings-${section}`, { instant: true });
+            this.markSection(`settings-${section}`);
             document.getElementById('settings-close')?.focus({ preventScroll: true });
+        });
+    },
+
+    // Scroll-spy: underline the jump link of the section in view.
+    markSection(forcedId = null) {
+        const body = document.getElementById('settings-body');
+        const links = [...(this.sheet?.querySelectorAll('.settings__jump a') || [])];
+        if (!body || !links.length) return;
+        let currentId = forcedId;
+        if (!currentId) {
+            const atEnd = body.scrollTop + body.clientHeight >= body.scrollHeight - 2;
+            const top = body.getBoundingClientRect().top + 24;
+            links.forEach(link => {
+                const section = document.getElementById(link.getAttribute('href').slice(1));
+                if (section && section.getBoundingClientRect().top <= top) currentId = section.id;
+            });
+            if (atEnd && body.scrollTop > 0) currentId = links[links.length - 1].getAttribute('href').slice(1);
+            currentId ||= links[0].getAttribute('href').slice(1);
+        }
+        links.forEach(link => {
+            if (link.getAttribute('href') === `#${currentId}`) link.setAttribute('aria-current', 'true');
+            else link.removeAttribute('aria-current');
         });
     },
 
