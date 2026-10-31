@@ -30,7 +30,8 @@ self.addEventListener('activate', (event) => {
         caches.keys()
             .then((keys) => Promise.all(
                 keys
-                    .filter((key) => key !== CACHE_NAME)
+                    // The cover cache (cloud-tts-covers-*) is user data managed by app.js.
+                    .filter((key) => key !== CACHE_NAME && !key.startsWith('cloud-tts-covers-'))
                     .map((key) => caches.delete(key))
             ))
             .then(() => self.clients.claim())

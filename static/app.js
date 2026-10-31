@@ -1157,6 +1157,7 @@ function createLibraryEntry(bookId, data) {
         done,
         lastListenedAt: listenedTime(data.last_listened_at),
         hasImages: data.has_images === true,
+        imagesRev: typeof data.images_rev === 'string' ? data.images_rev : null,
         searchKey: librarySearchKey(rawTitle),
         chapter: null
     };
@@ -1321,6 +1322,9 @@ function attachCover(element, bookId, hasImages) {
 function requestCover(bookId) {
     if (!bookId || STATE.coverResolved.has(bookId)) return Promise.resolve(STATE.coverResolved.get(bookId));
     if (coverPending.has(bookId)) return coverPending.get(bookId);
+    // Start the manifest lookup now so every cover that comes into view
+    // together shares one /covers request; the queue only caps image downloads.
+    void loadImageManifest(bookId);
     const pending = new Promise(resolve => {
         coverQueue.push({ bookId, uid: STATE.user?.uid, resolve });
         pumpCoverQueue();
@@ -1359,7 +1363,7 @@ async function resolveCover(bookId) {
     const manifest = await loadImageManifest(bookId);
     const cover = manifest.images.find(image => image.id === manifest.coverId) || manifest.images[0];
     if (!cover) return manifest._retryable ? undefined : null;
-    const url = await getImageURL(bookId, cover);
+    const url = await getImageURL(bookId, cover, { persist: true });
     if (!url) return undefined;
     return { url, imageId: cover.id, crop: cover.coverCrop || null };
 }
@@ -3810,52 +3814,278 @@ function processAppendQueue() {
 initWebSocket();
 initMSE();
 
-async function loadImageManifest(bookId) {
-    if (!STATE.user || !bookId) return { version: 1, coverId: null, images: [], _found: false };
-    if (STATE.imageManifestCache.has(bookId)) return STATE.imageManifestCache.get(bookId);
-    const emptyManifest = { version: 1, coverId: null, images: [], _found: false };
-    try {
-        const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images/manifest`, { cache: 'no-store' });
-        const storageBackend = response.headers.get('X-Storage-Backend') || 'unknown';
-        const manifestFound = response.headers.get('X-Manifest-Found') === 'true';
+// ── Image manifest + cover caches ───────────────────────────────────────────
+// Every manifest/image read on the server is a billed storage call (shared
+// daily cap), so Home must not re-read them on every visit:
+// - manifests persist in IndexedDB per uid+bookId with the server ETag and the
+//   progress doc's images_rev (written on every manifest save). A matching rev
+//   is trusted without a request; anything else is revalidated by ETag;
+// - lookups of many books go out together through POST /covers;
+// - cover images persist in Cache Storage keyed by imageId + updatedAt.
+const IMAGE_META_DB = 'cloud-tts-image-meta';
+const IMAGE_META_STORE = 'manifests';
+const COVER_CACHE_NAME = 'cloud-tts-covers-v1';
+const COVER_CACHE_MAX_ENTRIES = 120;
+// Books saved before images_rev existed: trust the stored copy this long.
+const MANIFEST_UNVERSIONED_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const MANIFEST_BATCH_DELAY_MS = 16;
+const MANIFEST_BATCH_MAX = 100;
 
-        if (!response.ok) {
-            console.warn(`[Images] Manifest HTTP ${response.status} for book "${bookId}" (storage backend: ${storageBackend})`);
-            if (response.status >= 500) {
-                // Do not permanently cache 5xx server errors so that the app can retry later
-                return { ...emptyManifest, _error: `HTTP ${response.status}`, _storageBackend: storageBackend, _retryable: true };
+const imageMetaStore = {
+    _db: null,
+    open() {
+        if (this._db) return this._db;
+        this._db = new Promise(resolve => {
+            try {
+                const request = indexedDB.open(IMAGE_META_DB, 1);
+                request.onupgradeneeded = () => request.result.createObjectStore(IMAGE_META_STORE);
+                request.onsuccess = () => resolve(request.result);
+                request.onerror = () => resolve(null);
+                request.onblocked = () => resolve(null);
+            } catch (_) {
+                resolve(null);
             }
-            throw new Error(`Manifest HTTP ${response.status}`);
-        }
-        const manifest = await response.json();
-        const normalized = {
-            version: 1,
-            coverId: null,
-            images: [],
-            _storageBackend: storageBackend || manifest._storage_backend || 'unknown',
-            _found: manifestFound || manifest._found !== false,
-            ...manifest
-        };
-        if (!Array.isArray(normalized.images) || normalized.images.some(image => !image || typeof image.id !== 'string' || !image.id.trim())) {
-            throw new Error('Image manifest has an invalid images list');
-        }
-        STATE.imageManifestCache.set(bookId, normalized);
-        return normalized;
+        });
+        return this._db;
+    },
+    async run(mode, action) {
+        const db = await this.open();
+        if (!db) return null;
+        return new Promise(resolve => {
+            try {
+                const tx = db.transaction(IMAGE_META_STORE, mode);
+                const request = action(tx.objectStore(IMAGE_META_STORE));
+                tx.oncomplete = () => resolve(request?.result ?? null);
+                tx.onerror = tx.onabort = () => resolve(null);
+            } catch (_) {
+                resolve(null);
+            }
+        });
+    },
+    get(key) { return this.run('readonly', store => store.get(key)); },
+    put(key, value) { return this.run('readwrite', store => store.put(value, key)); },
+    delete(key) { return this.run('readwrite', store => store.delete(key)); }
+};
+
+const manifestPending = new Map();
+const manifestBatch = { jobs: new Map(), timer: null };
+
+function emptyImageManifest(extra = {}) {
+    return { version: 1, coverId: null, images: [], _found: false, ...extra };
+}
+
+function manifestMetaKey(uid, bookId) {
+    return `${uid}/${bookId}`;
+}
+
+function storedManifestIsFresh(stored, rev) {
+    if (!stored?.manifest) return false;
+    if (rev) return stored.rev === rev;
+    return !stored.rev && Date.now() - (stored.savedAt || 0) < MANIFEST_UNVERSIONED_MAX_AGE_MS;
+}
+
+function normalizeImageManifest(manifest, found, storageBackend) {
+    const normalized = {
+        version: 1,
+        coverId: null,
+        images: [],
+        _storageBackend: storageBackend || 'unknown',
+        _found: found,
+        ...manifest
+    };
+    if (!Array.isArray(normalized.images) || normalized.images.some(image => !image || typeof image.id !== 'string' || !image.id.trim())) {
+        throw new Error('Image manifest has an invalid images list');
+    }
+    return normalized;
+}
+
+async function loadImageManifest(bookId) {
+    if (!STATE.user || !bookId) return emptyImageManifest();
+    if (STATE.imageManifestCache.has(bookId)) return STATE.imageManifestCache.get(bookId);
+    const uid = STATE.user.uid;
+    const pendingKey = manifestMetaKey(uid, bookId);
+    if (manifestPending.has(pendingKey)) return manifestPending.get(pendingKey);
+    const pending = fetchImageManifest(uid, bookId).finally(() => manifestPending.delete(pendingKey));
+    manifestPending.set(pendingKey, pending);
+    return pending;
+}
+
+async function fetchImageManifest(uid, bookId) {
+    const remember = manifest => {
+        if (STATE.user?.uid === uid) STATE.imageManifestCache.set(bookId, manifest);
+        return manifest;
+    };
+    const rev = findLibraryEntry(bookId)?.imagesRev || null;
+    const metaKey = manifestMetaKey(uid, bookId);
+    const stored = await imageMetaStore.get(metaKey);
+    if (storedManifestIsFresh(stored, rev)) return remember(stored.manifest);
+
+    const item = await requestManifestBatched(uid, bookId, stored?.manifest ? stored.etag : null);
+    if (item.error) {
+        console.warn('[Images] Manifest lookup warning for book', bookId, ':', item.error);
+        // Server/network failures are retried later; other failures read as "no images".
+        if (item.retryable) return emptyImageManifest({ _error: item.error, _storageBackend: item.backend, _retryable: true });
+        return remember(emptyImageManifest());
+    }
+    let manifest;
+    try {
+        manifest = item.notModified && stored?.manifest
+            ? stored.manifest
+            : normalizeImageManifest(item.manifest || {}, item.found === true, item.backend);
     } catch (err) {
         console.warn('[Images] Manifest lookup warning for book', bookId, ':', err.message);
-        STATE.imageManifestCache.set(bookId, emptyManifest);
-        return emptyManifest;
+        return remember(emptyImageManifest());
+    }
+    void imageMetaStore.put(metaKey, { manifest, etag: item.etag || null, rev, savedAt: Date.now() });
+    return remember(manifest);
+}
+
+function requestManifestBatched(uid, bookId, etag) {
+    return new Promise(resolve => {
+        const key = manifestMetaKey(uid, bookId);
+        const existing = manifestBatch.jobs.get(key);
+        if (existing) existing.resolvers.push(resolve);
+        else manifestBatch.jobs.set(key, { uid, bookId, etag, resolvers: [resolve] });
+        manifestBatch.timer ||= setTimeout(flushManifestBatch, MANIFEST_BATCH_DELAY_MS);
+    });
+}
+
+async function flushManifestBatch() {
+    const jobs = [...manifestBatch.jobs.values()];
+    manifestBatch.jobs.clear();
+    manifestBatch.timer = null;
+    const settle = (job, item) => job.resolvers.forEach(resolve => resolve(item));
+    const byUid = new Map();
+    jobs.forEach(job => {
+        if (!byUid.has(job.uid)) byUid.set(job.uid, []);
+        byUid.get(job.uid).push(job);
+    });
+    for (const [uid, group] of byUid) {
+        if (STATE.user?.uid !== uid) {
+            group.forEach(job => settle(job, { error: 'Account changed', retryable: true }));
+            continue;
+        }
+        for (let i = 0; i < group.length; i += MANIFEST_BATCH_MAX) {
+            const chunk = group.slice(i, i + MANIFEST_BATCH_MAX);
+            const etags = {};
+            chunk.forEach(job => { if (job.etag) etags[job.bookId] = job.etag; });
+            try {
+                const response = await authFetch(`/api/stories/${encodeURIComponent(uid)}/covers`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bookIds: chunk.map(job => job.bookId), etags }),
+                    retries: 1
+                });
+                const backend = response.headers.get('X-Storage-Backend') || 'unknown';
+                if (!response.ok) {
+                    console.warn(`[Images] Covers HTTP ${response.status} (storage backend: ${backend})`);
+                    chunk.forEach(job => settle(job, { error: `HTTP ${response.status}`, retryable: response.status >= 500, backend }));
+                    continue;
+                }
+                const books = (await response.json())?.books || {};
+                chunk.forEach(job => settle(job, books[job.bookId]
+                    ? { ...books[job.bookId], backend }
+                    : { error: 'Missing from covers response', retryable: true, backend }));
+            } catch (err) {
+                chunk.forEach(job => settle(job, { error: err.message, retryable: true }));
+            }
+        }
     }
 }
 
-async function saveImageManifest(bookId, manifest) {
-    const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images/manifest`, {
+// Drop every cached copy of a book's manifest (and optionally its cover files).
+function forgetImageManifest(bookId, { covers = false } = {}) {
+    STATE.imageManifestCache.delete(bookId);
+    if (!STATE.user) return;
+    void imageMetaStore.delete(manifestMetaKey(STATE.user.uid, bookId));
+    if (covers) void forgetCachedCovers(STATE.user.uid, bookId);
+}
+
+async function saveImageManifest(bookId, manifest, progressFields = null) {
+    const uid = STATE.user.uid;
+    const response = await authFetch(`/api/stories/${encodeURIComponent(uid)}/${encodeURIComponent(bookId)}/images/manifest`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(manifest)
     });
     if (!response.ok) throw new Error(tr('img-manifest-save-failed', 'Không lưu được danh sách ảnh ({status})', { status: response.status }));
+    const etag = (await response.json().catch(() => null))?.etag || response.headers.get('ETag') || null;
     STATE.imageManifestCache.set(bookId, manifest);
+    // images_rev tells this account's other devices that their stored manifest is stale.
+    const rev = etag || `t${Date.now()}`;
+    const entry = findLibraryEntry(bookId);
+    if (entry) {
+        entry.imagesRev = rev;
+        entry.data.images_rev = rev;
+        if (progressFields && 'has_images' in progressFields) entry.hasImages = progressFields.has_images === true;
+    }
+    void imageMetaStore.put(manifestMetaKey(uid, bookId), { manifest: { ...manifest }, etag, rev, savedAt: Date.now() });
+    try {
+        await setDoc(doc(db, 'users', uid, 'progress', bookId), { ...(progressFields || {}), images_rev: rev }, { merge: true });
+    } catch (err) {
+        if (progressFields) throw err;
+        console.warn('[Images] images_rev not saved:', err.message);
+    }
+}
+
+function coverCacheKey(uid, bookId, image) {
+    const version = image.updatedAt || image.createdAt || '';
+    return `/__cover-cache/${encodeURIComponent(uid)}/${encodeURIComponent(bookId)}/${encodeURIComponent(image.id)}?v=${encodeURIComponent(version)}`;
+}
+
+async function openCoverCache() {
+    try {
+        return 'caches' in window ? await caches.open(COVER_CACHE_NAME) : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+async function readCachedCover(uid, bookId, image) {
+    const cache = await openCoverCache();
+    if (!cache) return null;
+    try {
+        const hit = await cache.match(coverCacheKey(uid, bookId, image));
+        return hit ? await hit.blob() : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+async function storeCachedCover(uid, bookId, image, blob) {
+    const cache = await openCoverCache();
+    if (!cache) return;
+    try {
+        const key = coverCacheKey(uid, bookId, image);
+        const sameImage = key.slice(0, key.indexOf('?'));
+        const keys = await cache.keys();
+        // Older versions of this image, then the oldest entries past the cap.
+        const stale = keys.filter(request => {
+            const url = new URL(request.url);
+            return url.pathname === sameImage && `${url.pathname}${url.search}` !== key;
+        });
+        const overflow = Math.max(0, keys.length - stale.length + 1 - COVER_CACHE_MAX_ENTRIES);
+        const oldest = keys.filter(request => !stale.includes(request)).slice(0, overflow);
+        await Promise.all([...stale, ...oldest].map(request => cache.delete(request)));
+        await cache.put(key, new Response(blob, { headers: { 'Content-Type': blob.type || 'image/webp' } }));
+    } catch (err) {
+        console.debug('[Images] Cover cache write skipped:', err.message);
+    }
+}
+
+async function forgetCachedCovers(uid, bookId, imageId = null) {
+    const cache = await openCoverCache();
+    if (!cache) return;
+    try {
+        const prefix = `/__cover-cache/${encodeURIComponent(uid)}/${encodeURIComponent(bookId)}/${imageId ? `${encodeURIComponent(imageId)}` : ''}`;
+        const keys = await cache.keys();
+        await Promise.all(keys
+            .filter(request => {
+                const path = new URL(request.url).pathname;
+                return imageId ? path === prefix : path.startsWith(prefix);
+            })
+            .map(request => cache.delete(request)));
+    } catch (_) { /* best effort */ }
 }
 
 async function uploadBookImages(bookId, files, bookTitle = '') {
@@ -3923,16 +4153,15 @@ async function uploadBookImages(bookId, files, bookTitle = '') {
             tr('img-done-file', 'Hoàn tất {name}', { name: sourceFile.name })
         );
     }
-    await saveImageManifest(bookId, manifest);
-    await setDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId), {
-        has_images: manifest.images.length > 0
-    }, { merge: true });
+    await saveImageManifest(bookId, manifest, { has_images: manifest.images.length > 0 });
     if (bookId === STATE.currentBookId) STATE.imageManifest = manifest;
     releaseImageURLs();
     return manifest;
 }
 
-async function getImageURL(bookId, image) {
+// persist: covers only. They are read from / written to the Cache Storage
+// cover cache so a later visit does not download them again.
+async function getImageURL(bookId, image, { persist = false } = {}) {
     if (!image?.id) return null;
     if (STATE.imageURLCache.has(image.id)) {
         const cached = STATE.imageURLCache.get(image.id);
@@ -3941,13 +4170,22 @@ async function getImageURL(bookId, image) {
         STATE.imageURLCache.set(image.id, cached);
         return cached;
     }
+    const uid = STATE.user?.uid;
+    if (!uid) return null;
     try {
-        const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images/${encodeURIComponent(image.id)}`);
-        if (!response.ok) {
-            const storageBackend = response.headers.get('X-Storage-Backend') || 'unknown';
-            throw new Error(`Image HTTP ${response.status} (backend: ${storageBackend})`);
+        let blob = persist ? await readCachedCover(uid, bookId, image) : null;
+        if (!blob) {
+            const version = image.updatedAt || image.createdAt || '';
+            const query = version ? `?v=${encodeURIComponent(version)}` : '';
+            const response = await authFetch(`/api/stories/${encodeURIComponent(uid)}/${encodeURIComponent(bookId)}/images/${encodeURIComponent(image.id)}${query}`);
+            if (!response.ok) {
+                const storageBackend = response.headers.get('X-Storage-Backend') || 'unknown';
+                throw new Error(`Image HTTP ${response.status} (backend: ${storageBackend})`);
+            }
+            blob = await response.blob();
+            if (persist) void storeCachedCover(uid, bookId, image, blob);
         }
-        const blob = await response.blob();
+        if (STATE.user?.uid !== uid) return null;
         // A concurrent request for the same image may have finished first.
         if (STATE.imageURLCache.has(image.id)) return STATE.imageURLCache.get(image.id);
         const url = URL.createObjectURL(blob);
@@ -3963,7 +4201,7 @@ async function deleteBookImages(bookId) {
     if (!STATE.user || !bookId) return;
     const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images`, { method: 'DELETE' });
     if (!response.ok) throw new Error(`Image cleanup failed (${response.status})`);
-    STATE.imageManifestCache.delete(bookId);
+    forgetImageManifest(bookId, { covers: true });
     releaseImageURLs();
 }
 
@@ -4000,6 +4238,7 @@ async function replaceBookImage(bookId, imageId, sourceFile, { cropSquare, crop 
     await saveImageManifest(bookId, manifest);
     if (bookId === STATE.currentBookId) STATE.imageManifest = manifest;
     releaseImageURL(imageId);
+    void forgetCachedCovers(STATE.user.uid, bookId, imageId);
 }
 
 async function removeBookImage(bookId, imageId) {
@@ -4009,12 +4248,10 @@ async function removeBookImage(bookId, imageId) {
     if (!response.ok) throw new Error(`Image delete failed (${response.status})`);
     manifest.images = manifest.images.filter(item => item.id !== imageId);
     if (manifest.coverId === imageId) manifest.coverId = manifest.images[0]?.id || null;
-    await saveImageManifest(bookId, manifest);
-    await setDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId), {
-        has_images: manifest.images.length > 0
-    }, { merge: true });
+    await saveImageManifest(bookId, manifest, { has_images: manifest.images.length > 0 });
     if (bookId === STATE.currentBookId) STATE.imageManifest = manifest;
     releaseImageURL(imageId);
+    void forgetCachedCovers(STATE.user.uid, bookId, imageId);
 }
 
 async function setBookCover(bookId, imageId) {
@@ -4618,6 +4855,7 @@ async function commitDeleteBook(bookId, filename, title) {
         const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/storage${storageQuery}`, { method: 'DELETE' });
         if (!response.ok) throw new Error(tr('delete-storage-failed', 'Không xóa được dữ liệu lưu trữ (lỗi {status}). Truyện vẫn còn, hãy thử lại sau.', { status: response.status }));
         await deleteDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId));
+        forgetImageManifest(bookId, { covers: true });
         console.log(`[Delete] "${title}" deleted successfully.`);
 
         const focusSnapshot = snapshotLibraryFocus();
@@ -5426,10 +5664,15 @@ async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
     STATE.currentFilename = filename || (STATE.currentBook.title + ".txt");
     const expectedBookId = STATE.currentBookId;
     STATE.imageManifest = { version: 1, coverId: null, images: [] };
-    const imageManifestPromise = loadImageManifest(STATE.currentBookId).then(manifest => {
+    const libraryEntry = findLibraryEntry(STATE.currentBookId);
+    // has_images === false is authoritative (kept in sync on every image change);
+    // a missing flag (older books) still looks the manifest up once.
+    const imageManifestPromise = (libraryEntry?.data?.has_images === false
+        ? Promise.resolve(emptyImageManifest())
+        : loadImageManifest(STATE.currentBookId)).then(manifest => {
         if (loadGeneration !== STATE.loadGeneration || STATE.currentBookId !== expectedBookId) return manifest;
         STATE.imageManifest = manifest;
-        if (manifest.images.length && STATE.user) {
+        if (manifest.images.length && STATE.user && !libraryEntry?.hasImages) {
             void setDoc(doc(db, 'users', STATE.user.uid, 'progress', STATE.currentBookId), { has_images: true }, { merge: true })
                 .catch(err => console.debug('[Images] Progress flag skipped:', err.message));
             // Text is already visible; add images without blocking first render,

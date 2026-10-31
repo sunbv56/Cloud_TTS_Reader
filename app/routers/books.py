@@ -70,6 +70,13 @@ from app.services.book_service import (
     _append_prepared_chapters,
     write_toc_cache,
 )
+from app.services.image_cache import (
+    MISSING,
+    etag_matches,
+    forget_story,
+    image_cache,
+    manifest_cache,
+)
 
 logger = logging.getLogger("cloud_tts_reader")
 
@@ -611,6 +618,61 @@ async def get_story_toc(request: Request, userId: str, storyId: str):
         return JSONResponse({"error": "Failed to load TOC", "retryable": True}, status_code=500)
 
 
+EMPTY_IMAGE_MANIFEST = {"version": 1, "coverId": None, "images": []}
+MAX_COVER_BATCH = 100
+
+
+async def _load_manifest_entry(userId: str, storyId: str, req_id: str):
+    """(raw bytes, etag, found) for a story's image manifest: memory first,
+    then ONE storage GET (a missing object is a 404, never HEAD + GET)."""
+    key = (userId, storyId)
+    cached = manifest_cache.get(key)
+    if cached is not None:
+        raw, etag = cached
+        return raw, etag, raw != MISSING
+    since = manifest_cache.writes
+    blob = storage.bucket().blob(_image_manifest_path(userId, storyId))
+    try:
+        raw = await _run_storage("storage.download_image_manifest", blob.download_as_bytes, request_id=req_id)
+    except Exception as exc:
+        if not is_storage_not_found(exc):
+            raise
+        return MISSING, manifest_cache.fill(key, MISSING, False, since), False
+    json.loads(raw)  # never cache (or serve as cached) a corrupted manifest
+    return raw, manifest_cache.fill(key, raw, True, since), True
+
+
+def _image_url(userId: str, storyId: str, image: dict) -> str:
+    version = str(image.get("updatedAt") or image.get("createdAt") or "")
+    url = f"/api/stories/{quote(userId, safe='')}/{quote(storyId, safe='')}/images/{quote(str(image.get('id')), safe='')}"
+    return f"{url}?v={quote(version, safe='')}" if version else url
+
+
+def _manifest_cover(userId: str, storyId: str, manifest) -> Optional[dict]:
+    if not isinstance(manifest, dict) or not isinstance(manifest.get("images"), list):
+        return None
+    images = [image for image in manifest["images"] if isinstance(image, dict) and image.get("id")]
+    cover = next((image for image in images if image.get("id") == manifest.get("coverId")), None) or (images[0] if images else None)
+    if cover is None:
+        return None
+    return {
+        "id": cover["id"],
+        "v": str(cover.get("updatedAt") or cover.get("createdAt") or ""),
+        "url": _image_url(userId, storyId, cover),
+        "crop": cover.get("coverCrop"),
+    }
+
+
+def _valid_story_id(story_id) -> bool:
+    return (
+        isinstance(story_id, str)
+        and 0 < len(story_id) <= 200
+        and "/" not in story_id
+        and "\\" not in story_id
+        and story_id not in {".", ".."}
+    )
+
+
 @router.get("/api/stories/{userId}/{storyId}/images/manifest")
 async def get_image_manifest(request: Request, userId: str, storyId: str):
     auth_error = await _authorization_error_async(request, userId)
@@ -623,50 +685,82 @@ async def get_image_manifest(request: Request, userId: str, storyId: str):
             headers={"X-Storage-Backend": "none", "X-Manifest-Found": "false"}
         )
     backend_name = getattr(storage, "provider_name", "unknown")
-    manifest_path = _image_manifest_path(userId, storyId)
-    blob = storage.bucket().blob(manifest_path)
     req_id = _request_id(request)
     headers = {"X-Storage-Backend": backend_name}
 
     try:
-        exists = await _run_storage(
-            "storage.check_image_manifest", blob.exists, request_id=req_id
-        )
-        if not exists:
-            logger.info("image_manifest_not_found story_id=%s user_id=%s path=%s backend=%s req_id=%s",
-                        storyId, userId, manifest_path, backend_name, req_id)
-            headers["X-Manifest-Found"] = "false"
-            return JSONResponse(
-                {"version": 1, "coverId": None, "images": [], "_storage_backend": backend_name, "_found": False},
-                headers=headers
-            )
-        raw = await _run_storage(
-            "storage.download_image_manifest", blob.download_as_text, request_id=req_id
-        )
-        data = json.loads(raw)
-        if isinstance(data, dict):
-            data["_storage_backend"] = backend_name
-            data["_found"] = True
-        headers["X-Manifest-Found"] = "true"
-        return JSONResponse(data, headers=headers)
-    except Exception as exc:
-        if is_storage_not_found(exc):
-            logger.info("image_manifest_storage_not_found story_id=%s path=%s backend=%s req_id=%s",
-                        storyId, manifest_path, backend_name, req_id)
-            headers["X-Manifest-Found"] = "false"
-            return JSONResponse(
-                {"version": 1, "coverId": None, "images": [], "_storage_backend": backend_name, "_found": False},
-                headers=headers
-            )
-        if isinstance(exc, (ValueError, json.JSONDecodeError)):
-            logger.error("image_manifest_corrupted story_id=%s path=%s error=%s", storyId, manifest_path, exc)
-            return JSONResponse({"error": "Image manifest is invalid"}, status_code=502, headers=headers)
+        raw, etag, found = await _load_manifest_entry(userId, storyId, req_id)
+    except (ValueError, json.JSONDecodeError) as exc:
+        logger.error("image_manifest_corrupted story_id=%s error=%s", storyId, exc)
+        return JSONResponse({"error": "Image manifest is invalid"}, status_code=502, headers=headers)
+    except Exception:
         logger.exception("image_manifest_download_failed story_id=%s backend=%s", storyId, backend_name)
         return JSONResponse(
             {"error": f"Image storage unavailable ({backend_name})", "retryable": True},
             status_code=503,
             headers=headers
         )
+    headers.update({
+        "X-Manifest-Found": "true" if found else "false",
+        "ETag": etag,
+        "Cache-Control": "private, no-cache",
+    })
+    if etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
+    if not found:
+        logger.info("image_manifest_not_found story_id=%s user_id=%s backend=%s req_id=%s",
+                    storyId, userId, backend_name, req_id)
+    data = json.loads(raw) if found else dict(EMPTY_IMAGE_MANIFEST)
+    if isinstance(data, dict):
+        data["_storage_backend"] = backend_name
+        data["_found"] = found
+    return JSONResponse(data, headers=headers)
+
+
+@router.post("/api/stories/{userId}/covers")
+async def get_story_covers(request: Request, userId: str, payload: dict):
+    """Manifests + cover URLs for many books in one request (Home/library).
+    `etags` maps bookId -> the manifest ETag the client already holds; those
+    books come back as notModified without the manifest body."""
+    auth_error = await _authorization_error_async(request, userId)
+    if auth_error:
+        return auth_error
+    if storage is None:
+        return JSONResponse({"error": "Storage backend is not configured"}, status_code=503)
+    book_ids = payload.get("bookIds")
+    known = payload.get("etags") or {}
+    if not isinstance(book_ids, list) or not isinstance(known, dict):
+        return JSONResponse({"error": "bookIds must be a list"}, status_code=400)
+    if len(book_ids) > MAX_COVER_BATCH:
+        return JSONResponse({"error": f"At most {MAX_COVER_BATCH} books per request"}, status_code=413)
+    if not all(_valid_story_id(book_id) for book_id in book_ids):
+        return JSONResponse({"error": "Invalid book id"}, status_code=400)
+    book_ids = list(dict.fromkeys(book_ids))
+    backend_name = getattr(storage, "provider_name", "unknown")
+    req_id = _request_id(request)
+
+    async def one(story_id: str) -> dict:
+        try:
+            raw, etag, found = await _load_manifest_entry(userId, story_id, req_id)
+            manifest = json.loads(raw) if found else dict(EMPTY_IMAGE_MANIFEST)
+        except (ValueError, json.JSONDecodeError):
+            logger.error("image_manifest_corrupted story_id=%s", story_id)
+            return {"error": "Image manifest is invalid", "retryable": False}
+        except Exception:
+            logger.exception("image_manifest_download_failed story_id=%s backend=%s", story_id, backend_name)
+            return {"error": f"Image storage unavailable ({backend_name})", "retryable": True}
+        item = {"found": found, "etag": etag, "cover": _manifest_cover(userId, story_id, manifest)}
+        if known.get(story_id) == etag:
+            item["notModified"] = True
+        else:
+            item["manifest"] = manifest
+        return item
+
+    results = await asyncio.gather(*(one(book_id) for book_id in book_ids))
+    return JSONResponse(
+        {"books": dict(zip(book_ids, results))},
+        headers={"X-Storage-Backend": backend_name, "Cache-Control": "private, no-store"},
+    )
 
 
 @router.put("/api/stories/{userId}/{storyId}/images/manifest")
@@ -677,13 +771,19 @@ async def put_image_manifest(request: Request, userId: str, storyId: str, manife
     if storage is None:
         return JSONResponse({"error": "Storage backend is not configured"}, status_code=503)
     payload = json.dumps(manifest, ensure_ascii=False)
-    if len(payload.encode("utf-8")) > 100 * 1024:
+    raw = payload.encode("utf-8")
+    if len(raw) > 100 * 1024:
         return JSONResponse({"error": "Image manifest is too large"}, status_code=413)
-    storage.bucket().blob(_image_manifest_path(userId, storyId)).upload_from_string(
-        payload,
-        content_type="application/json",
-    )
-    return JSONResponse({"status": "ok"})
+    try:
+        storage.bucket().blob(_image_manifest_path(userId, storyId)).upload_from_string(
+            payload,
+            content_type="application/json",
+        )
+    except Exception:
+        manifest_cache.pop((userId, storyId))
+        raise
+    etag = manifest_cache.put((userId, storyId), raw)
+    return JSONResponse({"status": "ok", "etag": etag}, headers={"ETag": etag})
 
 
 async def _save_image_object(request: Request, userId: str, storyId: str, imageId: str, file: UploadFile):
@@ -700,10 +800,15 @@ async def _save_image_object(request: Request, userId: str, storyId: str, imageI
     data = await file.read(MAX_IMAGE_BYTES + 1)
     if len(data) > MAX_IMAGE_BYTES:
         return JSONResponse({"error": f"Image exceeds the {MAX_IMAGE_BYTES} byte limit"}, status_code=413)
-    storage.bucket().blob(_image_asset_path(userId, storyId, imageId)).upload_from_string(
-        data,
-        content_type="image/webp",
-    )
+    try:
+        storage.bucket().blob(_image_asset_path(userId, storyId, imageId)).upload_from_string(
+            data,
+            content_type="image/webp",
+        )
+    except Exception:
+        image_cache.pop((userId, storyId, imageId))
+        raise
+    image_cache.put((userId, storyId, imageId), data)
     return JSONResponse({
         "status": "ok",
         "id": imageId,
@@ -742,25 +847,38 @@ async def get_story_image(request: Request, userId: str, storyId: str, imageId: 
     headers = {"X-Storage-Backend": backend_name}
     if storage is None or not _valid_image_id(imageId):
         return JSONResponse({"error": "Image not found"}, status_code=404, headers=headers)
-    asset_path = _image_asset_path(userId, storyId, imageId)
-    blob = storage.bucket().blob(asset_path)
-    req_id = _request_id(request)
-    try:
-        data = await _run_storage(
-            "storage.download_image", blob.download_as_bytes, request_id=req_id
-        )
-    except Exception as exc:
-        if is_storage_not_found(exc):
-            logger.info("story_image_not_found story_id=%s image_id=%s path=%s backend=%s req_id=%s",
-                        storyId, imageId, asset_path, backend_name, req_id)
-            return JSONResponse({"error": "Image not found"}, status_code=404, headers=headers)
-        logger.exception("image_download_failed story_id=%s image_id=%s backend=%s req_id=%s",
-                         storyId, imageId, backend_name, req_id)
-        return JSONResponse(
-            {"error": f"Image storage unavailable ({backend_name})", "retryable": True},
-            status_code=503,
-            headers=headers
-        )
+    key = (userId, storyId, imageId)
+    cached = image_cache.get(key)
+    if cached is not None:
+        data, etag = cached
+    else:
+        since = image_cache.writes
+        asset_path = _image_asset_path(userId, storyId, imageId)
+        blob = storage.bucket().blob(asset_path)
+        req_id = _request_id(request)
+        try:
+            data = await _run_storage(
+                "storage.download_image", blob.download_as_bytes, request_id=req_id
+            )
+        except Exception as exc:
+            if is_storage_not_found(exc):
+                logger.info("story_image_not_found story_id=%s image_id=%s path=%s backend=%s req_id=%s",
+                            storyId, imageId, asset_path, backend_name, req_id)
+                return JSONResponse({"error": "Image not found"}, status_code=404, headers=headers)
+            logger.exception("image_download_failed story_id=%s image_id=%s backend=%s req_id=%s",
+                             storyId, imageId, backend_name, req_id)
+            return JSONResponse(
+                {"error": f"Image storage unavailable ({backend_name})", "retryable": True},
+                status_code=503,
+                headers=headers
+            )
+        etag = image_cache.fill(key, data, True, since)
+    # ?v= is the manifest's updatedAt/createdAt: a replaced image gets a new URL,
+    # so a versioned URL may be reused for a while; a bare one is revalidated.
+    headers["ETag"] = etag
+    headers["Cache-Control"] = "private, max-age=604800" if request.query_params.get("v") else "private, no-cache"
+    if etag_matches(request.headers.get("if-none-match"), etag):
+        return Response(status_code=304, headers=headers)
     return Response(content=data, media_type="image/webp", headers=headers)
 
 
@@ -771,9 +889,12 @@ async def delete_story_image(request: Request, userId: str, storyId: str, imageI
         return auth_error
     if storage is None or not _valid_image_id(imageId):
         return JSONResponse({"status": "ok"})
-    blob = storage.bucket().blob(_image_asset_path(userId, storyId, imageId))
-    if blob.exists():
-        blob.delete()
+    image_cache.pop((userId, storyId, imageId))
+    try:
+        storage.bucket().blob(_image_asset_path(userId, storyId, imageId)).delete()
+    except Exception as exc:
+        if not is_storage_not_found(exc):
+            raise
     return JSONResponse({"status": "ok"})
 
 
@@ -782,6 +903,7 @@ async def delete_story_images(request: Request, userId: str, storyId: str):
     auth_error = _authorization_error(request, userId)
     if auth_error:
         return auth_error
+    image_cache.pop_prefix((userId, storyId))
     if storage is not None:
         storage.delete_prefix(f"users/{userId}/images/{storyId}/")
     return JSONResponse({"status": "ok"})
@@ -870,8 +992,10 @@ async def delete_story_storage(request: Request, userId: str, storyId: str, file
             if file_blob.exists():
                 file_blob.delete()
             _invalidate_legacy_source_cache(userId, filename)
+        forget_story(userId, storyId)
         storage.delete_prefix(f"users/{userId}/stories/{storyId}/")
         storage.delete_prefix(f"users/{userId}/images/{storyId}/")
+        forget_story(userId, storyId)
     return JSONResponse({"status": "ok"})
 
 
