@@ -341,7 +341,7 @@
         -webkit-user-select: none;
     }
     /* Expand the hit area to 44px without growing the chip. */
-    .chip::before { content: ""; position: absolute; inset: -6px -2px; }
+    .chip::before { content: ""; position: absolute; inset: -7px -2px; }
     .chip:hover { background: var(--color-surface); }
     .chip[data-on="true"],
     .chip[aria-pressed="true"] { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
@@ -1894,12 +1894,16 @@
     .field-row__range output { min-width: 3.2em; text-align: right; font-size: var(--text-sm); }
     .field-note { margin: var(--space-1) 0 0; font-size: var(--text-xs); line-height: 1.45; color: var(--color-muted); }
     .stepper .icon-btn { min-width: 40px; }
+    /* The panel is a touch surface on phones: every control keeps the 44px target. */
+    .cpanel .stepper .icon-btn { min-width: var(--tap); }
+    .cpanel .select--sm,
+    .cpanel .input--sm { min-height: var(--tap); }
 
     .cpanel__sleep { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--color-line); }
     .cpanel__sleep-head { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-md); }
     .cpanel__sleep-head > .ic { color: var(--color-muted); }
     .cpanel__sleep-head .menu-item__state { margin-left: auto; }
-    .cpanel__sleep-presets > button { font-family: var(--font-mono); font-weight: 500; }
+    .cpanel__sleep-presets > button { font-family: var(--font-mono); font-weight: 500; min-height: var(--tap); }
     .cpanel__sleep-custom { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
     .cpanel__sleep-custom label { font-size: var(--text-sm); color: var(--color-muted); margin-right: auto; }
     .cpanel__sleep-custom .input { width: 5.5rem; }
