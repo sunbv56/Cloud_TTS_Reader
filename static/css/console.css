@@ -1528,17 +1528,28 @@
     }
     .console-chapter:empty { display: none; }
     /* The status line takes the chapter line's place while something needs attention. */
-    .console-status { display: none; align-items: center; gap: 6px; }
+    /* Block, not flex: a bare text node in a flex box cannot ellipsize. */
+    .console-status { display: none; }
     .console-status::before {
         content: "";
+        display: inline-block;
+        vertical-align: 1px;
+        margin-right: 6px;
         width: 6px;
         height: 6px;
         flex: none;
         border-radius: 50%;
         background: var(--status-tone, var(--color-accent));
     }
-    .console:not([data-status-tone="quiet"]) .console-sub { display: none; }
-    .console:not([data-status-tone="quiet"]) .console-status { display: flex; }
+    .console:not([data-status-tone="quiet"]) .console-status { display: block; }
+    /* Phones swap the chapter line for the status; desktop has room for both, so the state is always on show. */
+    @media (max-width: 1023.98px) {
+        .console:not([data-status-tone="quiet"]) .console-sub { display: none; }
+    }
+    @media (min-width: 1024px) {
+        .console-status { display: block; }
+        .console[data-status-tone="quiet"] { --status-tone: var(--color-muted); }
+    }
     .console[data-status-tone="busy"] { --status-tone: var(--color-accent); }
     .console[data-status-tone="warn"] { --status-tone: var(--color-warn); }
     .console[data-status-tone="error"] { --status-tone: var(--color-danger); }
