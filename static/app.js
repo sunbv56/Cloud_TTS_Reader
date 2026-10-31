@@ -78,6 +78,7 @@ let STATE = {
     })(),
     isTransitioning: false,
     isSwitchingChapter: false,
+    chapterSwitchSeq: 0,
     // MSE State
     mediaSource: null,
     sourceBuffer: null,
@@ -3012,7 +3013,7 @@ async function initWebSocket() {
  * Ensures the WebSocket is connected before proceeding.
  * If not connected, initiates connection and waits for the OPEN state.
  */
-async function waitForWebSocket() {
+async function waitForWebSocket(isCancelled = null) {
     if (STATE.ws && STATE.ws.readyState === WebSocket.OPEN) return true;
 
     if (!STATE.ws || STATE.ws.readyState === WebSocket.CLOSED || STATE.ws.readyState === WebSocket.CLOSING) {
@@ -3026,6 +3027,8 @@ async function waitForWebSocket() {
         const check = () => {
             if (STATE.ws && STATE.ws.readyState === WebSocket.OPEN) {
                 resolve(true);
+            } else if (isCancelled?.()) {
+                resolve(false);
             } else if (Date.now() - startTime > 10000) {
                 // Timeout after 10s
                 console.error("WebSocket connection timeout.");
@@ -4025,8 +4028,8 @@ function closeCurrentBook() {
     STATE.currentFilename = null;
     STATE.currentChapterIndex = 0;
     STATE.currentSentenceIndex = 0;
-    document.getElementById('current-title').innerText = 'Select a Masterpiece';
-    document.getElementById('current-chapter').innerText = 'Standby Mode';
+    document.getElementById('current-title').innerText = tr('select-masterpiece', 'Select a Masterpiece');
+    document.getElementById('current-chapter').innerText = tr('standby-mode', 'Standby Mode');
     textContainer.replaceChildren(...(readerEmptyTemplate ? [readerEmptyTemplate.cloneNode(true)] : []));
     document.getElementById('minimap-nodes')?.replaceChildren();
     document.getElementById('edit-title-btn').classList.add('hidden');
@@ -5022,7 +5025,7 @@ async function renderChapter(index, expectedLoadGeneration = STATE.loadGeneratio
             const error = document.createElement('p');
             error.className = 'reader-error';
             error.setAttribute('role', 'alert');
-            error.textContent = tr('chapter-load-error', 'Không thể tải nội dung chương: {reason}', { reason: e.message });
+            error.textContent = tr('chapter-load-error', 'Không tải được chương này. Kiểm tra kết nối rồi thử lại.');
             textContainer.appendChild(error);
             return false;
         }
@@ -5501,8 +5504,8 @@ async function downloadSelectedChapters() {
         console.log(`[Download] Starting 50-worker parallel download: ${STATE.downloadExpected} chunks across ${chapters.length} chapters`);
 
         // 4. Ensure WebSocket is connected (workers are needed!)
-        if (!(await waitForWebSocket())) {
-            throw new Error("WebSocket connection timeout.");
+        if (!(await waitForWebSocket(() => !STATE.isDownloading))) {
+            throw new Error(STATE.isDownloading ? "WebSocket connection timeout." : 'Download cancelled by user.');
         }
 
         // 5. Build pipeline queue & start sliding window dispatch
@@ -5584,6 +5587,7 @@ async function downloadSelectedChapters() {
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
+        chapterInfo.innerText = '';
         statusEl.innerText = '✓ Download complete!';
         setTimeout(() => {
             statusEl.classList.add('hidden');
@@ -5874,14 +5878,15 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
     }
 }
 
-async function playFromSentence(index, expectedLoadGeneration = STATE.loadGeneration) {
+async function playFromSentence(index, expectedLoadGeneration = STATE.loadGeneration, isSuperseded = null) {
     if (!STATE.currentBook) return;
     STATE.socketParked = false;
     const expectedBookId = STATE.currentBookId;
     const isCurrentPlayback = () => (
         expectedLoadGeneration === STATE.loadGeneration &&
         expectedBookId === STATE.currentBookId &&
-        STATE.currentBook
+        STATE.currentBook &&
+        !isSuperseded?.()
     );
 
     // 0. Robust Engine Reset - Dọn dẹp triệt để phiên cũ (dừng audio, xóa buffer, reset sessionId)
@@ -6968,6 +6973,8 @@ async function switchChapter(targetChapterIndex, startSentenceIndex = 0, autoPla
         return false;
     }
 
+    const switchSeq = ++STATE.chapterSwitchSeq;
+    const isSuperseded = () => switchSeq !== STATE.chapterSwitchSeq;
     STATE.isSwitchingChapter = true;
     STATE.isTransitioning = true;
 
@@ -6984,6 +6991,8 @@ async function switchChapter(targetChapterIndex, startSentenceIndex = 0, autoPla
         // 2. Render nội dung chương mới
         const renderOk = await renderChapter(targetChapterIndex);
         if (!renderOk) {
+            // Close the TOC sheet so the load error in the reader is visible.
+            if (textContainer.querySelector('.reader-error')) onRendered?.();
             return false;
         }
 
@@ -6994,9 +7003,13 @@ async function switchChapter(targetChapterIndex, startSentenceIndex = 0, autoPla
         }
         onRendered?.();
 
+        // The lock only guards rendering. Waiting for the socket/TTS can take
+        // up to 40 s; a newer chapter tap in that window supersedes this one.
+        STATE.isSwitchingChapter = false;
+
         // 4. Phát audio chương mới nếu autoPlay được bật
         if (autoPlay) {
-            await playFromSentence(startSentenceIndex);
+            await playFromSentence(startSentenceIndex, STATE.loadGeneration, isSuperseded);
         } else {
             STATE.currentSentenceIndex = startSentenceIndex;
             highlightSentence(startSentenceIndex);
@@ -7008,8 +7021,10 @@ async function switchChapter(targetChapterIndex, startSentenceIndex = 0, autoPla
         console.error('[SwitchChapter] Failed to switch chapter:', err);
         return false;
     } finally {
-        STATE.isSwitchingChapter = false;
-        STATE.isTransitioning = false;
+        if (!isSuperseded()) {
+            STATE.isSwitchingChapter = false;
+            STATE.isTransitioning = false;
+        }
     }
 }
 
