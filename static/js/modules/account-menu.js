@@ -132,6 +132,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
     }
 
     function openMenu() {
+        sessions.prepareCandidate();
         isOpen = true;
         renderMenu();
         menu.hidden = false;

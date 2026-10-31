@@ -2,9 +2,10 @@
  * Cloud TTS Reader - Multi-account Firebase sessions
  *
  * Each Google account lives in its own named Firebase app, so Firebase keeps
- * one persisted session per account in IndexedDB. Only the active app is ever
- * initialized; the other accounts are a small profile list in localStorage
- * until the user switches to them. No tokens are stored by this module.
+ * one persisted session per account in IndexedDB. Only the active account has
+ * a listener and a Firestore client; the others are a small profile list in
+ * localStorage plus, once used, an idle Auth instance. No tokens are stored by
+ * this module.
  */
 import { initializeApp, getApps, deleteApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getAuth, onAuthStateChanged, signInWithPopup, signOut, GoogleAuthProvider } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
@@ -41,16 +42,24 @@ function randomAppName() {
 }
 
 export class AccountSessions {
-    constructor(config, { onSession, beforeLeave }) {
+    constructor(config, { onSession, beforeLeave, onAccountsChange }) {
         this._config = config;
         this._onSession = onSession;
         this._beforeLeave = beforeLeave;
+        this._onAccountsChange = onAccountsChange;
         this._store = readStore();
         this._waiters = [];
         this._busy = false;
+        this._adding = false;
+        this._candidate = null;
         this.app = null;
         this.auth = null;
         this.user = null;
+        window.addEventListener('storage', event => {
+            if (event.key !== STORE_KEY) return;
+            this._store = readStore();
+            this._onAccountsChange?.();
+        });
     }
 
     get accounts() {
@@ -62,7 +71,7 @@ export class AccountSessions {
     }
 
     get busy() {
-        return this._busy;
+        return this._busy || this._adding;
     }
 
     start() {
@@ -73,8 +82,20 @@ export class AccountSessions {
         return ready;
     }
 
+    /**
+     * Creates the Auth instance used by the next "Add account" ahead of the
+     * click: Safari/iOS block the popup when the SDK still has to warm up a
+     * fresh Auth after the user gesture.
+     */
+    prepareCandidate() {
+        if (this._candidate || !this.user) return;
+        const app = initializeApp(this._config, randomAppName());
+        this._candidate = { app, auth: getAuth(app) };
+    }
+
     async switchTo(uid) {
-        if (uid === this.activeUid) return;
+        if (uid === this.activeUid || this._adding) return;
+        this._store = readStore();
         const entry = this._store.list.find(a => a.uid === uid);
         if (!entry) throw new Error('Tài khoản này không còn trên máy.');
         await this._exclusive(async () => {
@@ -88,43 +109,55 @@ export class AccountSessions {
 
     /** Must be called straight from a click handler so the popup is allowed. */
     async add() {
-        if (this._busy) return;
+        if (this.busy) return;
+        this._store = readStore();
         if (this._store.list.length >= MAX_ACCOUNTS) {
             throw new Error(`Chỉ lưu tối đa ${MAX_ACCOUNTS} tài khoản trên một máy.`);
         }
-        const app = initializeApp(this._config, randomAppName());
-        const auth = getAuth(app);
         const provider = new GoogleAuthProvider();
         provider.setCustomParameters({ prompt: 'select_account' });
 
+        if (!this.user && this.auth) {
+            // Signed out: sign in on the app that is already open; its auth
+            // listener records the account and starts the session.
+            await signInWithPopup(this.auth, provider);
+            return;
+        }
+
+        this.prepareCandidate();
+        const { app, auth } = this._candidate;
+        this._adding = true;
         let user;
         try {
             user = (await signInWithPopup(auth, provider)).user;
-        } catch (err) {
-            await deleteApp(app).catch(() => { });
-            throw err;
+        } finally {
+            this._adding = false;
         }
 
         if (this._store.list.some(a => a.uid === user.uid)) {
             // Already on this device: drop the duplicate session, keep the stored one.
             await signOut(auth).catch(() => { });
-            await deleteApp(app).catch(() => { });
             await this.switchTo(user.uid);
             return;
         }
 
-        await this._exclusive(async () => {
+        const attached = await this._exclusive(async () => {
             await this._beforeLeave();
             await this._close();
+            this._candidate = null;
             const ready = this._waitSettled();
             this._attach(app, auth);
             await ready;
         });
+        if (!attached) {
+            await signOut(auth).catch(() => { });
+            throw new Error('Đang chuyển tài khoản, hãy thử thêm lại.');
+        }
     }
 
     async signOutActive() {
         const uid = this.activeUid;
-        if (!uid) return;
+        if (!uid || this._adding) return;
         await this._exclusive(async () => {
             await this._beforeLeave();
             this._detach();
@@ -135,7 +168,7 @@ export class AccountSessions {
                 throw err;
             }
             this._forget(uid);
-            await this._close();
+            await this._close({ dispose: true });
             const next = this._store.list[0];
             const ready = this._waitSettled();
             this._open(next ? next.appName : DEFAULT_APP_NAME);
@@ -144,10 +177,11 @@ export class AccountSessions {
     }
 
     async _exclusive(task) {
-        if (this._busy) return;
+        if (this._busy) return false;
         this._busy = true;
         try {
             await task();
+            return true;
         } finally {
             this._busy = false;
         }
@@ -173,14 +207,18 @@ export class AccountSessions {
         this._unsubscribe = null;
     }
 
-    async _close() {
+    /**
+     * Inactive apps stay registered (at most MAX_ACCOUNTS) so switching back
+     * reuses their warm Auth; the caller terminates Firestore. Apps are only
+     * deleted once their account is forgotten.
+     */
+    async _close({ dispose = false } = {}) {
         this._detach();
         const app = this.app;
         this.app = null;
         this.auth = null;
         this.user = null;
-        // deleteApp frees Auth/Firestore instances; the persisted session survives.
-        if (app) await deleteApp(app).catch(err => console.warn('[Accounts] deleteApp failed:', err));
+        if (app && dispose) await deleteApp(app).catch(err => console.warn('[Accounts] deleteApp failed:', err));
     }
 
     async _handleAuth(app, user) {
@@ -197,12 +235,13 @@ export class AccountSessions {
         // never existed). Forget it and fall back to the next stored account.
         const hadUser = !!this.user;
         this.user = null;
+        this._store = readStore();
         const lost = this._store.list.find(a => a.appName === app.name);
         if (lost) this._forget(lost.uid);
         const next = this._store.list[0];
         if (next) {
             if (hadUser) await this._beforeLeave();
-            await this._close();
+            await this._close({ dispose: !!lost });
             this._open(next.appName);
             return;
         }
@@ -221,6 +260,7 @@ export class AccountSessions {
     }
 
     _remember(user, appName) {
+        this._store = readStore();
         const profile = {
             uid: user.uid,
             appName,
@@ -237,6 +277,7 @@ export class AccountSessions {
     }
 
     _forget(uid) {
+        this._store = readStore();
         this._store.list = this._store.list.filter(a => a.uid !== uid);
         if (this._store.active === uid) this._store.active = null;
         this._save();

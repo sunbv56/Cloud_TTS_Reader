@@ -1,5 +1,5 @@
 // Firebase Modules
-import { initializeFirestore, getFirestore, waitForPendingWrites, doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, getFirestore, waitForPendingWrites, terminate, doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { compressImageForStorage, IMAGE_MAX_BYTES } from "./js/image-manager.js";
 import { toggleSidebar } from "./js/modules/ui-interactions.js";
 import { AccountSessions } from "./js/modules/account-sessions.js";
@@ -332,6 +332,9 @@ const STATS_MANAGER = {
     _lastActiveTime: 0,
     _syncTimer: null,
     _saveChain: Promise.resolve(),
+    // Stats are only written back for the account they were loaded from, so
+    // unloaded zeros never overwrite a real streak.
+    _loadedUid: null,
 
     init() {
         this._lastActiveTime = Date.now();
@@ -344,7 +347,7 @@ const STATS_MANAGER = {
         const deltaMs = now - this._lastActiveTime;
         this._lastActiveTime = now;
 
-        if (!STATE.isPlaying || !STATE.user) return;
+        if (!STATE.isPlaying || !STATE.user || this._loadedUid !== STATE.user.uid) return;
 
         // Add to local state
         STATE.stats.totalTime += Math.floor(deltaMs / 1000);
@@ -393,12 +396,13 @@ const STATS_MANAGER = {
     },
 
     async syncToFirestore(force = false) {
-        if (!STATE.user || (STATE.strictSyncMode && !force)) return;
+        if (!STATE.user || this._loadedUid !== STATE.user.uid || (STATE.strictSyncMode && !force)) return false;
         const userId = STATE.user.uid;
+        const firestore = db;
         const statsSnapshot = { ...STATE.stats };
         const write = async () => {
             try {
-                const statsRef = doc(db, 'users', userId, 'stats', 'reading');
+                const statsRef = doc(firestore, 'users', userId, 'stats', 'reading');
                 await setDoc(statsRef, statsSnapshot, { merge: true });
                 return true;
             } catch (err) {
@@ -416,12 +420,15 @@ const STATS_MANAGER = {
 
     async load() {
         if (!STATE.user) return;
+        const uid = STATE.user.uid;
         try {
-            const statsRef = doc(db, 'users', STATE.user.uid, 'stats', 'reading');
+            const statsRef = doc(db, 'users', uid, 'stats', 'reading');
             const snap = await getDoc(statsRef);
+            if (STATE.user?.uid !== uid) return;
             if (snap.exists()) {
                 STATE.stats = { ...STATE.stats, ...snap.data() };
             }
+            this._loadedUid = uid;
             this.updateUI();
         } catch (err) {
             console.warn('[Stats] Load failed:', err);
@@ -444,7 +451,8 @@ async function startFirebase() {
         if (!accountSessions) {
             accountSessions = new AccountSessions(firebaseConfig, {
                 onSession: handleAccountSession,
-                beforeLeave: () => leaveAccount({ save: true })
+                beforeLeave: () => leaveAccount({ save: true }),
+                onAccountsChange: () => accountMenu?.render()
             });
             accountMenu = createAccountMenu({
                 sessions: accountSessions,
@@ -487,6 +495,7 @@ async function handleAccountSession(session) {
     STATE.user = session.user;
     accountMenu?.render();
 
+    void STATS_MANAGER.load();
     await refreshLibrary();
     initWebSocket();
     APP_STATUS.set('Ready');
@@ -498,13 +507,27 @@ async function handleAccountSession(session) {
  * drop per-user caches so nothing is written to or shown for the next account.
  */
 async function leaveAccount({ save }) {
-    if (save && STATE.user && db) {
-        const flushDb = db;
+    // Cancel book loads, uploads and downloads that belong to this account
+    // before anything else, so none of them can finish under the next one.
+    STATE.loadController?.abort();
+    STATE.selectionGeneration++;
+    STATE.loadGeneration++;
+    if (STATE.isDownloading) stopDownload();
+
+    const leavingDb = db;
+    if (save && STATE.user && leavingDb) {
         const flush = Promise.allSettled([saveProgress(true), STATS_MANAGER.syncToFirestore(true)])
-            .then(() => waitForPendingWrites(flushDb));
+            .then(() => waitForPendingWrites(leavingDb));
         await promiseWithTimeout(flush, 6_000, 'Account switch flush')
             .catch(err => console.warn('[Accounts] Flush before leaving account incomplete:', err));
     }
+    // Writes still stuck behind an offline/slow Firestore must not block or
+    // reach the next account.
+    STATE.progressSaveVersion++;
+    STATE.progressSaveChain = Promise.resolve();
+    STATS_MANAGER._saveChain = Promise.resolve();
+    STATS_MANAGER._loadedUid = null;
+    if (leavingDb) terminate(leavingDb).catch(err => console.warn('[Accounts] Firestore terminate failed:', err));
 
     if (STATE.progressRetryTimer) clearTimeout(STATE.progressRetryTimer);
     STATE.progressRetryTimer = null;
@@ -692,7 +715,7 @@ const APP_STATUS = {
         removeTimer = setTimeout(dismiss, 4800);
     },
     error(error, fallback = 'Đã xảy ra lỗi. Vui lòng thử lại.') {
-        const message = error?.message || fallback;
+        const message = (typeof error === 'string' ? error : error?.message) || fallback;
         this.set('Lỗi');
         this.toast(message, 'error');
     }
@@ -2619,9 +2642,11 @@ function scheduleProgressSaveRetry(snapshot, version, error, attempt = 0) {
 }
 
 function enqueueProgressSnapshot(snapshot, version, retryAttempt = 0) {
+    const firestore = db;
     const write = async () => {
+        if (!firestore) return false;
         try {
-            const progressRef = doc(db, 'users', snapshot.userId, 'progress', snapshot.bookId);
+            const progressRef = doc(firestore, 'users', snapshot.userId, 'progress', snapshot.bookId);
             await setDoc(progressRef, {
                 title: snapshot.title,
                 filename: snapshot.filename,
@@ -2820,9 +2845,11 @@ async function refreshLibrary() {
     bookList.innerHTML = '<div class="text-center p-4 text-primary animate-pulse text-xs uppercase font-bold tracking-widest">Updating Library...</div>';
     if (discoveryGrid) discoveryGrid.innerHTML = '';
 
+    const libraryUid = STATE.user.uid;
     try {
-        const q = query(collection(db, "users", STATE.user.uid, "progress"));
+        const q = query(collection(db, "users", libraryUid, "progress"));
         const querySnapshot = await getDocs(q);
+        if (STATE.user?.uid !== libraryUid) return;
         bookList.innerHTML = '';
         // A second refresh can start while this Firestore request is pending.
         // Clear the discovery grid again after the await so overlapping
@@ -3253,6 +3280,15 @@ function closeCurrentBook() {
     document.getElementById('current-chapter').innerText = 'Standby Mode';
     document.getElementById('text-container').innerHTML = '';
     document.getElementById('edit-title-btn').classList.add('hidden');
+    const playerTitle = document.getElementById('player-title');
+    const playerAuthor = document.getElementById('player-author');
+    if (playerTitle) { playerTitle.innerText = 'System Ready'; playerTitle.title = ''; }
+    if (playerAuthor) { playerAuthor.innerText = 'Aureum Studio Audio'; playerAuthor.title = ''; }
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = null;
+        navigator.mediaSession.playbackState = 'none';
+    }
+    renderTOC();
     updateUI();
     toggleDiscoveryMode(true);
 }
@@ -3694,8 +3730,9 @@ const handleFileUpload = async (e) => {
         progress: 10,
         status: "Tải sách"
     });
+    const uploaderUid = STATE.user.uid;
     const formData = new FormData();
-    formData.append('userId', STATE.user.uid);
+    formData.append('userId', uploaderUid);
     formData.append('file', file);
 
     document.getElementById('status-indicator').innerText = "Processing Story...";
@@ -3749,7 +3786,8 @@ const handleFileUpload = async (e) => {
 
         updateLoadingProgress(illustrations.length ? 50 : 85, "Đang khởi tạo mục lục...", "Tải thông tin metadata từ server...", "Khởi tạo");
         // Fetch fresh metadata
-        const metaRes = await authFetch(`/api/stories/${STATE.user.uid}/${data.storyId}/metadata`);
+        if (STATE.user?.uid !== uploaderUid) return;
+        const metaRes = await authFetch(`/api/stories/${uploaderUid}/${data.storyId}/metadata`);
         let bookInfo = await metaRes.json();
 
         // --- FIX BUG 1 & 5: Normalize bookInfo for non-segmented upload flow ---
@@ -3773,6 +3811,7 @@ const handleFileUpload = async (e) => {
         }
 
         updateLoadingProgress(95, "Đang mở sách...", "Sắp xong rồi!", "Hoàn tất");
+        if (STATE.user?.uid !== uploaderUid) return;
         // --- FIX BUG 6: Await loadBook and call refreshLibrary directly ---
         const loaded = await loadBook(bookInfo, data.storyId, data.filename || file.name);
         if (!loaded) return;
