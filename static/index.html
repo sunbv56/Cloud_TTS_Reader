@@ -135,11 +135,11 @@
     </svg>
 
     <header class="app-header" id="app-header">
-        <button id="mobile-menu-btn" type="button" class="icon-btn" aria-expanded="false" aria-controls="sidebar-container" aria-label="Mở thư viện và mục lục" title="Thư viện & mục lục">
+        <button id="mobile-menu-btn" type="button" class="icon-btn" aria-expanded="false" aria-controls="sidebar-container" aria-label="Mở thư viện và mục lục" title="Mở thư viện và mục lục" data-i18n-aria="nav-open-library">
             <svg class="ic" aria-hidden="true"><use href="#i-menu"/></svg>
         </button>
 
-        <button id="logo-btn" type="button" class="wordmark" title="Home / Discovery" aria-label="Cloud TTS — về trang chủ">
+        <button id="logo-btn" type="button" class="wordmark" title="Cloud TTS — về trang chủ" aria-label="Cloud TTS — về trang chủ" data-i18n-aria="home-link">
             <span data-i18n="cloud-tts">Cloud TTS</span>
         </button>
 
@@ -156,7 +156,6 @@
         <div class="hdr-menu-wrap">
             <button id="app-menu-btn" type="button" class="icon-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="app-menu" aria-label="Cài đặt và tiện ích" title="Cài đặt và tiện ích" data-i18n-aria="app-menu-label">
                 <svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg>
-                <span id="streak-dot" class="badge-dot hidden" aria-hidden="true"></span>
             </button>
             <div id="app-menu" class="menu" role="menu" aria-label="Cài đặt và tiện ích" hidden>
                 <div id="auth-info" class="menu-who" role="presentation">
@@ -170,16 +169,17 @@
                 <button id="stats-toggle-btn" type="button" class="menu-item" role="menuitem">
                     <svg class="ic" aria-hidden="true"><use href="#i-chart"/></svg>
                     <span data-i18n="menu-stats">Thống kê đọc</span>
-                    <span id="stats-streak-value" class="menu-item__value" hidden></span>
+                    <span id="stats-menu-value" class="menu-item__value" hidden></span>
                 </button>
                 <button id="sync-btn" type="button" class="menu-item" role="menuitem">
                     <svg class="ic" aria-hidden="true"><use href="#i-sync"/></svg>
                     <span data-i18n="menu-sync">Đồng bộ thư viện</span>
+                    <span id="sync-btn-value" class="menu-item__value"></span>
                 </button>
                 <button id="lang-btn" type="button" class="menu-item" role="menuitem">
                     <svg class="ic" aria-hidden="true"><use href="#i-lang"/></svg>
-                    <span data-i18n="menu-language">Đổi ngôn ngữ</span>
-                    <span id="lang-btn-value" class="menu-item__value">VI</span>
+                    <span data-i18n="menu-language">Ngôn ngữ</span>
+                    <span id="lang-btn-value" class="menu-item__value">Tiếng Việt</span>
                 </button>
                 <button id="fullscreen-btn" type="button" class="menu-item" role="menuitem">
                     <svg class="ic" aria-hidden="true"><use href="#i-full"/></svg>
@@ -207,13 +207,13 @@
         <div id="sidebar-overlay" class="drawer-scrim hidden"></div>
 
             <!-- Left column (≥1024px) / drawer (<1024px): Truyện | Chương | Giọng -->
-            <aside id="sidebar-container" class="sidebar hidden hide-scrollbar" aria-label="Thư viện và mục lục">
+            <aside id="sidebar-container" class="sidebar hidden hide-scrollbar" aria-label="Thư viện và mục lục" data-i18n-aria="sidebar-label">
                 <div class="sidebar__head lg:hidden">
                     <span class="sidebar__title" data-i18n="navigation">Navigation</span>
                     <button id="close-sidebar" type="button" class="icon-btn" aria-label="Đóng menu điều hướng" title="Đóng menu điều hướng"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button>
                 </div>
 
-                <div id="sidebar-tabs" role="tablist" aria-label="Thanh bên" class="seg sidebar-tabs">
+                <div id="sidebar-tabs" role="tablist" aria-label="Thanh bên" data-i18n-aria="sidebar-tabs" class="seg sidebar-tabs">
                     <button type="button" id="tab-library" role="tab" data-tab="library" aria-selected="true"
                         aria-controls="panel-library" class="sidebar-tab active">
                         <span data-i18n="tab-library">Truyện</span>
@@ -357,7 +357,7 @@
                         <p class="menu__label" data-i18n="reader-tools">Tiện ích trang đọc</p>
                         <button id="reader-type-btn" type="button" class="menu-item" role="menuitem" aria-haspopup="dialog">
                             <svg class="ic" aria-hidden="true"><use href="#i-aa"/></svg>
-                            <span data-i18n="reader-type">Giao diện chữ</span>
+                            <span data-i18n="reader-type">Chữ đọc</span>
                             <span id="reader-type-summary" class="menu-item__value">19px</span>
                         </button>
                         <button id="reader-edit-chapter-btn" type="button" class="menu-item" role="menuitem">
@@ -431,31 +431,36 @@
             <div id="reader-type-panel" class="type-panel" role="dialog" aria-modal="false" aria-labelledby="reader-type-title" hidden>
                 <div class="sheet__grab" aria-hidden="true"></div>
                 <div class="type-panel__head">
-                    <h3 id="reader-type-title" class="type-panel__title" data-i18n="reader-type">Giao diện chữ</h3>
+                    <h3 id="reader-type-title" class="type-panel__title" data-i18n="reader-type">Chữ đọc</h3>
                     <button id="reader-type-close" type="button" class="icon-btn" aria-label="Đóng" data-i18n-aria="close">
                         <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
                     </button>
                 </div>
+                <p class="font-sample font-sample--panel" lang="vi" aria-hidden="true" data-i18n="font-sample">Trăm năm trong cõi người ta, chữ tài chữ mệnh khéo là ghét nhau.</p>
                 <div class="type-row">
-                    <label for="reader-type-font" class="type-row__label" data-i18n="type-font">Font chữ</label>
+                    <label for="reader-type-font" class="type-row__label" data-i18n="type-font">Phông chữ</label>
                     <select id="reader-type-font" class="select">
-                        <option value="Source Serif 4">Source Serif 4</option>
-                        <option value="Literata">Literata</option>
-                        <option value="Lora">Lora</option>
-                        <option value="Merriweather">Merriweather</option>
-                        <option value="Playfair Display">Playfair Display</option>
-                        <option value="Be Vietnam Pro">Be Vietnam Pro</option>
-                        <option value="Plus Jakarta Sans">Plus Jakarta Sans</option>
-                        <option value="Inter">Inter</option>
-                        <option value="Montserrat">Montserrat</option>
+                        <optgroup label="Có chân" data-i18n-label="font-group-serif">
+                            <option value="Source Serif 4">Source Serif 4</option>
+                            <option value="Literata">Literata</option>
+                            <option value="Lora">Lora</option>
+                            <option value="Merriweather">Merriweather</option>
+                            <option value="Playfair Display">Playfair Display</option>
+                        </optgroup>
+                        <optgroup label="Không chân" data-i18n-label="font-group-sans">
+                            <option value="Be Vietnam Pro">Be Vietnam Pro</option>
+                            <option value="Plus Jakarta Sans">Plus Jakarta Sans</option>
+                            <option value="Inter">Inter</option>
+                            <option value="Montserrat">Montserrat</option>
+                        </optgroup>
                     </select>
                 </div>
                 <div class="type-row">
                     <span id="reader-type-size-label" class="type-row__label" data-i18n="type-size">Cỡ chữ</span>
                     <div class="stepper" role="group" aria-labelledby="reader-type-size-label">
-                        <button id="reader-type-size-dec" type="button" class="icon-btn" aria-label="Giảm cỡ chữ" data-i18n-aria="type-size-dec"><span aria-hidden="true" class="stepper__glyph stepper__glyph--sm">A</span></button>
+                        <button id="reader-type-size-dec" type="button" class="icon-btn" aria-label="Giảm cỡ chữ" data-i18n-aria="type-size-dec"><span aria-hidden="true" class="stepper__glyph">A−</span></button>
                         <output id="reader-type-size-val" class="mono" aria-live="polite">19px</output>
-                        <button id="reader-type-size-inc" type="button" class="icon-btn" aria-label="Tăng cỡ chữ" data-i18n-aria="type-size-inc"><span aria-hidden="true" class="stepper__glyph">A</span></button>
+                        <button id="reader-type-size-inc" type="button" class="icon-btn" aria-label="Tăng cỡ chữ" data-i18n-aria="type-size-inc"><span aria-hidden="true" class="stepper__glyph">A+</span></button>
                     </div>
                 </div>
                 <div class="type-row type-row--stack">
@@ -478,7 +483,7 @@
                     <span id="reader-type-theme-label" class="type-row__label" data-i18n="reading-theme">Màu giao diện</span>
                     <div class="type-themes" role="group" aria-labelledby="reader-type-theme-label">
                         <button type="button" class="theme-swatch" data-theme="slate" aria-pressed="true"><span class="theme-dot" data-swatch="slate" aria-hidden="true"><span></span></span><span data-i18n="theme-slate-name">Slate</span></button>
-                        <button type="button" class="theme-swatch" data-theme="slate-deep" aria-pressed="false"><span class="theme-dot" data-swatch="slate-deep" aria-hidden="true"><span></span></span><span data-i18n="theme-slate-deep-name">Slate sâu</span></button>
+                        <button type="button" class="theme-swatch" data-theme="slate-deep" aria-pressed="false"><span class="theme-dot" data-swatch="slate-deep" aria-hidden="true"><span></span></span><span data-i18n="theme-slate-deep-name">Slate đậm</span></button>
                         <button type="button" class="theme-swatch" data-theme="mist" aria-pressed="false"><span class="theme-dot" data-swatch="mist" aria-hidden="true"><span></span></span><span data-i18n="theme-mist-name">Sương</span></button>
                         <button type="button" class="theme-swatch" data-theme="sepia" aria-pressed="false"><span class="theme-dot" data-swatch="sepia" aria-hidden="true"><span></span></span><span data-i18n="theme-sepia-name">Sepia</span></button>
                     </div>
@@ -891,7 +896,7 @@
                         <button type="button" class="theme-card" data-theme="slate-deep" aria-pressed="false">
                             <span class="theme-card__swatch" data-swatch="slate-deep" aria-hidden="true"><span></span></span>
                             <span class="min-w-0">
-                                <span class="theme-card__name" data-i18n="theme-slate-deep-name">Slate sâu</span>
+                                <span class="theme-card__name" data-i18n="theme-slate-deep-name">Slate đậm</span>
                                 <span class="theme-card__mood" data-i18n="theme-slate-deep-mood">Tối hơn · cho phòng tối</span>
                             </span>
                         </button>
@@ -912,32 +917,58 @@
                     </div>
                 </div>
                 <div class="set-row">
-                    <label for="font-family-select" class="set-row__label" data-i18n="type-font">Font chữ</label>
+                    <label for="font-family-select" class="set-row__label" data-i18n="type-font">Phông chữ</label>
                     <select id="font-family-select" class="select select--sm">
-                        <option value="Source Serif 4" selected>Source Serif 4</option>
-                        <option value="Be Vietnam Pro">Be Vietnam Pro</option>
-                        <option value="Playfair Display">Playfair Display</option>
-                        <option value="Plus Jakarta Sans">Plus Jakarta Sans</option>
-                        <option value="Literata">Literata</option>
-                        <option value="Lora">Lora</option>
-                        <option value="Merriweather">Merriweather</option>
-                        <option value="Montserrat">Montserrat</option>
-                        <option value="Inter">Inter</option>
+                        <optgroup label="Có chân" data-i18n-label="font-group-serif">
+                            <option value="Source Serif 4" selected>Source Serif 4</option>
+                            <option value="Literata">Literata</option>
+                            <option value="Lora">Lora</option>
+                            <option value="Merriweather">Merriweather</option>
+                            <option value="Playfair Display">Playfair Display</option>
+                        </optgroup>
+                        <optgroup label="Không chân" data-i18n-label="font-group-sans">
+                            <option value="Be Vietnam Pro">Be Vietnam Pro</option>
+                            <option value="Plus Jakarta Sans">Plus Jakarta Sans</option>
+                            <option value="Inter">Inter</option>
+                            <option value="Montserrat">Montserrat</option>
+                        </optgroup>
                     </select>
                 </div>
-                <p class="font-sample" data-i18n="font-sample">Trăm năm trong cõi người ta, chữ tài chữ mệnh khéo là ghét nhau.</p>
+                <p class="font-sample" lang="vi" data-i18n="font-sample">Trăm năm trong cõi người ta, chữ tài chữ mệnh khéo là ghét nhau.</p>
                 <div class="set-row set-row--range">
                     <label for="font-size-range" class="set-row__label" data-i18n="type-size">Cỡ chữ</label>
                     <output id="font-size-val" class="set-row__value mono" for="font-size-range">20px</output>
                     <input type="range" id="font-size-range" class="range" min="10" max="48" step="1" value="20">
                 </div>
                 <div class="set-row set-row--stack">
+                    <span id="settings-leading-label" class="set-row__label" data-i18n="type-leading">Giãn dòng</span>
+                    <div class="seg" role="group" aria-labelledby="settings-leading-label" data-type-group="leading">
+                        <button type="button" data-value="1.55" aria-pressed="false" data-i18n="type-tight">Gọn</button>
+                        <button type="button" data-value="1.72" aria-pressed="true" data-i18n="type-normal">Vừa</button>
+                        <button type="button" data-value="1.9" aria-pressed="false" data-i18n="type-loose">Thoáng</button>
+                    </div>
+                </div>
+                <div class="set-row set-row--stack">
+                    <span id="settings-measure-label" class="set-row__label" data-i18n="type-measure">Độ rộng cột chữ</span>
+                    <div class="seg" role="group" aria-labelledby="settings-measure-label" data-type-group="measure">
+                        <button type="button" data-value="52ch" aria-pressed="false" data-i18n="type-narrow">Hẹp</button>
+                        <button type="button" data-value="60ch" aria-pressed="false" data-i18n="type-medium">Vừa</button>
+                        <button type="button" data-value="66ch" aria-pressed="true" data-i18n="type-wide">Rộng</button>
+                    </div>
+                </div>
+                <div class="set-row set-row--stack">
                     <span class="set-row__label" data-i18n="text-color">Màu chữ</span>
                     <div class="color-row">
-                        <label class="color-pick" title="Chọn màu">
-                            <span class="sr-only-text" data-i18n="text-color-pick">Chọn màu chữ</span>
-                            <input type="color" id="font-color-picker" value="#d9dee5">
-                        </label>
+                        <div class="color-row__modes">
+                            <button id="color-reset-btn" type="button" class="color-mode" aria-pressed="true">
+                                <span class="color-mode__chip color-mode__chip--theme" aria-hidden="true">A</span>
+                                <span data-i18n="color-default">Theo giao diện</span>
+                            </button>
+                            <label class="color-mode color-mode--pick">
+                                <span class="color-pick"><input type="color" id="font-color-picker" value="#d9dee5" aria-label="Chọn màu chữ" data-i18n-aria="text-color-pick"></span>
+                                <span data-i18n="text-color-custom">Tuỳ chọn</span>
+                            </label>
+                        </div>
                         <div id="font-color-presets" class="color-presets">
                             <button type="button" class="preset-color" style="--swatch: #F8F9FA" data-color="#F8F9FA" title="Trắng" aria-label="Trắng" aria-pressed="false" data-i18n-aria="color-white"></button>
                             <button type="button" class="preset-color" style="--swatch: #FFE4B5" data-color="#FFE4B5" title="Hổ phách" aria-label="Hổ phách" aria-pressed="false" data-i18n-aria="color-amber"></button>
@@ -946,7 +977,6 @@
                             <button type="button" class="preset-color" style="--swatch: #3A3A3A" data-color="#3A3A3A" title="Than" aria-label="Than" aria-pressed="false" data-i18n-aria="color-charcoal"></button>
                             <button type="button" class="preset-color" style="--swatch: #5B4636" data-color="#5B4636" title="Nâu mực" aria-label="Nâu mực" aria-pressed="false" data-i18n-aria="color-ink-brown"></button>
                         </div>
-                        <button id="color-reset-btn" type="button" class="btn btn--sm" data-i18n="color-default">Theo giao diện</button>
                     </div>
                 </div>
                 <div class="set-row">
