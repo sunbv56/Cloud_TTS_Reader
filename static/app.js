@@ -896,7 +896,9 @@ discoveryPlayerInfo?.addEventListener('keydown', (event) => {
     if (event.target.closest('button')) return;
     if (event.key === 'Enter' || event.key === ' ') {
         event.preventDefault();
+        event.stopPropagation();
         toggleDiscoveryMode(false);
+        document.getElementById('play-btn')?.focus({ preventScroll: true });
     }
 });
 
@@ -943,6 +945,13 @@ function uiLang() {
 function tr(key, fallback, vars = null) {
     const text = window.translations?.[uiLang()]?.[key] ?? fallback ?? key;
     return vars ? text.replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? '')) : text;
+}
+
+// Picks the "-one" variant of a counted string when n is 1 and that variant exists.
+function trCount(key, fallback, n) {
+    const oneKey = `${key}-one`;
+    const useOne = n === 1 && window.translations?.[uiLang()]?.[oneKey] !== undefined;
+    return tr(useOne ? oneKey : key, fallback, { n });
 }
 
 function removeVietnameseTones(str) {
@@ -2847,7 +2856,8 @@ async function initWebSocket() {
                         }
                         if (typeof dispatchDownloadQueue === 'function') dispatchDownloadQueue();
                     }
-                } else {
+                } else if (textContainer.getAttribute('aria-busy') !== 'true') {
+                    // Late prefetch replies must not hide "Loading chapter…" while the skeleton shows.
                     document.getElementById('status-indicator').innerText = tr('status-ready', 'Ready');
                 }
 
@@ -4905,7 +4915,13 @@ async function fetchChapterSentences(index, expectedLoadGeneration = STATE.loadG
     formData.append('filename', expectedFilename);
     formData.append('chapterIndex', index);
 
-    document.getElementById('status-indicator').innerText = "Loading Chapter...";
+    // Prefetching a later chapter must not overwrite the status of the one on screen.
+    const statusEl = document.getElementById('status-indicator');
+    const setStatus = (text) => {
+        if (statusEl && index === STATE.currentChapterIndex) statusEl.innerText = text;
+    };
+    const loadingText = tr('status-loading-chapter', 'Đang tải chương...');
+    setStatus(loadingText);
 
     try {
         const response = await authFetch('/api/get-chapter-sentences', {
@@ -4917,14 +4933,14 @@ async function fetchChapterSentences(index, expectedLoadGeneration = STATE.loadG
         if (data.sentences) {
             STATE.currentBook.chapters[index].sentences = data.sentences;
             STATE.currentBook.chapters[index].count = data.sentences.length; // Ensure count is correct
-            document.getElementById('status-indicator').innerText = tr('status-ready', 'Ready');
+            if (statusEl?.innerText === loadingText) setStatus(tr('status-ready', 'Ready'));
         } else {
             throw new Error(data.error || "Failed to load chapter content.");
         }
         return true;
     } catch (e) {
         console.error(e);
-        document.getElementById('status-indicator').innerText = "Error loading chapter";
+        setStatus(tr('status-chapter-error', 'Lỗi tải chương'));
         throw e;
     }
 }
@@ -5222,8 +5238,7 @@ async function jumpToTOCChapter(row) {
     if (!Number.isInteger(i) || row.classList.contains('toc-loading')) return;
     row.classList.add('toc-loading');
     try {
-        await switchChapter(i, 0, true);
-        closeTOC();
+        await switchChapter(i, 0, true, closeTOC);
     } catch (err) {
         console.error('[TOC] Switch chapter error:', err);
     } finally {
@@ -5311,7 +5326,7 @@ function updateDownloadBar() {
 
     if (isTOCSelectMode()) {
         bar.classList.remove('hidden');
-        countEl.innerText = tr('toc-selected', '{n} chương đã chọn', { n: checkboxes.length });
+        countEl.innerText = trCount('toc-selected', '{n} chương đã chọn', checkboxes.length);
     } else {
         bar.classList.add('hidden');
     }
@@ -5602,17 +5617,17 @@ function stopDownload() {
 async function deleteSelectedChapters() {
     const checkboxes = document.querySelectorAll('.toc-chapter-checkbox:checked');
     if (checkboxes.length === 0) {
-        APP_STATUS.toast('Vui lòng chọn ít nhất một chương để xóa.');
+        APP_STATUS.toast(tr('delete-chapters-none', 'Vui lòng chọn ít nhất một chương để xóa.'));
         return;
     }
 
     const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.chapterIndex));
-    const confirmMsg = `Bạn có chắc chắn muốn xóa ${selectedIndices.length} chương đã chọn không?\nThao tác này sẽ cập nhật trực tiếp vào file lưu trữ.`;
+    const confirmMsg = trCount('delete-chapters-confirm', 'Bạn có chắc chắn muốn xóa {n} chương đã chọn không?', selectedIndices.length);
 
     if (!confirm(confirmMsg)) return;
 
     const btn = document.getElementById('toc-delete-btn');
-    setButtonLoading(btn, true, 'Đang xóa...');
+    setButtonLoading(btn, true, tr('deleting', 'Đang xóa…'));
 
     try {
         const formData = new FormData();
@@ -5654,7 +5669,7 @@ async function deleteSelectedChapters() {
         const bookRef = doc(db, "users", STATE.user.uid, "progress", STATE.currentBookId);
         await setDoc(bookRef, { total_chunks: newTotalChunks }, { merge: true });
 
-        APP_STATUS.toast(`Đã xóa ${selectedIndices.length} chương thành công!`, 'success');
+        APP_STATUS.toast(trCount('delete-chapters-done', 'Đã xóa {n} chương.', selectedIndices.length), 'success');
 
         // Reset UI
         toggleSelectMode();
@@ -5662,7 +5677,7 @@ async function deleteSelectedChapters() {
 
         // --- AUTO-DELETE STORY IF EMPTY ---
         if (data.chapters.length === 0) {
-            APP_STATUS.toast('Tất cả các chương đã bị xóa. Đang gỡ truyện khỏi thư viện...', 'info');
+            APP_STATUS.toast(tr('delete-chapters-all', 'Tất cả các chương đã bị xóa. Đang gỡ truyện khỏi thư viện…'), 'info');
             await deleteBook(STATE.currentBookId, STATE.currentFilename, STATE.currentBook.title, true);
             return;
         }
@@ -5932,10 +5947,10 @@ async function playFromSentence(index, expectedLoadGeneration = STATE.loadGenera
         if (STATE.sessionId !== currentSessionId || !isCurrentPlayback()) return; // User jumped or loaded another book
         await new Promise(r => setTimeout(r, 100));
         attempts++;
-        if (attempts === 50) document.getElementById('status-indicator').innerText = "Đang chờ máy chủ TTS...";
+        if (attempts === 50) document.getElementById('status-indicator').innerText = tr('status-waiting-tts', 'Đang chờ máy chủ TTS…');
     }
     if (STATE.chunkTimings.length === 0 && STATE.sessionId === currentSessionId && isCurrentPlayback()) {
-        document.getElementById('status-indicator').innerText = "Máy chủ TTS không phản hồi — bấm Play để thử lại";
+        document.getElementById('status-indicator').innerText = tr('status-tts-no-response', 'Máy chủ TTS không phản hồi. Bấm Play để thử lại');
     }
 
     if (STATE.chunkTimings.length > 0 && STATE.sessionId === currentSessionId && isCurrentPlayback()) {
@@ -5946,7 +5961,7 @@ async function playFromSentence(index, expectedLoadGeneration = STATE.loadGenera
             // autoplay. The old code marked STATE.isPlaying=true anyway,
             // which made inactivity handling save the initial sentence.
             STATE.isPlaying = false;
-            document.getElementById('status-indicator').innerText = 'Bấm Play để bắt đầu nghe';
+            document.getElementById('status-indicator').innerText = tr('status-press-play', 'Bấm Play để bắt đầu nghe');
             console.warn("Auto-play blocked; waiting for user gesture:", err);
             return;
         }
@@ -6922,7 +6937,7 @@ async function playPrevChunk() {
  * @param {number} startSentenceIndex
  * @param {boolean} autoPlay
  */
-async function switchChapter(targetChapterIndex, startSentenceIndex = 0, autoPlay = true) {
+async function switchChapter(targetChapterIndex, startSentenceIndex = 0, autoPlay = true, onRendered = null) {
     if (!STATE.currentBook || !Array.isArray(STATE.currentBook.chapters)) return false;
     const chapters = STATE.currentBook.chapters;
     if (targetChapterIndex < 0 || targetChapterIndex >= chapters.length) return false;
@@ -6957,6 +6972,7 @@ async function switchChapter(targetChapterIndex, startSentenceIndex = 0, autoPla
             refreshTOCCurrent();
             scrollTOCCurrentChapter();
         }
+        onRendered?.();
 
         // 4. Phát audio chương mới nếu autoPlay được bật
         if (autoPlay) {
@@ -7154,12 +7170,12 @@ function setSleepTimerEndOfChapter() {
     STATE.sleepTimerMode = 'chapter';
     STATE.sleepTimerEnd = null;
     STATE.sleepTimerTarget = { bookId: STATE.currentBookId, chapterIndex: STATE.currentChapterIndex };
-    updateSleepTimerUI(true, 0);
     // Playback stops at the chapter boundary (see ontimeupdate); this only drops
     // the timer when the reader opens another book.
     STATE.sleepTimer = setInterval(() => {
         if (STATE.currentBookId !== STATE.sleepTimerTarget?.bookId) cancelSleepTimer();
     }, 1000);
+    updateSleepTimerUI(true, 0);
 }
 
 function startSleepTimer(seconds) {
@@ -7167,13 +7183,12 @@ function startSleepTimer(seconds) {
 
     STATE.sleepTimerEnd = Date.now() + seconds * 1000;
     STATE.sleepTimerTarget = null;
-    updateSleepTimerUI(true, seconds);
-
     STATE.sleepTimer = setInterval(() => {
         const remaining = Math.max(0, Math.round((STATE.sleepTimerEnd - Date.now()) / 1000));
         updateSleepTimerUI(true, remaining);
         if (remaining <= 0) expireSleepTimer();
     }, 1000);
+    updateSleepTimerUI(true, seconds);
 }
 
 function expireSleepTimer() {
@@ -7255,7 +7270,9 @@ function updateSleepTimerUI(isActive, seconds = 0) {
             badge.textContent = tr('state-off', 'Tắt');
         }
     }
+    const focusWasInControls = !!controls?.contains(document.activeElement);
     if (controls) controls.classList.toggle('hidden', !isActive);
+    if (focusWasInControls && !isActive) block?.querySelector('.sleep-block__presets button')?.focus();
     if (isActive && remainingText) remainingText.textContent = byChapter ? tr('sleep-end-chapter', 'Hết chương') : formatTime(seconds);
     updateReaderMoreActiveDot();
     document.dispatchEvent(new CustomEvent('sleeptimerchange', {
@@ -7396,7 +7413,7 @@ async function handlePlaybackStall() {
         } else {
             console.warn("[Stall] Waiting for TTS, skipping reset");
         }
-        document.getElementById('status-indicator').innerText = "Đang chờ máy chủ TTS...";
+        document.getElementById('status-indicator').innerText = tr('status-waiting-tts', 'Đang chờ máy chủ TTS…');
         return;
     }
     STATE._stallWaitCount = 0;
@@ -7645,8 +7662,14 @@ async function openEditChapterModal(index, triggerBtn = null) {
 
 function closeEditModal() {
     document.getElementById('edit-chapter-modal').classList.add('hidden');
+    const index = editingChapterIndex;
     editingChapterIndex = -1;
-    if (editReturnFocus?.isConnected) editReturnFocus.focus({ preventScroll: true });
+    // Saving re-renders the TOC, so the pen that opened the dialog may be a new node.
+    let target = editReturnFocus;
+    if (!target?.isConnected && target?.matches?.('[data-toc-edit]')) {
+        target = document.querySelector(`#toc-item-${index} [data-toc-edit]`);
+    }
+    if (target?.isConnected) target.focus({ preventScroll: true });
     editReturnFocus = null;
 }
 

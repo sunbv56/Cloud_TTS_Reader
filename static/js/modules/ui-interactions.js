@@ -279,6 +279,9 @@ let tocSheetReturnFocus = null;
 function onTOCSheetKey(event) {
     const sheet = document.getElementById('toc-sheet');
     if (!sheet || sheet.hidden) return;
+    // A dialog opened from the sheet (e.g. edit chapter) owns the keyboard.
+    const active = document.activeElement;
+    if (active && !sheet.contains(active) && active.closest?.('[aria-modal="true"]')) return;
     if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
@@ -609,8 +612,26 @@ export function initReaderMoreMenu() {
     const items = () => [...menu.querySelectorAll('[role^="menuitem"]:not(:disabled)')]
         .filter(item => item.getClientRects().length > 0);
 
+    // On touch, the tap that dismisses the menu must not also land on the
+    // text underneath (a sentence tap would start playback from there).
+    function swallowNextClick() {
+        const swallow = (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            cleanup();
+        };
+        const cleanup = () => {
+            clearTimeout(timer);
+            document.removeEventListener('click', swallow, true);
+        };
+        const timer = setTimeout(cleanup, 600);
+        document.addEventListener('click', swallow, true);
+    }
+
     function onOutside(event) {
-        if (!menu.contains(event.target) && !moreBtn.contains(event.target)) setOpen(false);
+        if (menu.contains(event.target) || moreBtn.contains(event.target)) return;
+        setOpen(false);
+        if (event.pointerType && event.pointerType !== 'mouse') swallowNextClick();
     }
 
     function setOpen(next, { restoreFocus = false } = {}) {
