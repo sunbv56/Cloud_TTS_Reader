@@ -131,7 +131,6 @@ let STATE = {
     downloadRetryCount: new Map(), // key -> retry attempt count
     streamingRetryCount: new Map(), // key -> retry attempt count for streaming
     _stallRecoveryCount: 0, // tracking recovery attempts
-    tocAutoMinimized: false,
     // Segmentation & Pagination
     isSegmented: false,
     segmentFormatVersion: 0,
@@ -717,10 +716,6 @@ function setPlayLoading() {
 }
 
 function setAudioWaveState(isPlaying) {
-    if (window.MotionLayer?.setAudioWaveState) {
-        window.MotionLayer.setAudioWaveState(isPlaying);
-        return;
-    }
     document.querySelectorAll('.audio-wave-bars').forEach(el => el.classList.toggle('is-playing', !!isPlaying));
 }
 
@@ -749,12 +744,7 @@ const APP_STATUS = {
 
         AudioHapticFX.haptic(14);
 
-        const icons = {
-            success: '<i class="fas fa-check-circle text-emerald-400 text-base"></i>',
-            error: '<i class="fas fa-exclamation-circle text-rose-400 text-base"></i>',
-            warning: '<i class="fas fa-triangle-exclamation text-amber-400 text-base"></i>',
-            info: '<i class="fas fa-info-circle text-primary text-base"></i>'
-        };
+        const icons = { success: 'check', error: 'alert', warning: 'alert', info: 'info' };
         const titles = {
             success: tr('toast-success', 'Thành công'),
             error: tr('toast-error', 'Thông báo lỗi'),
@@ -763,7 +753,7 @@ const APP_STATUS = {
         };
 
         const kindClass = `toast-kind-${kind || 'info'}`;
-        const iconHtml = icons[kind] || icons.info;
+        const iconHtml = iconSVG(icons[kind] || icons.info, 'toast__icon');
         const titleText = titles[kind] || titles.info;
         // Info is a passing note: no "System" heading, one compact line, gone after ~2s.
         const brief = !kind || kind === 'info';
@@ -771,24 +761,22 @@ const APP_STATUS = {
         const lifetime = duration ?? (brief ? Math.min(4800, 2000 + Math.max(0, plainLength - 40) * 40) : 4800);
 
         const toast = document.createElement('div');
-        toast.className = `toast-hud-glass p-3.5 text-sm flex items-start gap-3 ${kindClass}${brief ? ' toast-hud-glass--brief' : ''} pointer-events-auto cursor-pointer select-none`;
+        toast.className = `toast ${kindClass}${brief ? ' toast--brief' : ''}`;
         toast.style.setProperty('--toast-life', `${lifetime}ms`);
         toast.setAttribute('role', brief ? 'status' : 'alert');
         toast.innerHTML = `
-            <div class="flex-shrink-0 mt-0.5">${iconHtml}</div>
-            <div class="flex-1 min-w-0 pr-1">
-                ${brief ? '' : `<div class="font-bold text-[11px] uppercase tracking-wider opacity-80 mb-0.5 text-white">${titleText}</div>`}
-                <div class="text-slate-200 text-xs leading-relaxed break-words">${message}</div>
+            ${iconHtml}
+            <div class="toast__body">
+                ${brief ? '' : `<p class="toast__title">${titleText}</p>`}
+                <div class="toast__msg">${message}</div>
             </div>
-            <button type="button" class="text-slate-400 hover:text-white p-1 -mr-1 -mt-1 text-xs opacity-70 hover:opacity-100 transition-opacity" aria-label="${tr('toast-close', 'Đóng')}">
-                <i class="fas fa-times"></i>
-            </button>
+            <button type="button" class="toast__close" aria-label="${tr('toast-close', 'Đóng')}">${iconSVG('x', 'ic--sm')}</button>
             <div class="toast-progress-track">
                 <div class="toast-progress-fill"></div>
             </div>
         `;
 
-        const closeBtn = toast.querySelector('button');
+        const closeBtn = toast.querySelector('.toast__close');
         if (actions.length) {
             const row = document.createElement('div');
             row.className = 'toast-actions';
@@ -804,17 +792,13 @@ const APP_STATUS = {
                 });
                 row.appendChild(btn);
             });
-            toast.querySelector('.flex-1')?.appendChild(row);
+            toast.querySelector('.toast__body')?.appendChild(row);
         }
         let removeTimer = null;
         const dismiss = () => {
             if (removeTimer) clearTimeout(removeTimer);
             toast.dataset.leaving = 'true';
-            if (window.MotionLayer?.animateToastOut) {
-                window.MotionLayer.animateToastOut(toast);
-            } else {
-                toast.remove();
-            }
+            toast.remove();
         };
 
         closeBtn?.addEventListener('click', (e) => {
@@ -826,7 +810,7 @@ const APP_STATUS = {
         if (key) {
             toast.dataset.toastKey = key;
             toast.refreshToast = (nextMessage) => {
-                const body = toast.querySelector('.text-slate-200');
+                const body = toast.querySelector('.toast__msg');
                 if (body) body.innerHTML = nextMessage;
                 const fill = toast.querySelector('.toast-progress-fill');
                 if (fill) {
@@ -850,9 +834,6 @@ const APP_STATUS = {
         live.slice(0, Math.max(0, live.length - maxToasts + 1)).forEach(node => (node.dismissToast ? node.dismissToast() : node.remove()));
 
         region.appendChild(toast);
-        if (window.MotionLayer?.animateToastIn) {
-            window.MotionLayer.animateToastIn(toast);
-        }
         removeTimer = setTimeout(dismiss, lifetime);
         requestAnimationFrame(() => revealFocusAboveToasts(region));
     },
@@ -2300,11 +2281,6 @@ function switchSidebarTab(tab) {
         }
         if (panel) {
             panel.hidden = !isActive;
-            if (isActive && window.gsap) {
-                window.gsap.fromTo(panel,
-                    { opacity: 0, x: -8 },
-                    { opacity: 1, x: 0, duration: 0.22, ease: 'power2.out', clearProps: 'all' });
-            }
         }
     });
     try { localStorage.setItem(SIDEBAR_TAB_KEY, tab); } catch (_) { /* private mode */ }
@@ -2473,7 +2449,6 @@ function applySkipDictionary(text) {
     return result.length > 0 ? result : ' ';
 }
 
-// --- Loading Overlay Helpers (UI/UX Pro Max + GSAP) ---
 function showLoading(text = tr('loading-default', 'Đang xử lý'), { subtext = tr('loading-wait', 'Vui lòng đợi trong giây lát...'), progress = null, status = tr('loading-progress', 'Tiến trình') } = {}) {
     const overlay = document.getElementById('global-loading');
     const textEl = document.getElementById('loading-text');
@@ -2494,16 +2469,8 @@ function showLoading(text = tr('loading-default', 'Đang xử lý'), { subtext =
                 progressContainer.classList.remove('hidden');
                 if (progressStatus) progressStatus.innerText = status;
                 const safePercent = Math.max(0, Math.min(100, Math.round(progress)));
-                if (window.MotionLayer?.animateProgressBar && progressBar) {
-                    window.MotionLayer.animateProgressBar(progressBar, safePercent);
-                } else if (progressBar) {
-                    progressBar.style.width = `${safePercent}%`;
-                }
-                if (window.MotionLayer?.animateCounter && progressPercent) {
-                    window.MotionLayer.animateCounter(progressPercent, safePercent);
-                } else if (progressPercent) {
-                    progressPercent.innerText = `${safePercent}%`;
-                }
+                if (progressBar) progressBar.style.width = `${safePercent}%`;
+                if (progressPercent) progressPercent.innerText = `${safePercent}%`;
             } else {
                 progressContainer.classList.add('hidden');
             }
@@ -2529,16 +2496,8 @@ function updateLoadingProgress(progress, text = null, subtext = null, status = n
     if (progressContainer && progress !== null && Number.isFinite(progress)) {
         progressContainer.classList.remove('hidden');
         const safePercent = Math.max(0, Math.min(100, Math.round(progress)));
-        if (window.MotionLayer?.animateProgressBar && progressBar) {
-            window.MotionLayer.animateProgressBar(progressBar, safePercent);
-        } else if (progressBar) {
-            progressBar.style.width = `${safePercent}%`;
-        }
-        if (window.MotionLayer?.animateCounter && progressPercent) {
-            window.MotionLayer.animateCounter(progressPercent, safePercent);
-        } else if (progressPercent) {
-            progressPercent.innerText = `${safePercent}%`;
-        }
+        if (progressBar) progressBar.style.width = `${safePercent}%`;
+        if (progressPercent) progressPercent.innerText = `${safePercent}%`;
     }
 }
 
@@ -2559,25 +2518,21 @@ function hideLoading() {
     }
 }
 
-function setButtonLoading(button, isLoading, loadingText = '') {
+function setButtonLoading(button, isLoading) {
     if (typeof button === 'string') button = document.getElementById(button);
     if (!button) return;
-    if (window.MotionLayer?.setButtonLoading) {
-        window.MotionLayer.setButtonLoading(button, isLoading, loadingText);
-    } else {
-        // Disabling a focused button drops focus to <body>; give it back afterwards.
-        if (isLoading && document.activeElement === button) button.dataset.refocus = '1';
-        button.disabled = !!isLoading;
-        button.classList.toggle('is-loading', !!isLoading);
-        if (!isLoading && button.dataset.refocus) {
-            delete button.dataset.refocus;
-            const active = document.activeElement;
-            if (button.isConnected && (!active || active === document.body)) button.focus({ preventScroll: true });
-        }
-        if (isLoading) button.setAttribute('aria-busy', 'true');
-        else button.removeAttribute('aria-busy');
-        if (button.classList.contains('icon-btn')) setIconButtonGlyph(button, isLoading ? 'i-download' : null);
+    // Disabling a focused button drops focus to <body>; give it back afterwards.
+    if (isLoading && document.activeElement === button) button.dataset.refocus = '1';
+    button.disabled = !!isLoading;
+    button.classList.toggle('is-loading', !!isLoading);
+    if (!isLoading && button.dataset.refocus) {
+        delete button.dataset.refocus;
+        const active = document.activeElement;
+        if (button.isConnected && (!active || active === document.body)) button.focus({ preventScroll: true });
     }
+    if (isLoading) button.setAttribute('aria-busy', 'true');
+    else button.removeAttribute('aria-busy');
+    if (button.classList.contains('icon-btn')) setIconButtonGlyph(button, isLoading ? 'i-download' : null);
 }
 
 // Icon-only buttons show their state through the glyph (no spinner loop):
@@ -2590,10 +2545,6 @@ function setIconButtonGlyph(button, iconId) {
 }
 
 function flashButtonSuccess(button) {
-    if (window.MotionLayer?.animateSuccessCheck) {
-        window.MotionLayer.animateSuccessCheck(button);
-        return;
-    }
     if (!button.classList.contains('icon-btn')) return;
     clearTimeout(button._successTimer);
     button.classList.add('is-success');
@@ -4195,14 +4146,6 @@ async function getImageURL(bookId, image, { persist = false } = {}) {
         console.warn('[Images] Cannot load image:', image.id, 'for book:', bookId, err.message);
         return null;
     }
-}
-
-async function deleteBookImages(bookId) {
-    if (!STATE.user || !bookId) return;
-    const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images`, { method: 'DELETE' });
-    if (!response.ok) throw new Error(`Image cleanup failed (${response.status})`);
-    forgetImageManifest(bookId, { covers: true });
-    releaseImageURLs();
 }
 
 async function saveBookImageCrop(bookId, imageId, crop, sourceWidth, sourceHeight) {
@@ -6163,11 +6106,14 @@ function updateTOCCount() {
     }
     const shown = document.querySelectorAll('#toc-list > .toc-row:not([style*="none"])').length;
     const query = tocSearchInput?.value.trim();
-    countEl.textContent = query
-        ? tr('toc-count-filtered', '{shown}/{total} chương', { shown, total })
-        : isAudioPlaying()
-            ? tr('toc-count', '{total} chương · đang nghe C.{current}', { total, current: STATE.currentChapterIndex + 1 })
-            : tr('toc-count-here', '{total} chương · đang đọc C.{current}', { total, current: STATE.currentChapterIndex + 1 });
+    if (query) {
+        countEl.textContent = tr('toc-count-filtered', '{shown}/{total} chương', { shown, total });
+        return;
+    }
+    const key = isAudioPlaying() ? 'toc-count' : 'toc-count-here';
+    const oneKey = `${key}-one`;
+    const useOne = total === 1 && window.translations?.[uiLang()]?.[oneKey] !== undefined;
+    countEl.textContent = tr(useOne ? oneKey : key, isAudioPlaying() ? '{total} chương · đang nghe C.{current}' : '{total} chương · đang đọc C.{current}', { total, current: STATE.currentChapterIndex + 1 });
 }
 
 function renderTOC() {
@@ -6198,7 +6144,6 @@ function renderTOC() {
     }
     if (isTOCSelectMode()) updateDownloadBar();
 
-    // Re-apply TOC search if query exists
     applyTOCSearch();
 }
 
@@ -7075,8 +7020,6 @@ function highlightSentence(index) {
                 const targetScroll = Math.max(0, offsetTop - (containerHeight * 0.28));
                 if (STATE.isLiteMode) {
                     container.scrollTop = targetScroll;
-                } else if (window.MotionLayer?.smoothScrollToSweetSpot) {
-                    window.MotionLayer.smoothScrollToSweetSpot(container, cur, 0.28, 0.42);
                 } else {
                     container.scrollTo({
                         top: targetScroll,
@@ -7674,30 +7617,12 @@ document.getElementById('toc-download-btn').onclick = () => {
 
 document.getElementById('toc-delete-btn').onclick = () => deleteSelectedChapters();
 
-// // Player Minimize Logic
+// The compact console row is the Home dock; #minimize-btn stays only as the PiP button's anchor.
 function toggleMinimize(isMinimized) {
     const mediaPlayer = document.getElementById('media-player');
-    const minimizeBtn = document.getElementById('minimize-btn');
-
-    if (isMinimized === undefined) {
-        isMinimized = !mediaPlayer.classList.contains('minimized-player');
-    }
-
+    if (isMinimized === undefined) isMinimized = !mediaPlayer.classList.contains('minimized-player');
     mediaPlayer.classList.toggle('minimized-player', isMinimized);
-    minimizeBtn.innerHTML = isMinimized ?
-        '<i class="fas fa-chevron-up text-[10px]"></i>' :
-        '<i class="fas fa-chevron-down text-[10px]"></i>';
-    minimizeBtn.setAttribute('aria-expanded', String(!isMinimized));
-    minimizeBtn.setAttribute('aria-label', isMinimized ? 'Mở rộng trình phát' : 'Thu gọn thành PiP');
-    minimizeBtn.title = isMinimized ? 'Mở rộng trình phát' : 'Thu gọn thành PiP';
-
-    localStorage.setItem('player-minimized', isMinimized);
 }
-
-document.getElementById('minimize-btn').onclick = () => toggleMinimize();
-
-// Default to expanded on load per user request
-toggleMinimize(false);
 
 const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -8409,18 +8334,16 @@ function expireSleepTimer() {
     STATE.sleepTimerTarget = null;
     console.log("Sleep Timer Expired: Stopping Playback and Disconnecting");
 
-    // Action: Stop playback
     audio.pause();
     STATE.isPlaying = false;
 
-    // Action: Disconnect WebSocket to stop backend workers
+    // Closing the socket also stops the server's prefetch workers.
     closeWebSocketIntentionally();
     STATE.socketParked = true;
 
-    // Action: Increment Session ID to invalidate any pending work
+    // A new session id makes replies already in flight ignorable.
     STATE.sessionId++;
 
-    // Action: Clear RAM/ROM
     STATE.appendQueue = [];
     STATE.chunkTimings = [];
     STATE.fetchingSet.clear();
@@ -8435,7 +8358,6 @@ function expireSleepTimer() {
         } catch (e) { }
     }
 
-    // Action: Disable Wake Lock
     if (STATE.wakeLockEnabled) {
         releaseWakeLock();
         STATE.wakeLockEnabled = false;
@@ -9053,13 +8975,13 @@ window.addEventListener('themechange', (e) => {
     }
 });
 
-// --- Easter Egg: Crawler Script Copy (5s Hold on Logo) ---
+// --- Easter egg: hold the logo for 3s to copy the chapter crawler script ---
 (function () {
     const logoBtn = document.getElementById('logo-btn');
     if (!logoBtn) return;
 
     let holdTimer;
-    const holdDuration = 3000; // 3 seconds
+    const holdDuration = 3000;
 
     const startHold = (e) => {
         holdTimer = setTimeout(activateEasterEgg, holdDuration);
@@ -9097,13 +9019,11 @@ window.addEventListener('themechange', (e) => {
                 const oldText = indicator.innerText;
                 indicator.innerText = tr('status-crawler-copied', 'Crawler script copied');
 
-                // Visual feedback on logo
-                logoBtn.style.transition = "transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)";
-                logoBtn.style.transform = "scale(1.2) rotate(10deg)";
+                logoBtn.classList.add('is-egg');
 
                 setTimeout(() => {
                     indicator.innerText = oldText;
-                    logoBtn.style.transform = "scale(1) rotate(0deg)";
+                    logoBtn.classList.remove('is-egg');
                 }, 3000);
             }
         }).catch(err => {

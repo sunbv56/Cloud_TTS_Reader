@@ -5,6 +5,11 @@ import { syncThemeControls } from './ui-interactions.js';
 
 export const translations = {
     en: {
+        "close-nav": "Close navigation",
+        "pocket-chip-hint": "Listen with the screen off: black screen, double-tap to wake",
+        "images-drop-title": "Drag and drop or paste images here",
+        "time-played": "Time played",
+        "buffer-title": "Sentences synthesized ahead",
         "playing-now": "playing",
         "resume-paused": "Paused · resume from Ch. {n}",
         "back-to-shelf": "Back to bookshelf",
@@ -18,6 +23,7 @@ export const translations = {
         "at-first-chapter": "Already at the first chapter.",
         "toc-here": "reading",
         "toc-count-here": "{total} chapters · reading C.{current}",
+        "toc-count-here-one": "1 chapter · reading C.{current}",
         "opening-book-short": "Opening…",
         "loading-short": "Loading…",
         "search-no-match-in": "No books match “{query}” in {filter}.",
@@ -158,6 +164,7 @@ export const translations = {
         "edit-chapter-n": "Edit chapter {n}",
         "toc-count-filtered": "{shown}/{total} chapters",
         "toc-count": "{total} chapters · listening C.{current}",
+        "toc-count-one": "1 chapter · listening C.{current}",
         "toc-no-book": "No book open",
         "toc-empty": "Open a book from the library to see its chapters.",
         "toc-search-empty": "No matching chapter.",
@@ -521,6 +528,11 @@ export const translations = {
         "font-group-sans": "Sans-serif",
     },
     vi: {
+        "close-nav": "Đóng điều hướng",
+        "pocket-chip-hint": "Nghe tắt màn hình: màn đen, chạm 2 lần để mở",
+        "images-drop-title": "Kéo thả hoặc dán ảnh vào đây",
+        "time-played": "Thời gian đã phát",
+        "buffer-title": "Câu đã tổng hợp sẵn phía trước",
         "playing-now": "đang phát",
         "resume-paused": "Tạm dừng · nghe tiếp từ C.{n}",
         "back-to-shelf": "Về kệ sách",
@@ -1055,6 +1067,11 @@ export function applyLanguage(lang) {
     document.querySelectorAll('[data-i18n-label]').forEach(el => {
         const value = translations[lang]?.[el.getAttribute('data-i18n-label')];
         if (value) el.setAttribute('label', value);
+    });
+
+    document.querySelectorAll('[data-i18n-title]').forEach(el => {
+        const value = translations[lang]?.[el.getAttribute('data-i18n-title')];
+        if (value) el.title = value;
     });
 
     document.querySelectorAll('[data-i18n-aria]').forEach(el => {

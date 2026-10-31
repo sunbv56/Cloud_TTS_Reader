@@ -623,6 +623,8 @@
         -webkit-touch-callout: none;
     }
     @media (hover: hover) { .wordmark:hover { background: var(--color-surface); } }
+    .wordmark { transition: transform var(--dur-slow) var(--ease-out); }
+    .wordmark.is-egg { transform: scale(1.15) rotate(6deg); }
     .hdr-keys {
         display: none;
         align-items: center;
@@ -1151,7 +1153,8 @@
         border-inline: 1px solid var(--color-line);
         font-size: var(--text-sm);
     }
-    .pitch-out { display: inline-flex; flex-direction: column; align-items: center; line-height: 1.15; min-width: 5.5em !important; }
+    .stepper .pitch-out { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.15; }
+    .cpanel .stepper output { min-width: 5.5em; }
     .pitch-word { font-family: var(--font-ui); font-weight: 600; }
     .pitch-hz { font-size: var(--text-2xs); color: var(--color-muted); }
     .stepper__glyph { font: 600 var(--text-md)/1 var(--font-ui); }
@@ -1649,7 +1652,15 @@
            the full sentence stays in the DOM (role=status) and in the panel. */
         .console-status { max-inline-size: 100%; }
         .console-status[data-short] { font-size: 0; }
-        .console-status[data-short]::after { content: attr(data-short); font-size: var(--text-2xs); }
+        .console-status[data-short]::after {
+            content: attr(data-short);
+            display: inline-block;
+            max-width: calc(100% - 12px);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            vertical-align: top;
+            font-size: var(--text-2xs);
+        }
     }
     @media (min-width: 1024px) {
         .console-status { display: block; }
@@ -1659,7 +1670,7 @@
     .console[data-status-tone="warn"] { --status-tone: var(--color-warn); }
     .console[data-status-tone="error"] { --status-tone: var(--color-danger); }
     .console[data-status-tone="warn"] .console-status,
-    .console[data-status-tone="error"] .console-status { color: var(--status-tone) !important; }
+    .console[data-status-tone="error"] .console-status { color: var(--status-tone); }
 
     /* Scrub: a 3px line on phones, the seek track on desktop. */
     .console-scrub { display: contents; }
@@ -2052,6 +2063,7 @@
     }
     /* The panel is a touch surface on phones: every control keeps the 44px target. */
     .cpanel .stepper .icon-btn { min-width: var(--tap); }
+    @media (pointer: coarse) { .cpanel .track { height: var(--tap); } }
     .cpanel .select--sm,
     .cpanel .input--sm { min-height: var(--tap); }
 
@@ -2348,6 +2360,8 @@
     @media (max-width: 639.98px) {
         :root[data-settings-open] .toast-region { bottom: calc(env(safe-area-inset-bottom) + var(--space-2)); }
     }
+    /* The "playing elsewhere" strip sits on top of the console row; keep toasts above it. */
+    body:has(#console-elsewhere:not([hidden])) .toast-region { margin-bottom: calc(var(--tap) + 1px); }
     .toast-region.is-lifted { transform: translateY(calc(-1 * (var(--toast-lift, 0px) + var(--space-2)))); }
     /* Phones: while a bottom sheet or the ⋮ menu is open, toasts move to the top edge
        so they never cover the sheet's controls. */
@@ -2365,37 +2379,60 @@
         bottom: auto;
         transform: none;
     }
-    .toast-hud-glass {
+    .toast {
         position: relative;
         overflow: hidden;
+        display: flex;
+        align-items: flex-start;
+        gap: var(--space-3);
         padding: var(--space-3);
         border: 1px solid var(--color-line);
         border-left: 3px solid var(--toast-tone, var(--color-accent));
         border-radius: var(--radius-md);
         background: var(--color-raised);
         color: var(--color-text);
+        font-size: var(--text-sm);
         box-shadow: 0 12px 30px -12px var(--color-shadow);
         pointer-events: auto;
+        cursor: pointer;
+        user-select: none;
         animation: cc-toast-in var(--dur) var(--ease-out);
         --color-muted: var(--color-muted-raised);
     }
     @keyframes cc-toast-in { from { opacity: 0; transform: translateY(6px); } }
-    .toast-hud-glass--brief { padding: var(--space-2) var(--space-3) !important; align-items: center !important; }
-    .toast-hud-glass--brief .text-slate-200 {
+    .toast--brief { align-items: center; padding: var(--space-2) var(--space-3); }
+    .toast__icon { flex: none; margin-top: 2px; color: var(--toast-tone, var(--color-accent)); }
+    .toast--brief .toast__icon { margin-top: 0; }
+    .toast__body { flex: 1; min-width: 0; }
+    .toast__title { margin: 0 0 2px; font: 600 var(--text-2xs)/1.3 var(--font-mono); letter-spacing: .04em; text-transform: uppercase; color: var(--color-muted); }
+    .toast__msg { font-size: var(--text-xs); line-height: 1.55; overflow-wrap: anywhere; }
+    .toast--brief .toast__msg {
         display: -webkit-box;
         -webkit-line-clamp: 2;
         line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
     }
-    .toast-hud-glass i { color: var(--toast-tone, var(--color-accent)) !important; }
-    .toast-hud-glass .text-white,
-    .toast-hud-glass .text-slate-200 { color: var(--color-text) !important; }
-    .toast-hud-glass > button { position: relative; min-width: 32px; min-height: 32px; color: var(--color-muted); }
+    .toast__close {
+        position: relative;
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        margin: -6px -6px -6px 0;
+        border: 0;
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--color-muted);
+        cursor: pointer;
+    }
+    @media (hover: hover) { .toast__close:hover { color: var(--color-text); background: var(--color-surface); } }
+    .toast__close:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
     /* 32px visual, 44px hit area. */
-    .toast-hud-glass > button::before { content: ""; position: absolute; inset: -6px; }
+    .toast__close::before { content: ""; position: absolute; inset: -6px; }
     .toast-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
-    .toast-hud-glass .toast-action {
+    .toast .toast-action {
         min-height: var(--tap);
         padding: 0 var(--space-3);
         border: 1px solid var(--toast-tone, var(--color-accent));
@@ -2406,9 +2443,8 @@
         white-space: nowrap;
         cursor: pointer;
     }
-    @media (hover: hover) { .toast-hud-glass .toast-action:hover { background: var(--color-surface); } }
-    .toast-hud-glass .toast-action:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
-    .toast-hud-glass button i { color: var(--color-muted) !important; }
+    @media (hover: hover) { .toast .toast-action:hover { background: var(--color-surface); } }
+    .toast .toast-action:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
     .toast-kind-success { --toast-tone: var(--color-ok); }
     .toast-kind-error { --toast-tone: var(--color-danger); }
     .toast-kind-warning { --toast-tone: var(--color-warn); }

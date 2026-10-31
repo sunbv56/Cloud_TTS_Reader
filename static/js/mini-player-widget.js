@@ -185,12 +185,6 @@
         setCollapsed(localStorage.getItem(COLLAPSED_KEY) === 'true', false);
         applyCorner(loadCorner());
         syncNow();
-        if (window.gsap && card) {
-            window.gsap.fromTo(card,
-                { scale: 0.88, opacity: 0, y: 16 },
-                { scale: 1, opacity: 1, y: 0, duration: 0.35, ease: 'back.out(1.5)', overwrite: 'auto' }
-            );
-        }
         if (!syncTimer) syncTimer = setInterval(syncNow, SYNC_INTERVAL_MS);
     }
 
