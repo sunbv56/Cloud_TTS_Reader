@@ -580,6 +580,12 @@
         <!-- Console row: docked at the bottom whenever a book is loaded. In Discovery it is the return dock.
              Phone 56px: play · title · speed · timer · ⌃.  Desktop 64px: full transport, scrub, voice, tools. -->
         <div id="media-player-shell" class="console-shell">
+            <!-- Shown while this account plays on another tab or device; "Listen here" takes the session over. -->
+            <div id="console-elsewhere" class="console-elsewhere" role="status" hidden>
+                <svg class="ic ic--sm" aria-hidden="true"><use href="#i-headphones"/></svg>
+                <span id="console-elsewhere-text" class="console-elsewhere__text" data-i18n="elsewhere-busy">Đang phát trên thiết bị khác</span>
+                <button id="console-elsewhere-btn" type="button" class="btn btn--sm console-elsewhere__btn" data-i18n="elsewhere-take">Nghe ở đây</button>
+            </div>
             <footer id="media-player" class="console" aria-label="Trình phát" data-i18n-aria="player-label" data-status-tone="quiet">
                 <div id="player-controls-layer" class="console-transport">
                     <button id="prev-chunk-btn" type="button" class="icon-btn console-wide" aria-label="Câu trước (←)" title="Câu trước (←)" data-i18n-aria="prev-sentence-key">
@@ -622,15 +628,14 @@
                     <span class="audio-wave-bars console-wide" aria-hidden="true">
                         <span class="audio-wave-bar"></span><span class="audio-wave-bar"></span><span class="audio-wave-bar"></span><span class="audio-wave-bar"></span>
                     </span>
-                    <span id="current-time-mock" class="console-count mono">0 / 0</span>
+                    <span id="current-time-mock" class="console-count mono">— / —</span>
                 </div>
 
                 <div id="player-utils-layer" class="console-utils">
-                    <button id="play-here-btn" type="button" class="chip chip--warn" hidden data-i18n="play-here">Phát tại đây</button>
                     <button id="speak-speed-chip" type="button" class="chip" aria-haspopup="dialog" aria-controls="speed-stepper"
                         aria-label="Tốc độ đọc 1.0×. Chạm để đổi, nhấn giữ để chỉnh từng 0.05" title="Tốc độ đọc: chạm để đổi, nhấn giữ để chỉnh">1.0×</button>
                     <button id="sleep-chip" type="button" class="chip" aria-label="Hẹn giờ tắt: tắt. Chạm để đổi" title="Hẹn giờ tắt: chạm để đổi">
-                        <svg class="ic ic--sm" aria-hidden="true"><use href="#i-moon"/></svg><span id="sleep-chip-label" data-i18n="state-off">Tắt</span>
+                        <svg class="ic ic--sm" aria-hidden="true"><use href="#i-moon"/></svg><span id="sleep-chip-label" data-i18n="sleep-chip-off">Hẹn giờ</span>
                     </button>
                     <label class="console-wide console-voice" title="Giọng đọc">
                         <span class="sr-only-text" data-i18n="voice-label">Giọng đọc</span>
@@ -654,6 +659,9 @@
                         <svg class="ic" aria-hidden="true"><use href="#i-up"/></svg>
                     </button>
                 </div>
+
+                <!-- Caption above a chip ("Tắt lúc 00:58"); also announces chip changes to screen readers. -->
+                <p id="console-tip" class="console-tip" role="status" aria-live="polite" data-show="false"></p>
 
                 <!-- Long-press on the speed chip: fine steps of 0.05× -->
                 <div id="speed-stepper" class="speed-stepper" role="dialog" aria-label="Chỉnh tốc độ" data-i18n-aria="speed-adjust" hidden>
@@ -699,10 +707,10 @@
                     <span class="track__fill"></span>
                 </div>
                 <div class="cpanel__readout mono">
-                    <span id="cpanel-count">0 / 0</span>
+                    <span id="cpanel-count">— / —</span>
                     <span id="time-display" title="Thời gian đã phát">0:00</span>
                     <span id="prefetch-status" class="hidden" title="Câu đã tổng hợp sẵn phía trước">
-                        <span data-i18n="buffer-short">đệm</span> <span id="prefetch-progress">0</span>
+                        <span data-i18n="buffer-short">đã chuẩn bị</span> <span id="prefetch-progress">0</span> <span data-i18n="buffer-unit">câu</span>
                     </span>
                     <span id="cpanel-status" class="cpanel__status"></span>
                 </div>
@@ -747,9 +755,9 @@
                 <div class="field-row">
                     <span class="field-row__label" data-i18n="pitch-label">Cao độ</span>
                     <span class="stepper">
-                        <button type="button" class="icon-btn" data-pitch-step="-1" aria-label="Giảm cao độ" data-i18n-aria="pitch-down"><svg class="ic" aria-hidden="true"><use href="#i-minus"/></svg></button>
-                        <output id="cpanel-pitch" class="mono">+0 Hz</output>
-                        <button type="button" class="icon-btn" data-pitch-step="1" aria-label="Tăng cao độ" data-i18n-aria="pitch-up"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button>
+                        <button type="button" class="icon-btn" data-pitch-step="-5" aria-label="Giảm cao độ" data-i18n-aria="pitch-down"><svg class="ic" aria-hidden="true"><use href="#i-minus"/></svg></button>
+                        <output id="cpanel-pitch" class="mono pitch-out"><span class="pitch-word">Chuẩn</span><small class="pitch-hz">0 Hz</small></output>
+                        <button type="button" class="icon-btn" data-pitch-step="5" aria-label="Tăng cao độ" data-i18n-aria="pitch-up"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button>
                     </span>
                 </div>
                 <div class="field-row">
@@ -1294,14 +1302,14 @@ Nội dung chương hai...</pre>
                 <p id="pocket-sentence-preview" class="pocket__sentence"></p>
             </div>
             <div class="pocket__controls">
-                <button id="pocket-prev-chunk-btn" type="button" class="pocket__btn" aria-label="Câu trước" title="Câu trước" data-i18n-aria="prev-sentence">
-                    <svg class="ic" aria-hidden="true"><use href="#i-rw"/></svg>
+                <button id="pocket-prev-chunk-btn" type="button" class="pocket__btn" aria-label="Câu trước" title="Câu trước" data-i18n-aria="prev-sentence" aria-disabled="true">
+                    <svg class="ic" aria-hidden="true"><use href="#i-rw"/></svg><span class="pocket__unit" aria-hidden="true" data-i18n="unit-sentence">câu</span>
                 </button>
-                <button id="pocket-play-btn" type="button" class="pocket__btn pocket__btn--play" aria-label="Phát hoặc tạm dừng" title="Phát hoặc tạm dừng" data-i18n-aria="play-pause">
+                <button id="pocket-play-btn" type="button" class="pocket__btn pocket__btn--play" aria-label="Phát hoặc tạm dừng" title="Phát hoặc tạm dừng" data-i18n-aria="play-pause" aria-disabled="true">
                     <svg id="pocket-play-icon" class="ic" aria-hidden="true"><use href="#i-play"/></svg>
                 </button>
-                <button id="pocket-next-chunk-btn" type="button" class="pocket__btn" aria-label="Câu kế" title="Câu kế" data-i18n-aria="next-sentence">
-                    <svg class="ic" aria-hidden="true"><use href="#i-ff"/></svg>
+                <button id="pocket-next-chunk-btn" type="button" class="pocket__btn" aria-label="Câu kế" title="Câu kế" data-i18n-aria="next-sentence" aria-disabled="true">
+                    <svg class="ic" aria-hidden="true"><use href="#i-ff"/></svg><span class="pocket__unit" aria-hidden="true" data-i18n="unit-sentence">câu</span>
                 </button>
             </div>
         </div>
@@ -1311,7 +1319,7 @@ Nội dung chương hai...</pre>
                 <svg id="pocket-exit-icon" class="ic ic--sm" aria-hidden="true"><use href="#i-lock"/></svg>
                 <span id="pocket-exit-label" data-i18n="pocket-mode-exit">Chạm 2 lần để mở màn hình</span>
             </button>
-            <span class="pocket__hint" data-i18n="pocket-anti-accidental-hint">Chống chạm nhầm khi để trong túi quần</span>
+            <span class="pocket__hint" data-i18n="pocket-anti-accidental-hint">Chống chạm nhầm khi để trong túi hoặc trên gối</span>
         </div>
     </div>
 

@@ -733,7 +733,7 @@ const APP_STATUS = {
         indicator.innerText = text;
         indicator.style.color = '';
     },
-    toast(message, kind = 'error', { key = null, actions = [], duration = 4800 } = {}) {
+    toast(message, kind = 'error', { key = null, actions = [], duration = null } = {}) {
         const region = document.getElementById('app-toast-region');
         if (!region) return;
 
@@ -765,14 +765,19 @@ const APP_STATUS = {
         const kindClass = `toast-kind-${kind || 'info'}`;
         const iconHtml = icons[kind] || icons.info;
         const titleText = titles[kind] || titles.info;
+        // Info is a passing note: no "System" heading, one compact line, gone after ~2s.
+        const brief = !kind || kind === 'info';
+        const plainLength = String(message).replace(/<[^>]*>/g, '').length;
+        const lifetime = duration ?? (brief ? Math.min(4800, 2000 + Math.max(0, plainLength - 40) * 40) : 4800);
 
         const toast = document.createElement('div');
-        toast.className = `toast-hud-glass p-3.5 text-sm flex items-start gap-3 ${kindClass} pointer-events-auto cursor-pointer select-none`;
-        toast.setAttribute('role', 'alert');
+        toast.className = `toast-hud-glass p-3.5 text-sm flex items-start gap-3 ${kindClass}${brief ? ' toast-hud-glass--brief' : ''} pointer-events-auto cursor-pointer select-none`;
+        toast.style.setProperty('--toast-life', `${lifetime}ms`);
+        toast.setAttribute('role', brief ? 'status' : 'alert');
         toast.innerHTML = `
             <div class="flex-shrink-0 mt-0.5">${iconHtml}</div>
             <div class="flex-1 min-w-0 pr-1">
-                <div class="font-bold text-[11px] uppercase tracking-wider opacity-80 mb-0.5 text-white">${titleText}</div>
+                ${brief ? '' : `<div class="font-bold text-[11px] uppercase tracking-wider opacity-80 mb-0.5 text-white">${titleText}</div>`}
                 <div class="text-slate-200 text-xs leading-relaxed break-words">${message}</div>
             </div>
             <button type="button" class="text-slate-400 hover:text-white p-1 -mr-1 -mt-1 text-xs opacity-70 hover:opacity-100 transition-opacity" aria-label="${tr('toast-close', 'Đóng')}">
@@ -830,7 +835,7 @@ const APP_STATUS = {
                     fill.style.animation = '';
                 }
                 if (removeTimer) clearTimeout(removeTimer);
-                removeTimer = setTimeout(dismiss, duration);
+                removeTimer = setTimeout(dismiss, lifetime);
             };
         }
         if (key) {
@@ -848,8 +853,7 @@ const APP_STATUS = {
         if (window.MotionLayer?.animateToastIn) {
             window.MotionLayer.animateToastIn(toast);
         }
-        toast.style.setProperty('--toast-duration', `${duration}ms`);
-        removeTimer = setTimeout(dismiss, duration);
+        removeTimer = setTimeout(dismiss, lifetime);
         requestAnimationFrame(() => revealFocusAboveToasts(region));
     },
     error(error, fallback = 'Đã xảy ra lỗi. Vui lòng thử lại.') {
@@ -1058,12 +1062,15 @@ function trCount(key, fallback, n) {
     return tr(useOne ? oneKey : key, fallback, { n });
 }
 
-// File-derived titles such as "Dạ_Hành_Thư_Sinh" have no spaces; a <wbr>
-// after each "_" lets them wrap there instead of mid-word (text is unchanged).
-function setBreakableTitle(el, text) {
-    const parts = String(text ?? '').split('_');
-    el.replaceChildren(parts[0]);
-    for (let i = 1; i < parts.length; i++) el.append('_', document.createElement('wbr'), parts[i]);
+// File-derived titles such as "Dạ_Hành_Thư_Sinh" use "_" for spaces. Show them
+// with spaces so they read and wrap like words; the stored title is unchanged.
+function displayTitle(text) {
+    return String(text ?? '').replace(/_+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+}
+window.displayTitle = displayTitle;
+
+function setDisplayTitle(el, text) {
+    el.textContent = displayTitle(text);
 }
 
 function removeVietnameseTones(str) {
@@ -1500,7 +1507,7 @@ function buildLibraryRow(entry, listName) {
     text.className = 'lib-row__text';
     const title = document.createElement('span');
     title.className = 'lib-row__title';
-    setBreakableTitle(title, entry.title);
+    setDisplayTitle(title, entry.title);
     const meta = document.createElement('span');
     meta.className = 'lib-row__meta';
     meta.textContent = formatEntryMeta(entry);
@@ -1532,7 +1539,7 @@ function buildShelfCard(entry) {
     bar.append(fill);
     const title = document.createElement('span');
     title.className = 'shelf-card__title';
-    setBreakableTitle(title, entry.title);
+    setDisplayTitle(title, entry.title);
     const meta = document.createElement('span');
     meta.className = 'shelf-card__meta';
     meta.textContent = formatEntryMeta(entry, { withTime: false });
@@ -1543,7 +1550,7 @@ function buildShelfCard(entry) {
     more.dataset.action = 'more';
     more.setAttribute('aria-haspopup', 'menu');
     more.setAttribute('aria-expanded', 'false');
-    more.setAttribute('aria-label', tr('book-options', 'Tuỳ chọn cho {title}', { title: entry.title }));
+    more.setAttribute('aria-label', tr('book-options', 'Tuỳ chọn cho {title}', { title: displayTitle(entry.title) }));
     more.innerHTML = iconSVG('dots');
     card.append(open, more);
     return card;
@@ -1607,7 +1614,7 @@ function buildRowActions(entry) {
     more.dataset.action = 'more';
     more.setAttribute('aria-haspopup', 'menu');
     more.setAttribute('aria-expanded', 'false');
-    more.setAttribute('aria-label', tr('book-options', 'Tuỳ chọn cho {title}', { title: entry.title }));
+    more.setAttribute('aria-label', tr('book-options', 'Tuỳ chọn cho {title}', { title: displayTitle(entry.title) }));
     more.innerHTML = iconSVG('dotsh');
     actions.append(open, play, more);
     return actions;
@@ -1819,7 +1826,7 @@ function syncLibraryItemState(item, entry) {
     const isPlaying = isCurrent && typeof audio !== 'undefined' && !audio.paused;
     if (isCurrent) item.setAttribute('aria-current', 'true');
     else item.removeAttribute('aria-current');
-    const vars = { title: entry.title, percent: formatPercent(entryPercent(entry)) };
+    const vars = { title: displayTitle(entry.title), percent: formatPercent(entryPercent(entry)) };
     item.querySelectorAll('.prog-ring').forEach(ring => {
         ring.setAttribute('aria-pressed', String(isPlaying));
         ring.setAttribute('aria-label', isPlaying
@@ -1874,7 +1881,7 @@ function updateDiscoveryContinueCard() {
     if (!target) return;
     const { entry, isOpen } = target;
     const isPlaying = isOpen && typeof audio !== 'undefined' && !audio.paused;
-    setBreakableTitle(title, entry.title);
+    setDisplayTitle(title, entry.title);
     meta.textContent = formatEntryMeta(entry);
     progress.style.width = `${entryPercent(entry)}%`;
     if (label) {
@@ -1914,7 +1921,7 @@ function handleContinueListening(event) {
             toggleDiscoveryMode(false);
             return;
         }
-        // Stay on Home when another tab or device holds playback; the toast offers "Phát tại đây".
+        // Stay on Home when another tab or device holds playback; the strip above the console offers "Nghe ở đây".
         STATE.playIntentAt = Date.now();
         void waitForWebSocket().then(connected => {
             if (!connected) {
@@ -2050,7 +2057,7 @@ function openBookMenu(entry, trigger) {
     const listId = trigger.closest('#book-list, #discovery-grid')?.id;
     if (listId) libraryTriggerHome.set(trigger, { listId, bookId: entry.id, action: trigger.dataset.action });
     const title = document.getElementById('book-menu-title');
-    if (title) setBreakableTitle(title, entry.title);
+    if (title) setDisplayTitle(title, entry.title);
     const isSheet = window.matchMedia('(max-width: 639.98px)').matches;
     menu.style.left = '';
     menu.style.top = '';
@@ -2226,7 +2233,7 @@ window.addEventListener('uilanguagechange', () => {
     // The reader top bar carries data-i18n for its empty state; put the open book back.
     if (STATE.currentBook) {
         const titleEl = document.getElementById('current-title');
-        if (titleEl) titleEl.innerText = STATE.currentBook.title;
+        if (titleEl) titleEl.innerText = displayTitle(STATE.currentBook.title);
         const index = STATE.currentChapterIndex || 0;
         const chapter = STATE.currentBook.chapters?.[index];
         const chapterLabel = document.getElementById('current-chapter');
@@ -3102,6 +3109,35 @@ function wsRefusedRecently() {
     return !!STATE.wsRefusedAt && Date.now() - STATE.wsRefusedAt < 15000;
 }
 
+// Strip above the console while this account plays on another tab/device:
+// 'busy' = our socket was refused, 'taken' = another device took our socket.
+function setPlaybackElsewhere(mode, { flash = false } = {}) {
+    const strip = document.getElementById('console-elsewhere');
+    playBtn?.toggleAttribute('data-blocked', !!mode);
+    if (!strip) return;
+    if (!mode) {
+        strip.hidden = true;
+        strip.classList.remove('is-flash');
+        document.getElementById('console-elsewhere-btn')?.removeAttribute('aria-busy');
+        return;
+    }
+    const text = document.getElementById('console-elsewhere-text');
+    const key = mode === 'taken' ? 'elsewhere-taken' : 'elsewhere-busy';
+    if (text) {
+        text.dataset.i18n = key;
+        text.textContent = tr(key, mode === 'taken' ? 'Đã chuyển sang thiết bị khác' : 'Đang phát trên thiết bị khác');
+    }
+    document.getElementById('console-elsewhere-btn')?.removeAttribute('aria-busy');
+    const wasShown = !strip.hidden;
+    strip.hidden = false;
+    if (flash && wasShown) {
+        strip.classList.remove('is-flash');
+        void strip.offsetWidth;
+        strip.classList.add('is-flash');
+        AudioHapticFX.haptic(30);
+    }
+}
+
 function connectionFailedStatus() {
     return wsRefusedRecently() ? tr('status-conn-busy', 'Listening in another tab or device') : tr('status-conn-failed', 'Connection failed');
 }
@@ -3111,28 +3147,20 @@ function playRequestedRecently() {
     return !!STATE.playIntentAt && Date.now() - STATE.playIntentAt < 20000;
 }
 
-function setConnBusy(busy) {
-    document.getElementById('media-player')?.toggleAttribute('data-conn-busy', !!busy);
-    const btn = document.getElementById('play-here-btn');
-    if (btn) btn.hidden = !busy;
-}
-
-function showConnBusyToast(message = tr('toast-conn-busy', 'This account is already listening in another tab or on another device.')) {
-    APP_STATUS.toast(message, 'warning', {
-        key: 'conn-busy',
-        duration: 8000,
-        actions: [{ label: tr('play-here', 'Phát tại đây'), onClick: takeOverPlayback }]
-    });
-}
-
-// "Phát tại đây": the server closes the other tab's or device's socket and gives its slot to this one.
+// "Nghe ở đây": the server closes the other tab's or device's socket and gives its slot to this one.
 async function takeOverPlayback() {
     if (!STATE.currentBook) return;
+    const btn = document.getElementById('console-elsewhere-btn');
     STATE.wsRefusedAt = 0;
     STATE.wsTakeover = true;
-    setConnBusy(false);
-    if (STATE.ws && STATE.ws.readyState !== WebSocket.OPEN) closeWebSocketIntentionally();
-    if (audio.paused) await togglePlayback();
+    btn?.setAttribute('aria-busy', 'true');
+    try {
+        if (STATE.ws && STATE.ws.readyState !== WebSocket.OPEN) closeWebSocketIntentionally();
+        if (audio.paused) await togglePlayback();
+    } finally {
+        STATE.wsTakeover = false;
+        btn?.removeAttribute('aria-busy');
+    }
 }
 
 function closeWebSocketIntentionally() {
@@ -3210,7 +3238,7 @@ async function initWebSocket() {
             const data = JSON.parse(event.data);
             if (data.type === "AUTH_OK") {
                 STATE.wsRefusedAt = 0;
-                setConnBusy(false);
+                setPlaybackElsewhere(null);
                 return;
             }
             if (data.type === "METADATA") {
@@ -3458,26 +3486,23 @@ async function initWebSocket() {
             return;
         }
 
-        // Another tab or device holds this account's only socket: reconnecting would just be refused again.
-        // Stay quiet on page load; tell the user (with a "Play here" way out) whenever their Play is refused.
-        if (event?.code === 1013) {
-            STATE.wsRefusedAt = Date.now();
-            setConnBusy(true);
-            document.getElementById('status-indicator').innerText = tr('status-conn-busy', 'Listening in another tab or device');
-            if (playRequestedRecently()) showConnBusyToast();
+        // Another device pressed "Listen here": stop, and offer to take it back.
+        if (event?.code === 4001) {
+            STATE.wsRefusedAt = 0;
+            STATE.socketParked = true;
+            STATE.playIntentAt = 0;
+            if (!audio.paused) audio.pause();
+            document.getElementById('status-indicator').innerText = tr('status-taken-over', 'Playing on another device');
+            setPlaybackElsewhere('taken');
             return;
         }
 
-        // This account pressed "Play here" on another tab or device.
-        if (event?.code === 4001) {
-            const wasPlaying = !audio.paused;
+        // Another tab or device holds this account's only socket: reconnecting would just be refused again.
+        // The strip above the console offers "Nghe ở đây"; it flashes when a Play tap is refused.
+        if (event?.code === 1013) {
             STATE.wsRefusedAt = Date.now();
-            STATE.socketParked = true;
-            STATE.playIntentAt = 0;
-            if (wasPlaying) audio.pause();
-            setConnBusy(true);
-            document.getElementById('status-indicator').innerText = tr('status-taken-over', 'Playing on another tab or device');
-            if (wasPlaying) showConnBusyToast(tr('toast-taken-over', 'Playback moved to another tab or device.'));
+            document.getElementById('status-indicator').innerText = tr('status-conn-busy', 'Listening in another tab or device');
+            setPlaybackElsewhere('busy', { flash: true });
             return;
         }
 
@@ -4073,7 +4098,7 @@ async function renderImageManager() {
 
     const manifest = await loadImageManifest(bookId);
     if (bookId === STATE.currentBookId) STATE.imageManifest = manifest;
-    const bookTitle = imageManagerBookTitle || STATE.currentBook?.title || tr('current-book', 'Truyện hiện tại');
+    const bookTitle = displayTitle(imageManagerBookTitle || STATE.currentBook?.title) || tr('current-book', 'Truyện hiện tại');
     if (title) title.textContent = `${bookTitle} · ${tr(manifest.images.length === 1 ? 'image-count-one' : 'image-count', '{count} ảnh', { count: manifest.images.length })}`;
     list.replaceChildren();
     if (!manifest.images.length) {
@@ -4891,11 +4916,11 @@ async function loadBookFromStorage(bookId, bookData) {
     // Close sidebar immediately on selection
     toggleSidebar(false);
 
-    showLoading(tr('status-opening-book', 'Opening {title}…', { title: bookData.title }));
+    showLoading(tr('status-opening-book', 'Opening {title}…', { title: displayTitle(bookData.title) }));
     document.getElementById('status-indicator').innerText = tr('status-loading-meta', 'Loading book info…');
     const currentTitleEl = document.getElementById('current-title');
-    currentTitleEl.innerText = tr('status-opening-book', 'Opening {title}…', { title: bookData.title });
-    currentTitleEl.title = bookData.title;
+    currentTitleEl.innerText = tr('status-opening-book', 'Opening {title}…', { title: displayTitle(bookData.title) });
+    currentTitleEl.title = displayTitle(bookData.title);
 
     try {
         // Check if book is segmented in the new stories collection
@@ -5142,7 +5167,7 @@ const handleFileUpload = async (e) => {
         if (!loaded) return;
         await refreshLibrary();
         const addedId = data.storyId;
-        APP_STATUS.toast(tr('book-added', 'Đã thêm "{title}" vào thư viện!', { title: escapeHTML(STATE.currentBook?.title || bookInfo.title || file.name) }), 'success', {
+        APP_STATUS.toast(tr('book-added', 'Đã thêm "{title}" vào thư viện!', { title: escapeHTML(displayTitle(STATE.currentBook?.title || bookInfo.title || file.name)) }), 'success', {
             duration: 8000,
             actions: [
                 { label: tr('rename-book', 'Đổi tên'), onClick: () => { if (STATE.currentBookId === addedId) void editTitle(); } },
@@ -5366,8 +5391,8 @@ async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
     applySettingsToUI();
 
     const currentTitleEl = document.getElementById('current-title');
-    currentTitleEl.innerText = STATE.currentBook.title;
-    currentTitleEl.title = STATE.currentBook.title;
+    currentTitleEl.innerText = displayTitle(STATE.currentBook.title);
+    currentTitleEl.title = displayTitle(STATE.currentBook.title);
     document.getElementById('edit-title-btn').classList.remove('hidden');
 
     await renderChapter(STATE.currentChapterIndex);
@@ -5769,7 +5794,7 @@ function renderTOC() {
     tocList.innerHTML = '';
 
     const labelEl = document.getElementById('toc-book-label');
-    if (labelEl) labelEl.textContent = STATE.currentBook?.title || tr('toc-no-book', 'Chưa mở truyện');
+    if (labelEl) labelEl.textContent = displayTitle(STATE.currentBook?.title) || tr('toc-no-book', 'Chưa mở truyện');
 
     if (!STATE.currentBook || !Array.isArray(STATE.currentBook.chapters) || STATE.currentBook.chapters.length === 0) {
         const empty = document.createElement('p');
@@ -6314,6 +6339,7 @@ function updatePrefetchUI() {
 
     if (progressEl && statusEl) {
         progressEl.innerText = `${readyCount}`;
+        statusEl.dataset.zero = String(readyCount === 0);
 
         const isFetching = STATE.fetchingSet.size > 0;
         if (isFetching || (readyCount > 0 && readyCount < target)) {
@@ -6456,7 +6482,23 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
     }
 }
 
-async function playFromSentence(index, expectedLoadGeneration = STATE.loadGeneration, isSuperseded = null) {
+let playRequestsInFlight = 0;
+
+async function playFromSentence(...args) {
+    playRequestsInFlight++;
+    try {
+        return await startPlaybackFrom(...args);
+    } finally {
+        playRequestsInFlight--;
+        const indicator = document.getElementById('status-indicator');
+        if (playRequestsInFlight === 0 && audio.paused && indicator
+            && statusMatches(indicator.innerText, 'status-buffering', 'status-tts-wait', 'status-connecting')) {
+            indicator.innerText = tr('status-ready', 'Ready');
+        }
+    }
+}
+
+async function startPlaybackFrom(index, expectedLoadGeneration = STATE.loadGeneration, isSuperseded = null) {
     if (!STATE.currentBook) return;
     STATE.playIntentAt = Date.now();
     const loadToken = {};
@@ -6683,6 +6725,7 @@ async function togglePlayback() {
     if (audio.paused) {
         // A second tap while the first is still loading would restart the request.
         if (STATE.playLoading) return;
+        if (wsRefusedRecently()) setPlaybackElsewhere('busy', { flash: true });
         STATE.socketParked = false;
         STATE.playIntentAt = Date.now();
         setPlayLoading();
@@ -6706,10 +6749,7 @@ async function togglePlayback() {
 }
 
 playBtn.onclick = () => togglePlayback();
-document.getElementById('play-here-btn')?.addEventListener('click', event => {
-    event.stopPropagation();
-    void takeOverPlayback();
-});
+document.getElementById('console-elsewhere-btn')?.addEventListener('click', () => void takeOverPlayback());
 
 
 audio.onplay = async () => {
@@ -6778,8 +6818,8 @@ async function editTitle() {
     if (!newTitle || newTitle === previousTitle) return;
 
     STATE.currentBook.title = newTitle;
-    document.getElementById('current-title').innerText = newTitle;
-    document.getElementById('current-title').title = newTitle;
+    document.getElementById('current-title').innerText = displayTitle(newTitle);
+    document.getElementById('current-title').title = displayTitle(newTitle);
     updateUI(); // Keep player and author tokens in sync
 
     try {
@@ -6794,8 +6834,8 @@ async function editTitle() {
         await refreshLibrary();
     } catch (err) {
         STATE.currentBook.title = previousTitle;
-        document.getElementById('current-title').innerText = previousTitle;
-        document.getElementById('current-title').title = previousTitle;
+        document.getElementById('current-title').innerText = displayTitle(previousTitle);
+        document.getElementById('current-title').title = displayTitle(previousTitle);
         updateUI();
         console.error('[Title] Save failed:', err);
         APP_STATUS.error(tr('rename-failed', 'Không thể lưu tên truyện: {reason}', { reason: err.message }));
@@ -7226,7 +7266,7 @@ function updatePocketModeInfo() {
     const playIcon = document.getElementById('pocket-play-icon');
 
     if (STATE.currentBook) {
-        if (bookTitleEl) bookTitleEl.textContent = STATE.currentBook.title || 'Cloud TTS Reader';
+        if (bookTitleEl) bookTitleEl.textContent = displayTitle(STATE.currentBook.title) || 'Cloud TTS Reader';
         const chap = STATE.currentBook.chapters?.[STATE.currentChapterIndex];
         if (chapterTitleEl) chapterTitleEl.textContent = `C.${STATE.currentChapterIndex + 1} · ${chap?.title || `${tr('chapter-word', 'Chương')} ${STATE.currentChapterIndex + 1}`}`;
         if (sentenceEl) {
@@ -7254,11 +7294,12 @@ function setPocketAwake(isAwake) {
     const exitIcon = document.getElementById('pocket-exit-icon');
     const exitLabel = document.getElementById('pocket-exit-label');
     if (overlay) overlay.dataset.awake = isAwake ? 'true' : 'false';
+    overlay?.querySelectorAll('.pocket__btn').forEach(btn => btn.setAttribute('aria-disabled', String(!isAwake)));
     exitIcon?.querySelector('use')?.setAttribute('href', isAwake ? '#i-unlock' : '#i-lock');
     if (exitLabel) {
         const key = isAwake ? 'pocket-tap-again' : 'pocket-mode-exit';
         exitLabel.dataset.i18n = key;
-        exitLabel.textContent = tr(key, isAwake ? 'Chạm lần nữa để mở khóa' : 'Chạm 2 lần để mở màn hình');
+        exitLabel.textContent = tr(key, isAwake ? 'Chạm lần nữa để mở khoá' : 'Chạm 2 lần để mở màn hình');
     }
 }
 
@@ -7293,9 +7334,17 @@ function handlePocketWakeRequest(e) {
         pocketWakeTapCount = 0;
         dimPocketOverlay();
         applyLiteMode(false);
-        if (window.APP_STATUS) APP_STATUS.toast(tr('pocket-unlocked', 'Đã mở lại màn hình đọc sách.'), 'info');
+        if (window.APP_STATUS) APP_STATUS.toast(tr('pocket-unlocked', 'Đã mở khoá màn hình'), 'info');
         if (window.AudioHapticFX) AudioHapticFX.trigger(12);
     }
+}
+
+// While the screen is locked a tap on a control only wakes it; the next tap acts.
+function pocketControlLocked() {
+    if (document.getElementById('pocket-mode-overlay')?.dataset.awake === 'true') return false;
+    brightenPocketOverlay();
+    if (window.AudioHapticFX) AudioHapticFX.trigger(5);
+    return true;
 }
 
 function initPocketModeControls() {
@@ -7312,6 +7361,7 @@ function initPocketModeControls() {
     // Pocket Play / Pause Button with active check
     document.getElementById('pocket-play-btn')?.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (pocketControlLocked()) return;
         brightenPocketOverlay();
         togglePlayback();
         setTimeout(updatePocketModeInfo, 50);
@@ -7320,6 +7370,7 @@ function initPocketModeControls() {
     // Pocket Prev Chunk Button
     document.getElementById('pocket-prev-chunk-btn')?.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (pocketControlLocked()) return;
         brightenPocketOverlay();
         playPrevChunk();
         setTimeout(updatePocketModeInfo, 50);
@@ -7328,6 +7379,7 @@ function initPocketModeControls() {
     // Pocket Next Chunk Button
     document.getElementById('pocket-next-chunk-btn')?.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (pocketControlLocked()) return;
         brightenPocketOverlay();
         playNextChunk();
         setTimeout(updatePocketModeInfo, 50);
@@ -7338,7 +7390,7 @@ function initPocketModeControls() {
         if (e.key === 'Escape' && STATE.isLiteMode) {
             dimPocketOverlay();
             applyLiteMode(false);
-            if (window.APP_STATUS) APP_STATUS.toast(tr('pocket-unlocked', 'Đã mở lại màn hình đọc sách.'), 'info');
+            if (window.APP_STATUS) APP_STATUS.toast(tr('pocket-unlocked', 'Đã mở khoá màn hình'), 'info');
         }
     });
 }
@@ -7442,8 +7494,8 @@ function updateUI() {
         titleEl.innerText = chapterTitle;
         titleEl.title = chapterTitle;
 
-        authorEl.innerText = STATE.currentBook.title;
-        authorEl.title = STATE.currentBook.title;
+        authorEl.innerText = displayTitle(STATE.currentBook.title);
+        authorEl.title = displayTitle(STATE.currentBook.title);
     }
     updatePipUI();
     if (STATE.isLiteMode) {
@@ -7622,6 +7674,12 @@ async function switchChapter(targetChapterIndex, startSentenceIndex = 0, autoPla
             return false;
         }
 
+        // The old chapter's progress must not linger on the console while the new one loads.
+        const progressBar = document.getElementById('progress-bar');
+        if (progressBar) progressBar.style.width = '0%';
+        STATE.lastProgressWidth = null;
+        STATE.lastCurrentMock = null;
+
         // 3. Cập nhật TOC UI nếu đang mở
         if (isTOCVisible()) {
             refreshTOCCurrent();
@@ -7678,7 +7736,7 @@ function updateMediaSession() {
 
         navigator.mediaSession.metadata = new MediaMetadata({
             title: chapter.title,
-            artist: STATE.currentBook.title,
+            artist: displayTitle(STATE.currentBook.title),
             album: `Chapter ${STATE.currentChapterIndex + 1}`,
             artwork: [
                 // Same object URL as the library cover; the app icon stays as fallback.

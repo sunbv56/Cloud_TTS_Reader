@@ -16,19 +16,42 @@ logger = logging.getLogger("cloud_tts_reader")
 
 router = APIRouter(tags=["WebSocket TTS"])
 
+# uid -> sockets currently holding one of that account's TTS slots.
 _active_ws_by_uid = {}
-_sockets_by_uid = {}
 _active_ws_lock = asyncio.Lock()
 
-# Close code sent to a socket whose account started playback on another tab or device.
+# Close code sent to a socket whose slot another device took over ("Listen here").
 WS_TAKEN_OVER = 4001
 
 
-async def _evict(websocket: WebSocket):
-    try:
-        await websocket.close(code=WS_TAKEN_OVER, reason="Playback moved to another device")
-    except Exception:
-        pass
+async def _claim_slot(uid, websocket, takeover):
+    """Registers the socket; with takeover, evicts the account's other sockets first."""
+    evicted = []
+    async with _active_ws_lock:
+        holders = _active_ws_by_uid.setdefault(uid, [])
+        if len(holders) >= MAX_WS_PER_USER:
+            if not takeover:
+                return False
+            evicted = holders[:]
+            holders.clear()
+        holders.append(websocket)
+    for other in evicted:
+        try:
+            await other.close(code=WS_TAKEN_OVER, reason="Taken over by another device")
+        except Exception:
+            pass
+    return True
+
+
+async def _release_slot(uid, websocket):
+    async with _active_ws_lock:
+        holders = _active_ws_by_uid.get(uid)
+        if not holders:
+            return
+        if websocket in holders:
+            holders.remove(websocket)
+        if not holders:
+            _active_ws_by_uid.pop(uid, None)
 
 
 @router.websocket("/ws")
@@ -55,25 +78,9 @@ async def websocket_endpoint(websocket: WebSocket):
                         await websocket.close(code=1008, reason="Invalid or expired authentication token")
                         return
                     uid = claims.get("uid")
-                    evicted = []
-                    async with _active_ws_lock:
-                        holders = _sockets_by_uid.get(uid, {})
-                        if _active_ws_by_uid.get(uid, 0) >= MAX_WS_PER_USER:
-                            if not msg.get("takeover") or not holders:
-                                await websocket.close(code=1013, reason="Too many active connections")
-                                return
-                            # "Play here": the older sockets give up their slots to this one.
-                            for key, (other_state, other_ws) in list(holders.items()):
-                                holders.pop(key)
-                                other_state["counted"] = False
-                                evicted.append(other_ws)
-                            remaining = _active_ws_by_uid.get(uid, 0) - len(evicted)
-                            _active_ws_by_uid[uid] = max(0, remaining)
-                        _active_ws_by_uid[uid] = _active_ws_by_uid.get(uid, 0) + 1
-                        state["counted"] = True
-                        _sockets_by_uid.setdefault(uid, {})[id(state)] = (state, websocket)
-                    for other_ws in evicted:
-                        await _evict(other_ws)
+                    if not await _claim_slot(uid, websocket, msg.get("takeover") is True):
+                        await websocket.close(code=1013, reason="Too many active connections")
+                        return
                     state["uid"] = uid
                     state["authenticated"] = True
                     async with ws_lock:
@@ -288,18 +295,8 @@ async def websocket_endpoint(websocket: WebSocket):
     # Free the per-user slot before the slow worker teardown (cancelling
     # in-flight Edge streams can take seconds); otherwise the client's
     # immediate reconnect is refused with 1013 and loops into a stall reset.
-    if state["uid"] and state.get("counted"):
-        async with _active_ws_lock:
-            uid = state["uid"]
-            holders = _sockets_by_uid.get(uid, {})
-            holders.pop(id(state), None)
-            if not holders:
-                _sockets_by_uid.pop(uid, None)
-            remaining = _active_ws_by_uid.get(uid, 0) - 1
-            if remaining > 0:
-                _active_ws_by_uid[uid] = remaining
-            else:
-                _active_ws_by_uid.pop(uid, None)
+    if state["uid"]:
+        await _release_slot(state["uid"], websocket)
 
     remaining_workers = list(worker_pool.values())
     for w_task in remaining_workers:

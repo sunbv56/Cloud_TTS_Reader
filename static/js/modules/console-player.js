@@ -15,7 +15,9 @@ const WIDE = window.matchMedia('(min-width: 1024px)');
 const SPEED_PRESETS = [0.75, 1, 1.25, 1.5, 1.75, 2];
 const SLEEP_CYCLE = [null, 15, 30, 60, 'chapter'];
 const VOLUME_KEY = 'player-volume';
+const SPEED_HINT_KEY = 'speed-hint-seen';
 const LONG_PRESS_MS = 450;
+const TIP_MS = 1800;
 
 function uiLang() {
     try { return localStorage.getItem('ui-lang') === 'vi' ? 'vi' : 'en'; } catch (_) { return 'en'; }
@@ -28,6 +30,43 @@ function t(key, fallback, vars = null) {
 
 function haptic(ms) {
     window.AudioHapticFX?.trigger?.(ms);
+}
+
+// ── Console tip: a short caption above a chip; also the polite live region for chip changes.
+let tipTimer = null;
+let tipUntil = 0;
+
+function showTip(text, anchor, { visible = true, ms = TIP_MS } = {}) {
+    const tip = $('console-tip');
+    if (!tip) return;
+    tip.textContent = text;
+    clearTimeout(tipTimer);
+    if (!visible) {
+        tip.dataset.show = 'false';
+        tipUntil = 0;
+        return;
+    }
+    tip.dataset.show = 'true';
+    const row = $('media-player');
+    if (anchor && row) {
+        const width = tip.offsetWidth;
+        const centre = anchor.offsetLeft + anchor.offsetWidth / 2;
+        tip.style.left = `${Math.max(8, Math.min(row.clientWidth - width - 8, centre - width / 2))}px`;
+    }
+    tipUntil = Date.now() + ms;
+    tipTimer = setTimeout(() => { tip.dataset.show = 'false'; tipUntil = 0; }, ms);
+}
+
+function tipShowing() {
+    return Date.now() < tipUntil;
+}
+
+function readFlag(key) {
+    try { return localStorage.getItem(key) === '1'; } catch (_) { return true; }
+}
+
+function setFlag(key) {
+    try { localStorage.setItem(key, '1'); } catch (_) {}
 }
 
 // ── Speed ────────────────────────────────────────────────────────────────────
@@ -85,7 +124,14 @@ function cycleSpeed() {
     if (index === -1) index = 0;
     const next = setSpeed(SPEED_PRESETS[index]);
     haptic(10);
-    window.APP_STATUS?.toast(t('speed-toast', 'Tốc độ đọc: {v}', { v: formatSpeed(next) }), 'info', { key: 'speed' });
+    // The chip shows the value; say it to screen readers, and teach the long press once.
+    const said = t('speed-toast', 'Tốc độ đọc: {v}', { v: formatSpeed(next) });
+    if (readFlag(SPEED_HINT_KEY)) {
+        showTip(said, null, { visible: false });
+    } else {
+        setFlag(SPEED_HINT_KEY);
+        showTip(`${said} · ${t('speed-hint', 'Nhấn giữ để chỉnh từng 0.05')}`, $('speak-speed-chip'), { ms: 3200 });
+    }
 }
 
 let stepperOpen = false;
@@ -204,7 +250,13 @@ function paintPitch() {
     const out = $('cpanel-pitch');
     if (!range || !out) return;
     const v = Number(range.value) || 0;
-    out.textContent = `${v >= 0 ? '+' : ''}${v} Hz`;
+    const word = document.createElement('span');
+    word.className = 'pitch-word';
+    word.textContent = v < 0 ? t('pitch-low', 'Trầm') : v > 0 ? t('pitch-high', 'Cao') : t('pitch-normal', 'Chuẩn');
+    const hz = document.createElement('small');
+    hz.className = 'pitch-hz';
+    hz.textContent = `${v > 0 ? '+' : ''}${v} Hz`;
+    out.replaceChildren(word, hz);
 }
 
 function initPitch() {
@@ -268,6 +320,11 @@ function syncMirrors(root = document) {
 // ── Sleep timer chip + panel group ───────────────────────────────────────────
 let sleepDetail = { active: false, seconds: 0, mode: null };
 
+// The console chip says "Sleep" when off: a bare "Off" beside Play read as a stop button.
+function sleepChipLabel(detail) {
+    return detail.active ? sleepShortLabel(detail) : t('sleep-chip-off', 'Hẹn giờ');
+}
+
 function sleepShortLabel(detail) {
     if (!detail.active) return t('state-off', 'Tắt');
     if (detail.mode === 'chapter') return t('sleep-chapter-short', 'hết ch.');
@@ -285,8 +342,8 @@ function paintSleep(detail = sleepDetail) {
     }
     if (chipLabel) {
         if (detail.active) delete chipLabel.dataset.i18n;
-        else chipLabel.dataset.i18n = 'state-off';
-        chipLabel.textContent = short;
+        else chipLabel.dataset.i18n = 'sleep-chip-off';
+        chipLabel.textContent = sleepChipLabel(detail);
     }
     const state = $('cpanel-sleep-state');
     if (state) {
@@ -320,18 +377,39 @@ function applySleep(value) {
     else window.setSleepTimerPreset?.(Number(value));
 }
 
+function clockTime(ms) {
+    return new Date(ms).toLocaleTimeString(uiLang() === 'vi' ? 'vi-VN' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function sleepTipText() {
+    const state = appState();
+    if (!state?.sleepTimer) return t('sleep-tip-off', 'Đã huỷ hẹn giờ');
+    if (state.sleepTimerMode === 'chapter') return t('sleep-tip-chapter', 'Tắt khi hết chương');
+    return t('sleep-tip-at', 'Tắt lúc {v}', { v: clockTime(state.sleepTimerEnd || Date.now()) });
+}
+
 function cycleSleep() {
     const mode = appState()?.sleepTimer ? appState().sleepTimerMode : null;
     const index = SLEEP_CYCLE.indexOf(mode);
     const next = SLEEP_CYCLE[(index + 1) % SLEEP_CYCLE.length];
     applySleep(next);
     haptic(10);
+    showTip(sleepTipText(), $('sleep-chip'));
+}
+
+// Off: a tap starts 15′ and quick taps (while the caption shows) step on through the presets.
+// Already set: a tap opens the timer group instead of silently restarting the countdown.
+function onSleepChip() {
+    if (appState()?.sleepTimer && !tipShowing()) {
+        if (openPanel({ focus: 'sleep' })) return;
+    }
+    cycleSleep();
 }
 
 function initSleep() {
     $('sleep-chip')?.addEventListener('click', (event) => {
         event.stopPropagation();
-        cycleSleep();
+        onSleepChip();
     });
     $('console-panel')?.addEventListener('click', (event) => {
         const btn = event.target.closest('[data-sleep]');
@@ -357,7 +435,7 @@ function initSleep() {
 const STATUS_TONE_KEYS = {
     quiet: ['status-ready', 'status-streaming', 'status-paused', 'status-saved', 'status-deleted', 'system-ready'],
     error: ['status-error', 'status-config-error', 'status-save-error', 'status-stalled-cleared', 'status-progress-unsaved', 'status-chapter-error'],
-    warn: ['status-disconnected', 'status-conn-failed', 'status-conn-busy', 'status-session-expired', 'status-sleep-stopped',
+    warn: ['status-disconnected', 'status-conn-failed', 'status-conn-busy', 'status-taken-over', 'status-session-expired', 'status-sleep-stopped',
         'status-tts-timeout', 'status-autoplay-blocked', 'status-offline', 'status-txt-failed']
 };
 
@@ -379,10 +457,28 @@ function statusTone(text) {
     return 'busy';
 }
 
+const STATUS_SHORT_KEYS = {
+    'status-conn-busy': 'status-elsewhere-short',
+    'status-taken-over': 'status-elsewhere-short',
+    'status-tts-wait': 'status-tts-wait-short',
+    'status-buffering': 'status-buffering-short'
+};
+
+function shortStatus(text) {
+    const strings = window.translations || {};
+    for (const [key, shortKey] of Object.entries(STATUS_SHORT_KEYS)) {
+        if (strings.en?.[key] === text || strings.vi?.[key] === text) return t(shortKey, '');
+    }
+    return '';
+}
+
 function paintStatus() {
     const indicator = $('status-indicator');
     if (!indicator) return;
     const text = indicator.textContent;
+    const short = shortStatus(text);
+    if (short) indicator.dataset.short = short;
+    else delete indicator.dataset.short;
     const tone = statusTone(text);
     $('media-player')?.setAttribute('data-status-tone', tone);
     const panelStatus = $('cpanel-status');
@@ -438,7 +534,7 @@ function paintProgress() {
     const pct = progressPercent();
     const fill = document.querySelector('#cpanel-track .track__fill');
     if (fill) fill.style.width = `${pct}%`;
-    const count = $('current-time-mock')?.textContent || '0 / 0';
+    const count = $('current-time-mock')?.textContent || '— / —';
     const panelCount = $('cpanel-count');
     if (panelCount) panelCount.textContent = t('sentence-of', 'Câu {v}', { v: count });
     const now = info ? info.sentence + 1 : 1;
@@ -645,10 +741,10 @@ function syncPanelLayout() {
     panel.setAttribute('aria-modal', String(!WIDE.matches));
 }
 
-function openPanel() {
+function openPanel({ focus = null } = {}) {
     const panel = $('console-panel');
-    if (!panel || panelOpen) return;
-    if ($('media-player-shell')?.classList.contains('player-discovery-dock')) return;
+    if (!panel || panelOpen) return false;
+    if ($('media-player-shell')?.classList.contains('player-discovery-dock')) return false;
     setStepper(false);
     panelOpen = true;
     panelReturnFocus = document.activeElement;
@@ -665,7 +761,14 @@ function openPanel() {
     $('console-panel-btn')?.setAttribute('aria-expanded', 'true');
     document.addEventListener('keydown', onPanelKey, true);
     document.addEventListener('pointerdown', onPanelOutside, true);
-    $('cpanel-close')?.focus({ preventScroll: true });
+    const group = focus === 'sleep' ? panel.querySelector('.cpanel__sleep') : null;
+    if (group) {
+        group.scrollIntoView({ block: 'nearest' });
+        (group.querySelector('[aria-pressed="true"]') || group.querySelector('button'))?.focus({ preventScroll: true });
+    } else {
+        $('cpanel-close')?.focus({ preventScroll: true });
+    }
+    return true;
 }
 
 function closePanel({ restoreFocus = true } = {}) {
@@ -736,7 +839,7 @@ function initPanel() {
         });
     }
 
-    bindSwipe($('media-player'), 'up', openPanel);
+    bindSwipe($('media-player'), 'up', () => openPanel());
     bindSwipe(document.querySelector('#console-panel .sheet__grab'), 'down', () => closePanel());
     bindSwipe(document.querySelector('#console-panel .cpanel__head'), 'down', () => closePanel());
 
