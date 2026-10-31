@@ -340,7 +340,7 @@ function initSleep() {
 // ── Status line ──────────────────────────────────────────────────────────────
 function statusTone(text) {
     const s = (text || '').trim();
-    if (!s || /^(Ready|Streaming|Paused|System Ready|Changes saved!|Đã xóa!)$/i.test(s)) return 'quiet';
+    if (!s || /^(Ready|Streaming|Paused|System Ready|Changes saved!|Đã xóa!|Deleted!)$/i.test(s)) return 'quiet';
     if (/^(Lỗi|Error|Config Error)|RAM\/ROM|Chưa lưu/i.test(s)) return 'error';
     if (/^Session Expired|^Sleep Timer|Disconnected|failed|không phản hồi|Bấm Play|Ngoại tuyến|^Offline/i.test(s)) return 'warn';
     return 'busy';
