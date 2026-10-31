@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cloud-tts-v15-console-shell';
+const CACHE_NAME = 'cloud-tts-v16-console-library';
 const ASSETS = [
     '/',
     '/static/index.html',

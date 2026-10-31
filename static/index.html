@@ -48,7 +48,7 @@
     <!-- Mini player widget (Document PiP); colours come from the console tokens -->
     <link rel="stylesheet" href="/static/css/mini-player.css?v=15">
     <!-- Console design system: tokens, components, app shell -->
-    <link rel="stylesheet" href="/static/css/console.css?v=1">
+    <link rel="stylesheet" href="/static/css/console.css?v=2">
     <style type="text/tailwindcss">
         @theme {
             --font-reading: var(--font-read);
@@ -93,6 +93,21 @@
         <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M4 15v-3a8 8 0 0 1 16 0v3"/><rect x="3.5" y="14" width="4" height="6" rx="1.5"/><rect x="16.5" y="14" width="4" height="6" rx="1.5"/></symbol>
         <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 3L5 13.5h6L10 21l8-10.5h-6z"/></symbol>
         <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M3 3l18 18M8.5 16.5a5 5 0 0 1 7 0M5 12.5a10 10 0 0 1 4-2.3M19 12.5a10 10 0 0 0-3.2-2M12 20h.01"/></symbol>
+        <symbol id="i-pause" viewBox="0 0 24 24"><path d="M6 4.5h4v15H6zM14 4.5h4v15h-4z" fill="currentColor" stroke="none"/></symbol>
+        <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+        <symbol id="i-dots" viewBox="0 0 24 24"><path d="M12 5.5v.01M12 12v.01M12 18.5v.01" stroke-width="3"/></symbol>
+        <symbol id="i-dotsh" viewBox="0 0 24 24"><path d="M5.5 12h.01M12 12h.01M18.5 12h.01" stroke-width="3"/></symbol>
+        <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="7" rx="1"/><rect x="13.5" y="4" width="6.5" height="7" rx="1"/><rect x="4" y="13" width="6.5" height="7" rx="1"/><rect x="13.5" y="13" width="6.5" height="7" rx="1"/></symbol>
+        <symbol id="i-rows" viewBox="0 0 24 24"><rect x="4" y="4.5" width="4" height="5.5" rx="1"/><rect x="4" y="14" width="4" height="5.5" rx="1"/><path d="M11 6h9M11 9h5M11 15.5h9M11 18.5h5"/></symbol>
+        <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M20.5 16l-5-5-8.5 8.5"/></symbol>
+        <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M4.5 15v3.5a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5V15"/></symbol>
+        <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M4.5 15v3.5a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5V15"/></symbol>
+        <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 12.5h9l1-12.5M10 11v5M14 11v5"/></symbol>
+        <symbol id="i-pen" viewBox="0 0 24 24"><path d="M14.5 5.5l4 4M4.5 19.5l1-4.5L16 4.5l3.5 3.5L9 18.5z"/></symbol>
+        <symbol id="i-merge" viewBox="0 0 24 24"><path d="M6 4v5a4 4 0 0 0 4 4h8M14.5 9.5L18 13l-3.5 3.5M6 20v-4"/></symbol>
+        <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6.5C10 5 7 4.5 4 5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V5c-3-.5-6 0-8 1.5zM12 6.5v13"/></symbol>
+        <symbol id="i-crop" viewBox="0 0 24 24"><path d="M7 3v14h14M3 7h14v14"/></symbol>
+        <symbol id="i-swap" viewBox="0 0 24 24"><path d="M5 8h13M14.5 4.5L18 8l-3.5 3.5M19 16H6M9.5 12.5L6 16l3.5 3.5"/></symbol>
     </svg>
 
     <header class="app-header" id="app-header">
@@ -184,59 +199,35 @@
                     </button>
                 </div>
 
-                <!-- Panel: Library -->
-                <div id="panel-library" role="tabpanel" aria-labelledby="tab-library"
-                    class="glass flex-1 min-h-0 flex flex-col overflow-hidden rounded-3xl">
-                <div class="p-3.5 sm:p-5 border-b border-glass-border flex items-center justify-between bg-white/5">
-                    <h2 class="font-bold flex items-center gap-2 sm:gap-3 text-[#dae2fd] flex-1 min-w-0 mr-1 sm:mr-2 text-sm sm:text-base">
-                        <i class="fas fa-layer-group text-primary"></i>
-                        <span class="truncate" data-i18n="library">Library</span>
-                    </h2>
-                    <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                        <button id="upload-book-btn" type="button" class="group cursor-pointer">
-                            <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-primary text-black flex items-center justify-center shadow-[0_0_12px_rgba(0,229,255,0.4)] group-hover:scale-110 group-hover:shadow-[0_0_20px_rgba(0,229,255,0.6)] transition-all duration-300 relative overflow-hidden"
-                                title="Upload File">
-                                <div
-                                    class="absolute inset-0 bg-white/20 opacity-0 group-hover:opacity-100 transition-opacity">
-                                </div>
-                                <i class="fas fa-plus text-xs sm:text-sm font-black relative z-10"></i>
-                            </div>
-                        </button>
-                        <input type="file" id="file-input" class="hidden" accept=".txt">
-                        <button id="select-images-btn" type="button"
-                            class="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-white/5 text-primary hover:bg-primary hover:text-black transition-all flex items-center justify-center"
-                            title="Quản lý ảnh của truyện hiện tại" aria-label="Quản lý ảnh của truyện hiện tại">
-                            <i class="fas fa-image text-xs sm:text-sm"></i>
-                        </button>
-                        <input type="file" id="image-input" class="hidden"
-                            accept=".jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.image" multiple>
-                    </div>
-                </div>
-                <!-- Library quick search -->
-                <div class="px-3 pt-3 shrink-0">
-                    <div class="relative">
-                        <i class="fas fa-search absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500 text-xs pointer-events-none"></i>
-                        <input type="text" id="library-search" autocomplete="off"
-                            placeholder="Tìm truyện trong thư viện..."
-                            aria-label="Tìm truyện trong thư viện"
-                            class="w-full min-h-[44px] bg-black/30 border border-white/10 rounded-xl pl-9 pr-9 text-sm placeholder:text-slate-600 focus:border-primary/50 focus:outline-none transition-colors"
-                            style="background-color: var(--theme-surface); color: var(--theme-text);">
-                        <button id="library-clear-search" type="button" hidden
-                            class="absolute right-2 top-1/2 -translate-y-1/2 w-7 h-7 rounded-lg flex items-center justify-center text-slate-500 hover:text-white hover:bg-white/10 transition-all"
-                            aria-label="Xóa tìm kiếm thư viện">
-                            <i class="fas fa-times text-xs"></i>
+                <!-- Panel: Library (mục lục rows; same row component as Discovery's list view) -->
+                <div id="panel-library" role="tabpanel" aria-labelledby="tab-library" class="lib-panel">
+                    <div class="lib-tools">
+                        <div class="search-field">
+                            <svg class="ic ic--sm" aria-hidden="true"><use href="#i-search"/></svg>
+                            <input type="text" id="library-search" autocomplete="off" enterkeyhint="search"
+                                placeholder="Tìm trong thư viện" aria-label="Tìm trong thư viện"
+                                data-i18n-placeholder="library-search-placeholder" data-i18n-aria="library-search-placeholder">
+                            <button id="library-clear-search" type="button" class="search-field__clear" hidden
+                                aria-label="Xoá tìm kiếm" data-i18n-aria="clear-search">
+                                <svg class="ic ic--sm" aria-hidden="true"><use href="#i-x"/></svg>
+                            </button>
+                        </div>
+                        <button id="upload-book-btn" type="button" class="icon-btn icon-btn--line"
+                            aria-label="Thêm truyện (TXT, EPUB, PDF)" title="Thêm truyện (TXT, EPUB, PDF)" data-i18n-aria="add-book-long">
+                            <svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg>
                         </button>
                     </div>
-                </div>
-                <div id="book-list" class="flex-1 overflow-y-auto p-3 flex flex-col gap-2">
-                    <div class="text-center py-12 px-6">
-                        <i class="fas fa-cloud-upload-alt text-4xl text-slate-700 mb-4 block"></i>
-                        <p class="text-slate-500 italic text-sm leading-relaxed" data-i18n="no-books-loaded">No books
-                            loaded.<br>Drag or upload a
-                            .txt file!</p>
+                    <div class="seg lib-filter" role="group" aria-label="Lọc truyện" data-i18n-aria="filter-label" data-lib-filter>
+                        <button type="button" data-filter="listening" aria-pressed="true" data-i18n="filter-listening">Đang nghe</button>
+                        <button type="button" data-filter="all" aria-pressed="false" data-i18n="filter-all">Tất cả</button>
+                        <button type="button" data-filter="done" aria-pressed="false" data-i18n="filter-done">Đã xong</button>
+                    </div>
+                    <ul id="book-list" class="lib-list" aria-label="Truyện trong thư viện" data-i18n-aria="library-list-label"></ul>
+                    <div id="library-empty" class="lib-empty" hidden>
+                        <p id="library-empty-text"></p>
+                        <button id="library-empty-btn" type="button" class="btn"></button>
                     </div>
                 </div>
-            </div>
 
             <!-- Panel: Table of Contents -->
             <div id="panel-toc" role="tabpanel" aria-labelledby="tab-toc" hidden
@@ -718,115 +709,78 @@
                 </div>
             </div>
         </section>
-        <!-- Full-View Discovery Mode -->
-        <section id="discovery-mode" class="discovery">
-            <!-- Search Bar Area -->
-            <div class="px-4 sm:px-6 lg:px-20 pt-8 sm:pt-16 pb-6 sm:pb-8 flex flex-col items-center">
-                <h1 class="discovery-hero-title text-2xl sm:text-3xl font-semibold mb-2 tracking-tight text-center text-main"
-                    data-i18n="discover-masterpiece">Discover Your Next Masterpiece</h1>
-                <p class="text-xs sm:text-sm text-primary/80 font-serif-royal italic mb-6 sm:mb-8 tracking-wider text-center">
-                    Kho tàng tri thức & Nghệ thuật âm thanh hoàng gia
-                </p>
-                <div class="relative w-full max-w-2xl group">
-                    <div
-                        class="absolute inset-0 bg-primary/20 blur-xl rounded-full opacity-40 group-hover:opacity-80 transition-opacity">
+        <!-- Discovery = Home / kệ sách: Nghe tiếp, search, filter, sort, grid ⇄ list -->
+        <section id="discovery-mode" class="discovery" aria-labelledby="discovery-heading">
+            <div class="shelf">
+                <header class="shelf-head">
+                    <h1 id="discovery-heading" class="shelf-title" data-i18n="shelf-title">Kệ sách</h1>
+                    <button id="discovery-add-btn" type="button" class="btn btn--primary shelf-add">
+                        <svg class="ic ic--sm" aria-hidden="true"><use href="#i-plus"/></svg>
+                        <span data-i18n="add-book">Thêm truyện</span>
+                    </button>
+                </header>
+
+                <section id="discovery-continue-card" class="resume" hidden aria-labelledby="discovery-continue-title">
+                    <span id="discovery-continue-cover" class="cover cover--resume" aria-hidden="true"></span>
+                    <div class="resume__body">
+                        <p id="discovery-continue-label" class="resume__label mono">Nghe gần nhất</p>
+                        <h2 id="discovery-continue-title" class="resume__title">—</h2>
+                        <p id="discovery-continue-meta" class="resume__meta mono">—</p>
+                        <div class="bar" aria-hidden="true"><span id="discovery-continue-progress" class="bar__fill"></span></div>
                     </div>
-                    <input id="discovery-search" type="text" placeholder="Search library..."
-                        class="w-full bg-surface/90 border border-glass-border rounded-full pl-12 sm:pl-14 pr-6 sm:pr-8 py-3.5 sm:py-4 text-sm sm:text-base text-main placeholder:text-slate-400 focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 relative z-10 shadow-lg transition-all">
-                    <i
-                        class="fas fa-search absolute left-4 sm:left-6 top-1/2 -translate-y-1/2 text-primary/80 z-10 pointer-events-none text-sm sm:text-base"></i>
-                </div>
-                <section id="discovery-continue-card" hidden class="mt-4 sm:mt-6 md:mt-8 rounded-2xl sm:rounded-3xl p-3 sm:p-4 md:p-5 flex flex-row items-center gap-3 sm:gap-4 md:gap-5 shadow-xl transition-all cursor-pointer group/cont border border-glass-border bg-surface" aria-label="Tiếp tục nghe">
-                    <div class="discovery-book-art relative w-12 h-12 sm:w-16 sm:h-16 md:w-20 md:h-20 rounded-xl sm:rounded-2xl shrink-0 overflow-hidden flex items-center justify-center bg-surface-high border border-glass-border group-hover/cont:border-primary transition-colors">
-                        <i class="fas fa-headphones-alt relative z-10 text-base sm:text-xl md:text-2xl text-primary/90"></i>
-                    </div>
-                    <div class="min-w-0 flex-1">
-                        <div class="text-[10px] sm:text-xs font-black tracking-[0.14em] uppercase text-primary font-serif-royal">ĐANG NGHE</div>
-                        <h2 id="discovery-continue-title" class="mt-0.5 sm:mt-1 text-sm sm:text-base md:text-lg font-bold text-main truncate font-cinzel">—</h2>
-                        <p id="discovery-continue-meta" class="mt-0.5 text-[11px] sm:text-xs md:text-sm text-slate-400 truncate">—</p>
-                        <div class="mt-2 sm:mt-2.5 h-1 sm:h-1.5 rounded-full overflow-hidden bg-surface-high border border-glass-border">
-                            <div id="discovery-continue-progress" class="h-full bg-gradient-to-r from-primary/50 to-primary rounded-full transition-all duration-300" style="width: 0%"></div>
-                        </div>
-                    </div>
-                    <button id="discovery-continue-btn" type="button" class="shrink-0 min-h-9 sm:min-h-11 px-3 sm:px-5 py-2 rounded-xl sm:rounded-2xl btn-primary font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 sm:gap-2 shadow-lg shadow-primary/20 hover:brightness-110 active:scale-95 transition-all text-white">
-                        <i class="fas fa-play text-xs sm:text-sm text-white"></i>
-                        <span class="whitespace-nowrap text-white">Nghe tiếp</span>
+                    <button id="discovery-continue-btn" type="button" class="btn btn--primary resume__btn">
+                        <svg class="ic ic--sm" aria-hidden="true"><use href="#i-play"/></svg>
+                        <span data-i18n="continue-listening">Nghe tiếp</span>
                     </button>
                 </section>
-            </div>
 
-            <!-- Main Content Grid -->
-            <div class="flex-1 px-4 sm:px-6 lg:px-20 pb-24 max-w-[1600px] w-full mx-auto flex flex-col lg:flex-row gap-6 sm:gap-10">
-
-                <!-- Recent Reads Carousel/Grid -->
-                <div class="flex-1 min-w-0">
-                    <div class="flex flex-wrap items-center justify-between gap-3 mb-6">
-                        <h2 class="text-xl font-bold text-white flex items-center gap-2"><i
-                                class="fas fa-clock text-primary"></i> <span data-i18n="recent-reads">Recent
-                                Reads</span></h2>
-                        <div class="flex items-center gap-2">
-                            <span id="discovery-result-count" class="text-xs text-slate-400" aria-live="polite"></span>
-                            <div class="flex rounded-xl border border-white/10 p-1 bg-surface-low" role="group" aria-label="Kiểu hiển thị thư viện">
-                                <button id="discovery-grid-view" type="button" class="w-11 h-11 rounded-lg bg-primary/15 text-primary transition-colors" aria-label="Hiển thị dạng lưới" aria-pressed="true"><i class="fas fa-th"></i></button>
-                                <button id="discovery-list-view" type="button" class="w-11 h-11 rounded-lg text-slate-400 hover:text-white transition-colors" aria-label="Hiển thị dạng danh sách" aria-pressed="false"><i class="fas fa-list"></i></button>
-                            </div>
+                <div class="shelf-tools">
+                    <div class="search-field shelf-search">
+                        <svg class="ic ic--sm" aria-hidden="true"><use href="#i-search"/></svg>
+                        <input id="discovery-search" type="text" autocomplete="off" enterkeyhint="search"
+                            placeholder="Tìm truyện" aria-label="Tìm truyện"
+                            data-i18n-placeholder="shelf-search-placeholder" data-i18n-aria="shelf-search-placeholder">
+                        <button id="discovery-search-clear" type="button" class="search-field__clear" hidden
+                            aria-label="Xoá tìm kiếm" data-i18n-aria="clear-search">
+                            <svg class="ic ic--sm" aria-hidden="true"><use href="#i-x"/></svg>
+                        </button>
+                    </div>
+                    <div class="seg shelf-filter" role="group" aria-label="Lọc truyện" data-i18n-aria="filter-label" data-lib-filter>
+                        <button type="button" data-filter="listening" aria-pressed="true" data-i18n="filter-listening">Đang nghe</button>
+                        <button type="button" data-filter="all" aria-pressed="false" data-i18n="filter-all">Tất cả</button>
+                        <button type="button" data-filter="done" aria-pressed="false" data-i18n="filter-done">Đã xong</button>
+                    </div>
+                    <div class="shelf-tools__row">
+                        <span id="discovery-result-count" class="shelf-count mono" aria-live="polite"></span>
+                        <label class="shelf-sort">
+                            <span class="sr-only-text" data-i18n="sort-label">Sắp xếp</span>
+                            <select id="discovery-sort" class="select">
+                                <option value="recent" data-i18n="sort-recent">Gần đây</option>
+                                <option value="title" data-i18n="sort-title">Tên A–Z</option>
+                                <option value="progress" data-i18n="sort-progress">Tiến độ</option>
+                            </select>
+                        </label>
+                        <div class="seg seg--icons" role="group" aria-label="Kiểu hiển thị" data-i18n-aria="view-label">
+                            <button id="discovery-grid-view" type="button" aria-pressed="false" aria-label="Lưới bìa" title="Lưới bìa" data-i18n-aria="view-grid">
+                                <svg class="ic ic--sm" aria-hidden="true"><use href="#i-grid"/></svg>
+                            </button>
+                            <button id="discovery-list-view" type="button" aria-pressed="true" aria-label="Danh sách" title="Danh sách" data-i18n-aria="view-list">
+                                <svg class="ic ic--sm" aria-hidden="true"><use href="#i-rows"/></svg>
+                            </button>
                         </div>
-                    </div>
-                    <div id="discovery-grid" class="grid grid-cols-2 md:grid-cols-2 2xl:grid-cols-3 gap-3 sm:gap-6">
-                        <!-- Populated by JS -->
-                    </div>
-                    <div id="discovery-search-empty" hidden class="mt-6 rounded-3xl border border-dashed border-white/15 bg-surface-low/40 p-10 text-center">
-                        <i class="fas fa-search text-primary text-2xl mb-3"></i>
-                        <p id="discovery-search-empty-text" class="font-bold text-white">Không tìm thấy sách phù hợp.</p>
-                        <button id="discovery-clear-search" type="button" class="mt-4 min-h-11 px-4 rounded-xl border border-primary/30 text-primary font-bold hover:bg-primary/10 transition-colors">Xóa tìm kiếm</button>
                     </div>
                 </div>
 
-                <!-- Upload Drag & Drop Zone -->
-                <div class="lg:w-[400px] shrink-0">
-                    <h2 class="text-xl font-bold text-white flex items-center gap-2 mb-6"><i
-                            class="fas fa-cloud-upload-alt text-primary"></i> <span data-i18n="import-book">Import
-                            Book</span></h2>
-                    <div id="discovery-drop-zone"
-                        class="glass flex flex-col items-center justify-center h-52 sm:h-80 rounded-3xl border-2 border-dashed border-white/20 hover:border-primary/50 hover:bg-primary/5 transition-all cursor-pointer group relative overflow-hidden">
-                        <div
-                            class="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity glow-pulse">
-                        </div>
-                        <div
-                            class="w-20 h-20 rounded-full bg-white/5 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-[0_0_30px_rgba(0,229,255,0.1)] group-hover:shadow-[0_0_40px_rgba(0,229,255,0.3)] relative z-10">
-                            <i class="fas fa-file-import text-3xl text-primary"></i>
-                        </div>
-                        <div class="text-xl font-bold text-white mb-2 relative z-10" data-i18n="click-or-drag-file">
-                            Click or drag a file</div>
-                        <div class="text-slate-400 text-sm relative z-10" data-i18n="supported-formats">Supported
-                            formats: .txt, .epub, .pdf</div>
-                        <input type="file" id="discovery-file-input" class="hidden" accept=".txt,.epub,.pdf">
-                    </div>
-                    <button id="discovery-select-images-btn" type="button"
-                        class="mt-3 w-full py-3 rounded-2xl border border-primary/30 bg-primary/5 text-primary text-sm font-bold hover:bg-primary/15 transition-all">
-                        <i class="fas fa-images mr-2"></i> Quản lý ảnh truyện hiện tại
-                    </button>
-                    <p class="mt-2 text-center text-xs text-slate-500">Mở một truyện trước để thêm, thay hoặc xóa ảnh.</p>
-                    <details class="mt-4 rounded-2xl border border-white/10 bg-surface-low/50 p-4 text-sm">
-                        <summary class="cursor-pointer font-bold text-primary" data-i18n="view-format-example">Xem định dạng chương</summary>
-                        <p class="mt-3 text-xs leading-relaxed text-slate-400" data-i18n="chapter-format-hint">
-                            Dùng dòng === để phân cách các chương. Nếu không có ===, toàn bộ file sẽ được nhập thành một chương.
-                        </p>
-                        <pre class="mt-3 overflow-x-auto rounded-xl bg-black/20 p-3 text-[11px] leading-relaxed text-slate-300">Chương 1: Khởi đầu
+                <ul id="discovery-grid" class="shelf-list" aria-labelledby="discovery-heading"></ul>
 
-Nội dung chương một...
-
-===
-
-Chương 2: Hành trình
-
-Nội dung chương hai...</pre>
-                        <a href="/static/examples/mau-sach-cloud-tts.txt" download
-                            class="mt-3 inline-flex items-center gap-2 text-xs font-bold text-primary hover:underline"
-                            data-i18n="download-sample-file"><i class="fas fa-download"></i> Tải file mẫu .txt</a>
-                    </details>
+                <div id="discovery-search-empty" class="lib-empty" hidden>
+                    <p id="discovery-search-empty-text">Không tìm thấy truyện phù hợp.</p>
+                    <button id="discovery-clear-search" type="button" class="btn">Xoá tìm kiếm</button>
                 </div>
+
+                <input type="file" id="discovery-file-input" class="hidden" accept=".txt,.epub,.pdf" tabindex="-1">
             </div>
+            <div class="drop-veil" aria-hidden="true"><span data-i18n="drop-release">Thả file để thêm truyện</span></div>
         </section>
         <!-- Console row: sticks to the bottom on every screen. In Discovery it is the return dock. -->
         <div id="media-player-shell" class="console-shell">
@@ -836,7 +790,7 @@ Nội dung chương hai...</pre>
                 </div>
 
                 <div id="player-info-layer" class="console-info">
-                    <div class="console-art" aria-hidden="true">
+                    <div id="player-art" class="console-art" aria-hidden="true">
                         <svg class="ic" aria-hidden="true"><use href="#i-headphones"/></svg>
                     </div>
                     <div class="console-meta">
@@ -912,74 +866,136 @@ Nội dung chương hai...</pre>
     </div>
     <div id="app-toast-region" class="toast-region" aria-live="polite"></div>
 
-    <!-- Import Logic -->
-    <div id="upload-options-modal" class="fixed inset-0 z-[180] hidden items-center justify-center p-4">
-        <div class="absolute inset-0 bg-black/70 backdrop-blur-md" data-close-upload-options></div>
-        <div class="glass w-full max-w-md rounded-3xl p-6 relative">
-            <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-upload-options aria-label="Đóng"><i class="fas fa-times"></i></button>
-            <h2 class="text-xl font-black text-white mb-2">Thêm truyện mới</h2>
-            <p class="text-sm text-slate-400 mb-6">Bạn có muốn chọn ảnh minh họa cùng lúc với file TXT không?</p>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <button id="upload-txt-only-btn" type="button" data-upload-mode="txt" class="group rounded-2xl border border-white/10 bg-white/5 p-4 text-left hover:-translate-y-1 hover:border-primary/70 hover:bg-primary/10 hover:shadow-[0_12px_30px_rgba(0,229,255,0.14)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-all duration-200">
-                    <i class="fas fa-file-alt text-primary text-xl mb-2 transition-transform duration-200 group-hover:scale-110"></i>
-                    <span class="block font-bold text-white group-hover:text-primary transition-colors">Chỉ file TXT</span>
-                    <span class="block text-xs text-slate-400 mt-1">Định dạng: <b>.txt, .epub, .pdf</b></span>
-                    <span class="block text-xs text-slate-500 mt-1">Có thể thêm ảnh sau</span>
+    <!-- Import: one "Thêm truyện" dialog (TXT/EPUB/PDF, optional illustrations, drag & drop) -->
+    <input type="file" id="file-input" class="hidden" accept=".txt,.epub,.pdf" tabindex="-1">
+    <input type="file" id="image-input" class="hidden" accept=".jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.image" multiple tabindex="-1">
+    <input type="file" id="merge-input" class="hidden" accept=".txt,.epub,.pdf" tabindex="-1">
+
+    <div id="upload-options-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="upload-options-title">
+        <div class="modal__scrim" data-close-upload-options></div>
+        <div class="modal-card modal-card--sm" data-drop-target>
+            <div class="modal-head">
+                <h2 id="upload-options-title" class="modal-title" data-i18n="add-book">Thêm truyện</h2>
+                <button type="button" class="icon-btn" data-close-upload-options aria-label="Đóng" data-i18n-aria="close">
+                    <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
                 </button>
-                <button id="upload-txt-images-btn" type="button" data-upload-mode="txt-images" class="group rounded-2xl border border-primary/40 bg-primary/10 p-4 text-left hover:-translate-y-1 hover:border-primary hover:bg-primary/20 hover:shadow-[0_12px_30px_rgba(0,229,255,0.22)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-all duration-200">
-                    <i class="fas fa-images text-primary text-xl mb-2 transition-transform duration-200 group-hover:scale-110"></i>
-                    <span class="block font-bold text-white group-hover:text-primary transition-colors">TXT + ảnh</span>
-                    <span class="block text-xs text-slate-400 mt-1">TXT: <b>.txt</b></span>
-                    <span class="block text-xs text-slate-500 mt-1">Ảnh: <b>.jpg .jpeg .png .webp .gif .bmp .avif .image</b></span>
+            </div>
+            <button id="upload-txt-only-btn" type="button" data-upload-mode="txt" class="import-drop">
+                <svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg>
+                <span class="import-drop__title" data-i18n="import-choose-file">Chọn file truyện</span>
+                <span class="import-drop__hint mono">.txt · .epub · .pdf · ≤ 25 MB</span>
+                <span class="import-drop__hint" data-i18n="import-drop-hint">Hoặc kéo thả file vào khung này</span>
+            </button>
+            <button id="upload-txt-images-btn" type="button" data-upload-mode="txt-images" class="import-option">
+                <svg class="ic" aria-hidden="true"><use href="#i-image"/></svg>
+                <span class="import-option__text">
+                    <span class="import-option__title" data-i18n="import-with-images">Truyện kèm ảnh minh hoạ</span>
+                    <span class="import-option__hint" data-i18n="import-with-images-hint">Chọn file truyện và nhiều ảnh; ảnh đầu tiên thành bìa.</span>
+                </span>
+                <svg class="ic ic--sm" aria-hidden="true"><use href="#i-right"/></svg>
+            </button>
+            <details class="format-help">
+                <summary data-i18n="view-format-example">Xem định dạng chương</summary>
+                <p data-i18n="chapter-format-hint">Dùng dòng === để phân cách các chương. Nếu không có ===, toàn bộ file sẽ được nhập thành một chương.</p>
+                <pre class="format-help__sample">Chương 1: Khởi đầu
+
+Nội dung chương một...
+
+===
+
+Chương 2: Hành trình
+
+Nội dung chương hai...</pre>
+                <a href="/static/examples/mau-sach-cloud-tts.txt" download class="format-help__link">
+                    <svg class="ic ic--sm" aria-hidden="true"><use href="#i-download"/></svg>
+                    <span data-i18n="download-sample-file">Tải file mẫu .txt</span>
+                </a>
+            </details>
+        </div>
+    </div>
+
+    <div id="upload-files-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="upload-files-title">
+        <div class="modal__scrim" data-close-upload-files></div>
+        <div class="modal-card modal-card--sm">
+            <div class="modal-head">
+                <h2 id="upload-files-title" class="modal-title" data-i18n="import-with-images">Truyện kèm ảnh minh hoạ</h2>
+                <button type="button" class="icon-btn" data-close-upload-files aria-label="Đóng" data-i18n-aria="close">
+                    <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+                </button>
+            </div>
+            <div class="field-stack">
+                <label class="field-label" for="book-text-path" data-i18n="import-text-label">File truyện (.txt, .epub, .pdf)</label>
+                <div class="file-pick">
+                    <input id="book-text-path" type="text" readonly class="input" placeholder="Chưa chọn file" data-i18n-placeholder="import-none-selected">
+                    <button id="browse-book-text-btn" type="button" class="btn" data-i18n="browse">Chọn</button>
+                </div>
+            </div>
+            <div class="field-stack">
+                <label class="field-label" for="book-image-path" data-i18n="import-images-label">Ảnh minh hoạ (tuỳ chọn)</label>
+                <div class="file-pick">
+                    <input id="book-image-path" type="text" readonly class="input" placeholder="Chưa chọn ảnh" data-i18n-placeholder="import-no-images">
+                    <button id="browse-book-image-btn" type="button" class="btn" data-i18n="browse">Chọn</button>
+                </div>
+                <p class="field-hint mono">.jpg .jpeg .png .webp .gif .bmp .avif</p>
+            </div>
+            <input id="book-text-input" type="file" class="hidden" accept=".txt,.epub,.pdf" tabindex="-1">
+            <input id="book-image-input" type="file" class="hidden" accept=".jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.image" multiple tabindex="-1">
+            <div class="modal-actions">
+                <button id="cancel-upload-files-btn" type="button" class="btn" data-i18n="cancel">Huỷ</button>
+                <button id="confirm-upload-files-btn" type="button" class="btn btn--primary">
+                    <svg class="ic ic--sm" aria-hidden="true"><use href="#i-upload"/></svg>
+                    <span data-i18n="import-confirm">Thêm vào thư viện</span>
                 </button>
             </div>
         </div>
     </div>
 
-    <div id="upload-files-modal" class="fixed inset-0 z-[190] hidden items-center justify-center p-4">
-        <div class="absolute inset-0 bg-black/70 backdrop-blur-md" data-close-upload-files></div>
-        <div class="glass w-full max-w-lg rounded-3xl p-6 relative">
-            <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-upload-files aria-label="Đóng"><i class="fas fa-times"></i></button>
-            <h2 class="text-xl font-black text-white mb-1">Chọn file import</h2>
-            <p class="text-sm text-slate-400 mb-5">Chọn riêng file TXT và ảnh minh họa trước khi import.</p>
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">File nội dung (.txt)</label>
-                    <div class="flex gap-2">
-                        <input id="book-text-path" type="text" readonly placeholder="Chưa chọn file TXT" class="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-slate-300 focus:outline-none">
-                        <button id="browse-book-text-btn" type="button" class="shrink-0 rounded-xl border border-primary/40 bg-primary/10 px-4 py-2.5 text-sm font-bold text-primary hover:bg-primary/20 hover:border-primary transition-all"><i class="fas fa-folder-open mr-2"></i>Browse</button>
-                    </div>
+    <div id="image-manager-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="image-manager-heading">
+        <div class="modal__scrim" data-close-image-manager></div>
+        <div class="modal-card modal-card--md img-manager">
+            <div class="modal-head">
+                <div class="modal-head__text">
+                    <h2 id="image-manager-heading" class="modal-title" data-i18n="images-title">Ảnh &amp; bìa</h2>
+                    <p id="image-manager-book-title" class="modal-sub mono"></p>
                 </div>
-                <div>
-                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Ảnh minh họa (tùy chọn)</label>
-                    <div class="flex gap-2">
-                        <input id="book-image-path" type="text" readonly placeholder="Chưa chọn ảnh" class="min-w-0 flex-1 rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-slate-300 focus:outline-none">
-                        <button id="browse-book-image-btn" type="button" class="shrink-0 rounded-xl border border-primary/40 bg-primary/10 px-4 py-2.5 text-sm font-bold text-primary hover:bg-primary/20 hover:border-primary transition-all"><i class="fas fa-folder-open mr-2"></i>Browse</button>
-                    </div>
-                    <p class="mt-2 text-xs text-slate-500">Có thể chọn nhiều ảnh: .jpg, .jpeg, .png, .webp, .gif, .bmp, .avif, .image</p>
-                </div>
+                <button type="button" class="icon-btn" data-close-image-manager aria-label="Đóng" data-i18n-aria="close">
+                    <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+                </button>
             </div>
-            <input id="book-text-input" type="file" class="hidden" accept=".txt,.epub,.pdf">
-            <input id="book-image-input" type="file" class="hidden" accept=".jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.image" multiple>
-            <div class="mt-6 flex justify-end gap-3">
-                <button id="cancel-upload-files-btn" type="button" class="rounded-xl border border-white/10 px-4 py-2.5 text-sm font-bold text-slate-300 hover:bg-white/10 transition-all">Hủy</button>
-                <button id="confirm-upload-files-btn" type="button" class="rounded-xl bg-primary px-5 py-2.5 text-sm font-black text-black hover:scale-105 transition-all"><i class="fas fa-cloud-upload-alt mr-2"></i>Import</button>
+            <div id="image-manager-list" class="img-list" title="Kéo thả hoặc dán ảnh vào đây"></div>
+            <div class="modal-actions modal-actions--split">
+                <span class="field-hint" data-i18n="images-footer-hint">Ảnh tự chuyển WebP, tối đa 150 KB. Kéo thả hoặc dán (Ctrl+V) ảnh vào danh sách.</span>
+                <button id="image-manager-add-btn" type="button" class="btn btn--primary">
+                    <svg class="ic ic--sm" aria-hidden="true"><use href="#i-plus"/></svg>
+                    <span data-i18n="images-add">Thêm ảnh</span>
+                </button>
             </div>
         </div>
     </div>
 
-    <div id="image-manager-modal" class="fixed inset-0 z-[180] hidden items-center justify-center p-4">
-        <div class="absolute inset-0 bg-black/70 backdrop-blur-md" data-close-image-manager></div>
-        <div class="glass w-full max-w-2xl max-h-[85vh] rounded-3xl p-6 relative flex flex-col">
-            <button type="button" class="absolute top-4 right-4 text-slate-400 hover:text-white" data-close-image-manager aria-label="Đóng"><i class="fas fa-times"></i></button>
-            <h2 class="text-xl font-black text-white">Quản lý ảnh truyện</h2>
-            <p id="image-manager-book-title" class="text-sm text-slate-400 mt-1 mb-4"></p>
-            <div id="image-manager-list" class="flex-1 overflow-y-auto space-y-3 pr-1 rounded-2xl border border-dashed border-white/10 p-2" title="Có thể kéo-thả hoặc dán ảnh tại đây"></div>
-            <div class="mt-5 flex items-center justify-between gap-3">
-                <span class="text-xs text-slate-500">Chọn “Crop vuông” để tự căn bìa · tự chuyển WebP, tối đa 150 KB.</span>
-                <button id="image-manager-add-btn" type="button" class="shrink-0 rounded-xl bg-primary text-black px-4 py-2 text-sm font-black hover:scale-105 transition-all"><i class="fas fa-plus mr-2"></i>Thêm ảnh</button>
-            </div>
-        </div>
+    <!-- Per-book actions (one shared menu for every row/card). Bottom sheet on phones. -->
+    <div id="book-menu-scrim" class="book-menu-scrim" hidden></div>
+    <div id="book-menu" class="menu book-menu" role="menu" aria-labelledby="book-menu-title" hidden>
+        <p id="book-menu-title" class="book-menu__title"></p>
+        <button type="button" class="menu-item" role="menuitem" data-book-action="open">
+            <svg class="ic" aria-hidden="true"><use href="#i-book"/></svg><span data-i18n="open-reader">Mở trang đọc</span>
+        </button>
+        <button type="button" class="menu-item" role="menuitem" data-book-action="rename">
+            <svg class="ic" aria-hidden="true"><use href="#i-pen"/></svg><span data-i18n="rename-book">Đổi tên</span>
+        </button>
+        <button type="button" class="menu-item" role="menuitem" data-book-action="images">
+            <svg class="ic" aria-hidden="true"><use href="#i-image"/></svg><span data-i18n="images-title">Ảnh &amp; bìa</span>
+        </button>
+        <button type="button" class="menu-item" role="menuitem" data-book-action="merge">
+            <svg class="ic" aria-hidden="true"><use href="#i-merge"/></svg><span data-i18n="merge-chapters">Nối chương</span>
+        </button>
+        <button type="button" class="menu-item" role="menuitem" data-book-action="export">
+            <svg class="ic" aria-hidden="true"><use href="#i-download"/></svg><span data-i18n="export-txt">Tải file TXT</span>
+        </button>
+        <hr class="menu__rule">
+        <button type="button" class="menu-item menu-item--danger" role="menuitem" data-book-action="delete">
+            <svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg><span data-i18n="delete-book">Xoá truyện</span>
+        </button>
     </div>
 
     <!-- Reading Stats Modal -->
@@ -1085,46 +1101,58 @@ Nội dung chương hai...</pre>
             </div>
         </div>
     </div>
-    <div id="merge-chapters-modal" class="fixed inset-0 z-[210] hidden items-center justify-center bg-black/80 p-4 backdrop-blur-md">
-        <div class="glass flex h-[82vh] w-full max-w-4xl flex-col overflow-hidden rounded-[2rem] shadow-2xl">
-            <div class="flex items-center justify-between border-b border-white/10 bg-white/5 p-5">
-                <div>
-                    <h3 class="text-xl font-bold text-white"><i class="fas fa-code-branch mr-2 text-primary"></i>Nối chương</h3>
-                    <p id="merge-chapter-position" class="mt-1 text-xs text-slate-400">Chương 1/1</p>
+    <div id="merge-chapters-modal" class="modal modal--top hidden" role="dialog" aria-modal="true" aria-labelledby="merge-chapters-title">
+        <div class="modal__scrim"></div>
+        <div class="modal-card modal-card--lg merge-card">
+            <div class="modal-head">
+                <div class="modal-head__text">
+                    <h2 id="merge-chapters-title" class="modal-title" data-i18n="merge-chapters">Nối chương</h2>
+                    <p id="merge-chapter-position" class="modal-sub mono">Chương 1/1</p>
                 </div>
-                <button id="close-merge-modal" class="h-10 w-10 rounded-full text-slate-400 hover:bg-white/10 hover:text-white" aria-label="Đóng"><i class="fas fa-times"></i></button>
+                <button id="close-merge-modal" type="button" class="icon-btn" aria-label="Đóng" data-i18n-aria="close">
+                    <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+                </button>
             </div>
-            <div class="flex items-center justify-between gap-3 border-b border-white/10 px-5 py-3">
-                <button id="merge-prev-btn" class="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold text-slate-300 disabled:cursor-not-allowed disabled:opacity-40"><i class="fas fa-arrow-left mr-2"></i>Trước</button>
-                <label class="flex items-center gap-2 text-sm text-slate-300"><input id="merge-include-chapter" type="checkbox" checked class="accent-primary"> Nối chương này</label>
-                <button id="merge-next-btn" class="rounded-xl border border-white/10 px-4 py-2 text-sm font-bold text-slate-300 disabled:cursor-not-allowed disabled:opacity-40">Sau<i class="fas fa-arrow-right ml-2"></i></button>
+            <div class="merge-nav">
+                <button id="merge-prev-btn" type="button" class="btn">
+                    <svg class="ic ic--sm" aria-hidden="true"><use href="#i-left"/></svg><span data-i18n="prev">Trước</span>
+                </button>
+                <label class="merge-include"><input id="merge-include-chapter" type="checkbox" checked> <span data-i18n="merge-include">Nối chương này</span></label>
+                <button id="merge-next-btn" type="button" class="btn">
+                    <span data-i18n="next">Sau</span><svg class="ic ic--sm" aria-hidden="true"><use href="#i-right"/></svg>
+                </button>
             </div>
-            <div class="flex-1 overflow-hidden p-5"><textarea id="merge-chapter-textarea" class="h-full w-full resize-none rounded-2xl border border-white/10 bg-black/40 p-5 leading-relaxed text-slate-200 focus:border-primary/50 focus:outline-none"></textarea></div>
-            <div class="flex justify-end gap-3 border-t border-white/10 bg-white/5 p-5">
-                <button id="cancel-merge-btn" class="rounded-xl px-5 py-2 text-slate-300 hover:bg-white/10">Hủy</button>
-                <button id="confirm-merge-btn" class="btn-primary">Nối các chương đã chọn</button>
+            <textarea id="merge-chapter-textarea" class="input merge-text" aria-label="Nội dung chương"></textarea>
+            <div class="modal-actions">
+                <button id="cancel-merge-btn" type="button" class="btn" data-i18n="cancel">Huỷ</button>
+                <button id="confirm-merge-btn" type="button" class="btn btn--primary" data-i18n="merge-confirm">Nối các chương đã chọn</button>
             </div>
         </div>
     </div>
 
-    <div id="image-crop-modal" class="fixed inset-0 z-[200] hidden items-center justify-center p-4" role="dialog" aria-modal="true" aria-labelledby="image-crop-title">
-        <div class="absolute inset-0 bg-black/75 backdrop-blur-md" data-close-image-crop></div>
-        <div class="glass relative flex w-full max-w-xl flex-col rounded-3xl p-5 sm:p-6">
-            <button id="close-image-crop-btn" type="button" class="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-xl text-slate-400 hover:bg-white/10 hover:text-white" aria-label="Đóng crop ảnh"><i class="fas fa-times"></i></button>
-            <h2 id="image-crop-title" class="pr-12 text-xl font-black text-white">Crop ảnh bìa</h2>
-            <p class="mt-1 text-sm leading-6 text-slate-400">Kéo ảnh để chọn đúng vùng artwork của Discovery. Khung này khớp tỷ lệ hiển thị, không phải toàn bộ card vuông.</p>
-            <div id="image-crop-stage" class="relative mx-auto mt-5 aspect-[1.35/1] w-full max-w-md touch-none overflow-hidden rounded-2xl border-2 border-primary/70 bg-black/50 shadow-[0_0_0_999px_rgba(0,0,0,0.18)]" aria-label="Vùng crop ảnh">
-                <img id="image-crop-preview" class="pointer-events-none absolute left-1/2 top-1/2 max-w-none select-none" alt="Xem trước vùng crop">
-                <div class="pointer-events-none absolute inset-0 border-[3px] border-white/30"></div>
-                <span class="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/55 px-3 py-1 text-[11px] font-bold text-white">Tỷ lệ artwork Discovery · kéo để căn khung</span>
+    <div id="image-crop-modal" class="modal modal--top hidden" role="dialog" aria-modal="true" aria-labelledby="image-crop-title">
+        <div class="modal__scrim" data-close-image-crop></div>
+        <div class="modal-card modal-card--sm crop-card">
+            <div class="modal-head">
+                <div class="modal-head__text">
+                    <h2 id="image-crop-title" class="modal-title" data-i18n="crop-title">Căn bìa</h2>
+                    <p class="modal-sub" data-i18n="crop-hint">Kéo ảnh để chọn vùng hiện trên bìa. Ảnh gốc không bị cắt.</p>
+                </div>
+                <button id="close-image-crop-btn" type="button" class="icon-btn" aria-label="Đóng" data-i18n-aria="close">
+                    <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+                </button>
             </div>
-            <div class="mt-5">
-                <div class="mb-2 flex items-center justify-between text-xs font-bold text-slate-400"><label for="image-crop-zoom">Zoom</label><output id="image-crop-zoom-value">100%</output></div>
-                <input id="image-crop-zoom" type="range" min="1" max="3" step="0.01" value="1" class="h-2 w-full cursor-pointer accent-primary" aria-label="Phóng to hoặc thu nhỏ ảnh crop">
+            <div id="image-crop-stage" class="crop-stage" aria-label="Vùng căn bìa">
+                <img id="image-crop-preview" class="crop-stage__img" alt="Xem trước vùng bìa">
             </div>
-            <div class="mt-6 flex justify-end gap-3">
-                <button id="cancel-image-crop-btn" type="button" class="min-h-11 rounded-xl border border-white/10 px-4 text-sm font-bold text-slate-300 hover:bg-white/10">Hủy</button>
-                <button id="save-image-crop-btn" type="button" class="min-h-11 rounded-xl bg-primary px-5 text-sm font-black text-black hover:scale-105 active:scale-95">Lưu crop</button>
+            <div class="crop-zoom">
+                <label for="image-crop-zoom" data-i18n="zoom">Phóng to</label>
+                <input id="image-crop-zoom" type="range" min="1" max="3" step="0.01" value="1" class="range">
+                <output id="image-crop-zoom-value" class="mono" for="image-crop-zoom">100%</output>
+            </div>
+            <div class="modal-actions">
+                <button id="cancel-image-crop-btn" type="button" class="btn" data-i18n="cancel">Huỷ</button>
+                <button id="save-image-crop-btn" type="button" class="btn btn--primary" data-i18n="crop-save">Lưu vùng bìa</button>
             </div>
         </div>
     </div>

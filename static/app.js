@@ -34,6 +34,8 @@ let STATE = {
     imageManifest: null,
     imageManifestCache: new Map(),
     imageURLCache: new Map(),
+    coverResolved: new Map(),
+    libraryTocCache: new Map(),
     pendingImageFiles: [],
     uploadImagesChoice: false,
     uploadInputTarget: 'sidebar',
@@ -550,21 +552,27 @@ async function leaveAccount({ save }) {
     STATE.imageManifestCache.clear();
     STATE.imageURLCache.forEach(url => URL.revokeObjectURL(url));
     STATE.imageURLCache.clear();
+    STATE.coverResolved.clear();
+    STATE.libraryTocCache.clear();
     discoveryLibrary = [];
+    // Never show the previous account's shelf while the next one loads.
+    libraryView.refreshSeq += 1;
+    libraryView.status = 'idle';
+    libraryView.expanded = { sidebar: null, shelf: null };
+    renderLibraryViews();
     auth = null;
     app = null;
 }
 
 function renderSignedOutLibrary() {
-    document.getElementById('book-list').innerHTML = '<div class="text-center p-8 text-slate-500 italic text-sm">Login to see your library.</div>';
-
-    const discoveryGrid = document.getElementById('discovery-grid');
-    if (discoveryGrid) {
-        discoveryGrid.innerHTML = '<div class="col-span-full text-center p-20 text-slate-500 italic">Login to discover your library.</div>';
-    }
-
-    const discoverySearch = document.getElementById('discovery-search');
-    if (discoverySearch) discoverySearch.value = '';
+    libraryView.refreshSeq += 1;
+    libraryView.status = 'signed-out';
+    libraryView.expanded = { sidebar: null, shelf: null };
+    discoveryLibrary = [];
+    STATE.libraryTocCache.clear();
+    const discoverySearchInput = document.getElementById('discovery-search');
+    if (discoverySearchInput) discoverySearchInput.value = '';
+    renderLibraryViews();
 }
 
 /** Fetch helper for backend endpoints that access the authenticated user's data. */
@@ -791,7 +799,10 @@ function toggleDiscoveryMode(isActive, options = {}) {
         if (discoveryMode) discoveryMode.classList.remove('hidden');
         updateDiscoveryContinueCard();
         applyDiscoverySearch();
-        if (sidebarContainer) sidebarContainer.classList.add('hidden');
+        // Master–detail: from 1024px the library column stays beside Home;
+        // below that the sidebar is the off-canvas drawer, so just close it.
+        toggleSidebar(false);
+        if (sidebarContainer) sidebarContainer.classList.remove('hidden');
         if (readerContainer) readerContainer.classList.add('hidden');
         // Homepage không được litemode
         document.body.classList.remove('lite-mode');
@@ -858,58 +869,777 @@ discoveryPlayerInfo?.addEventListener('keydown', (event) => {
     }
 });
 
+// ── Library + Home (kệ sách) ────────────────────────────────────────────────
+// One snapshot of the user's progress collection feeds three views: the
+// mục lục rows in the left column / drawer, Home's list or cover grid, and the
+// "Nghe tiếp" card. Filter and sort are shared; each view keeps its own search.
 const DISCOVERY_VIEW_STORAGE_KEY = 'cloud-tts-discovery-view';
+const LIBRARY_FILTER_KEY = 'cloud-tts-library-filter';
+const LIBRARY_SORT_KEY = 'cloud-tts-library-sort';
+const LIBRARY_FILTERS = ['listening', 'all', 'done'];
+const LIBRARY_SORTS = ['recent', 'title', 'progress'];
+const COVER_CONCURRENCY = 3;
+const IMAGE_URL_CACHE_LIMIT = 48;
+const LIBRARY_TOC_CACHE_LIMIT = 12;
 let discoveryLibrary = [];
 
-function applyDiscoverySearch() {
-    const search = document.getElementById('discovery-search');
-    const grid = document.getElementById('discovery-grid');
-    const empty = document.getElementById('discovery-search-empty');
-    const emptyText = document.getElementById('discovery-search-empty-text');
-    const count = document.getElementById('discovery-result-count');
-    if (!search || !grid) return;
-    const query = removeVietnameseTones(search.value.trim().toLowerCase());
-    let matches = 0;
-    Array.from(grid.children).forEach(card => {
-        if (!card.dataset.title) return;
-        const visible = !query || card.dataset.title.includes(query);
-        card.style.display = visible ? '' : 'none';
-        card.classList.toggle('is-search-hidden', !visible);
-        if (visible) matches += 1;
+function readPref(key, allowed, fallback) {
+    try {
+        const value = localStorage.getItem(key);
+        return allowed.includes(value) ? value : fallback;
+    } catch (_) {
+        return fallback;
+    }
+}
+
+function writePref(key, value) {
+    try { localStorage.setItem(key, value); } catch (_) { /* private mode */ }
+}
+
+const libraryView = {
+    status: 'idle',
+    filter: readPref(LIBRARY_FILTER_KEY, LIBRARY_FILTERS, 'listening'),
+    sort: readPref(LIBRARY_SORT_KEY, LIBRARY_SORTS, 'recent'),
+    discovery: readPref(DISCOVERY_VIEW_STORAGE_KEY, ['grid', 'list'], window.innerWidth < 768 ? 'list' : 'grid'),
+    expanded: { sidebar: null, shelf: null },
+    refreshSeq: 0
+};
+
+function uiLang() {
+    try { return localStorage.getItem('ui-lang') === 'vi' ? 'vi' : 'en'; } catch (_) { return 'en'; }
+}
+
+function tr(key, fallback, vars = null) {
+    const text = window.translations?.[uiLang()]?.[key] ?? fallback ?? key;
+    return vars ? text.replace(/\{(\w+)\}/g, (_, name) => String(vars[name] ?? '')) : text;
+}
+
+function removeVietnameseTones(str) {
+    str = str.normalize('NFD').replace(/[̀-ͯ]/g, "");
+    str = str.replace(/[đĐ]/g, m => m === 'đ' ? 'd' : 'D');
+    return str;
+}
+
+function librarySearchKey(title) {
+    const plain = removeVietnameseTones(title.toLowerCase());
+    return `${plain} ${plain.replace(/[_-]+/g, ' ')} ${title.toLowerCase()}`;
+}
+
+function normalizedQuery(value) {
+    return removeVietnameseTones(String(value || '').trim().toLowerCase());
+}
+
+function listenedTime(value) {
+    if (typeof value === 'number') return value;
+    if (typeof value?.toMillis === 'function') return value.toMillis();
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isBookDone(data) {
+    const current = Number(data?.last_read_chunk);
+    const total = Number(data?.total_chunks);
+    return Number.isFinite(current) && Number.isFinite(total) && total > 0 && current >= total - 1;
+}
+
+function createLibraryEntry(bookId, data) {
+    const title = data.title || data.filename;
+    const done = isBookDone(data);
+    return {
+        id: bookId,
+        data,
+        title,
+        percent: done ? 100 : getProgressPercent(data),
+        done,
+        lastListenedAt: listenedTime(data.last_listened_at),
+        hasImages: data.has_images === true,
+        searchKey: librarySearchKey(title),
+        chapter: null
+    };
+}
+
+function findLibraryEntry(bookId) {
+    return discoveryLibrary.find(entry => entry.id === bookId) || null;
+}
+
+function formatPercent(percent) {
+    if (percent >= 100) return '100%';
+    if (percent <= 0) return '0%';
+    return percent < 10 ? `${Math.floor(percent * 10) / 10}%` : `${Math.floor(percent)}%`;
+}
+
+const relativeTimeFormats = new Map();
+function formatListenedAgo(ms) {
+    if (!ms) return tr('not-started', 'chưa nghe');
+    const lang = uiLang();
+    if (!relativeTimeFormats.has(lang)) {
+        relativeTimeFormats.set(lang, new Intl.RelativeTimeFormat(lang, { numeric: 'auto' }));
+    }
+    const rtf = relativeTimeFormats.get(lang);
+    const seconds = (Date.now() - ms) / 1000;
+    if (seconds < 60) return tr('just-now', 'vừa xong');
+    if (seconds < 3600) return rtf.format(-Math.floor(seconds / 60), 'minute');
+    if (seconds < 86400) return rtf.format(-Math.floor(seconds / 3600), 'hour');
+    if (seconds < 7 * 86400) return rtf.format(-Math.floor(seconds / 86400), 'day');
+    if (seconds < 35 * 86400) return rtf.format(-Math.floor(seconds / (7 * 86400)), 'week');
+    return new Date(ms).toLocaleDateString(lang, { day: '2-digit', month: '2-digit', year: '2-digit' });
+}
+
+// Chapter cursor for a library row: live state for the open book, otherwise
+// the lightweight /toc (titles + sentence counts) fetched when a row expands.
+function getLibraryChapter(entry) {
+    if (entry.id === STATE.currentBookId && STATE.currentBook?.chapters?.length) {
+        const chapters = STATE.currentBook.chapters;
+        return {
+            index: STATE.currentChapterIndex,
+            total: chapters.length,
+            titleAt: i => chapters[i]?.title || ''
+        };
+    }
+    const toc = STATE.libraryTocCache.get(entry.id);
+    if (!toc) return null;
+    const cursor = Math.max(0, Number(entry.data.last_read_chunk) || 0);
+    let index = toc.counts.length - 1;
+    let seen = 0;
+    for (let i = 0; i < toc.counts.length; i++) {
+        seen += Number(toc.counts[i]) || 0;
+        if (cursor < seen) { index = i; break; }
+    }
+    return { index: Math.max(0, index), total: toc.titles.length, titleAt: i => toc.titles[i] || '' };
+}
+
+function formatEntryMeta(entry) {
+    const chapter = getLibraryChapter(entry);
+    const parts = [];
+    if (chapter) parts.push(`C.${chapter.index + 1}/${chapter.total}`);
+    parts.push(formatPercent(entry.percent));
+    parts.push(formatListenedAgo(entry.lastListenedAt));
+    return parts.join(' · ');
+}
+
+async function fetchLibraryToc(bookId) {
+    if (STATE.libraryTocCache.has(bookId)) return STATE.libraryTocCache.get(bookId);
+    if (!STATE.user) return null;
+    try {
+        const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/toc`, { timeoutMs: 15_000 });
+        if (response.status >= 500) return null;
+        const data = response.ok ? await response.json() : null;
+        const toc = Array.isArray(data?.titles) && Array.isArray(data?.counts) && data.titles.length
+            ? { titles: data.titles, counts: data.counts }
+            : null;
+        STATE.libraryTocCache.set(bookId, toc);
+        while (STATE.libraryTocCache.size > LIBRARY_TOC_CACHE_LIMIT) {
+            STATE.libraryTocCache.delete(STATE.libraryTocCache.keys().next().value);
+        }
+        return toc;
+    } catch (err) {
+        console.debug('[Library] TOC preview skipped:', bookId, err.message);
+        return null;
+    }
+}
+
+// ── Covers ──────────────────────────────────────────────────────────────────
+// Cover = manifest coverId (fallback: first image). Only books with
+// has_images === true ask for a manifest; the rest keep the generated text
+// cover. Requests start when a cover scrolls near the viewport, at most
+// COVER_CONCURRENCY at a time, and reuse STATE.imageURLCache object URLs.
+const coverQueue = [];
+const coverPending = new Map();
+let coverActive = 0;
+let coverObserver = null;
+
+function titleHue(title) {
+    let hash = 0;
+    for (const ch of String(title)) hash = (hash * 31 + ch.codePointAt(0)) >>> 0;
+    return hash % 360;
+}
+
+function titleInitials(title) {
+    const words = String(title).replace(/[_\-.]+/g, ' ').split(/\s+/).filter(word => /[\p{L}\p{N}]/u.test(word));
+    const letters = words.slice(0, 2).map(word => word.match(/[\p{L}\p{N}]/u)[0]);
+    return letters.join('').toLocaleUpperCase('vi') || '·';
+}
+
+function createCoverElement(entry, size) {
+    const cover = document.createElement('span');
+    cover.className = `cover cover--${size} cover--text`;
+    cover.setAttribute('aria-hidden', 'true');
+    cover.dataset.coverFor = entry.id;
+    cover.style.setProperty('--cover-h', String(titleHue(entry.title)));
+    const initials = document.createElement('span');
+    initials.className = 'cover__initials';
+    initials.textContent = titleInitials(entry.title);
+    cover.append(initials);
+    attachCover(cover, entry.id, entry.hasImages);
+    return cover;
+}
+
+function attachCover(element, bookId, hasImages) {
+    if (!hasImages || !STATE.user) return;
+    if (STATE.coverResolved.has(bookId)) {
+        paintCover(element, STATE.coverResolved.get(bookId));
+        return;
+    }
+    if (!('IntersectionObserver' in window)) {
+        void requestCover(bookId);
+        return;
+    }
+    coverObserver ||= new IntersectionObserver(records => {
+        records.forEach(record => {
+            if (!record.isIntersecting) return;
+            coverObserver.unobserve(record.target);
+            void requestCover(record.target.dataset.coverFor);
+        });
+    }, { rootMargin: '240px 0px' });
+    coverObserver.observe(element);
+}
+
+function requestCover(bookId) {
+    if (!bookId || STATE.coverResolved.has(bookId)) return Promise.resolve(STATE.coverResolved.get(bookId));
+    if (coverPending.has(bookId)) return coverPending.get(bookId);
+    const pending = new Promise(resolve => {
+        coverQueue.push({ bookId, uid: STATE.user?.uid, resolve });
+        pumpCoverQueue();
     });
-    if (count) count.textContent = `${matches}/${discoveryLibrary.length || matches} sách`;
-    if (empty) empty.hidden = matches > 0 || !query;
-    if (emptyText && query) emptyText.textContent = `Không tìm thấy “${search.value.trim()}”.`;
+    coverPending.set(bookId, pending);
+    return pending;
+}
+
+function pumpCoverQueue() {
+    while (coverActive < COVER_CONCURRENCY && coverQueue.length) {
+        const job = coverQueue.shift();
+        coverActive += 1;
+        resolveCover(job.bookId)
+            .catch(err => {
+                console.warn('[Images] Cover hydration warning:', job.bookId, err.message);
+                return undefined;
+            })
+            .then(info => {
+                if (STATE.user?.uid !== job.uid) return;
+                // undefined = transient failure: leave unresolved so a later render retries.
+                if (info !== undefined) STATE.coverResolved.set(job.bookId, info);
+                const selector = `[data-cover-for="${CSS.escape(job.bookId)}"]`;
+                document.querySelectorAll(selector).forEach(element => paintCover(element, info ?? null));
+                if (job.bookId === STATE.currentBookId && info) updateMediaSession();
+                job.resolve(info);
+            })
+            .finally(() => {
+                coverActive -= 1;
+                coverPending.delete(job.bookId);
+                pumpCoverQueue();
+            });
+    }
+}
+
+async function resolveCover(bookId) {
+    const manifest = await loadImageManifest(bookId);
+    const cover = manifest.images.find(image => image.id === manifest.coverId) || manifest.images[0];
+    if (!cover) return manifest._retryable ? undefined : null;
+    const url = await getImageURL(bookId, cover);
+    if (!url) return undefined;
+    return { url, imageId: cover.id, crop: cover.coverCrop || null };
+}
+
+function paintCover(element, info) {
+    if (!element) return;
+    if (!info) {
+        element.querySelector('img.cover__img')?.remove();
+        element.dataset.coverStatus = 'empty';
+        return;
+    }
+    let img = element.querySelector('img.cover__img');
+    if (!img) {
+        img = document.createElement('img');
+        img.className = 'cover__img';
+        img.alt = '';
+        img.decoding = 'async';
+        img.draggable = false;
+        element.append(img);
+    }
+    const onLoad = () => {
+        applyCoverCrop(img, element, info.crop);
+        element.dataset.coverStatus = 'loaded';
+    };
+    img.onload = onLoad;
+    img.onerror = () => {
+        element.dataset.coverStatus = 'error';
+        img.remove();
+    };
+    if (img.getAttribute('src') !== info.url) img.src = info.url;
+    else if (img.complete && img.naturalWidth) onLoad();
+}
+
+// coverCrop is stored normalised (0..1). Show the crop's centre at the box's
+// aspect, growing the window when the crop was made for another shape.
+function applyCoverCrop(img, box, crop) {
+    const width = img.naturalWidth;
+    const height = img.naturalHeight;
+    const valid = crop && [crop.x, crop.y, crop.width, crop.height].every(Number.isFinite) && crop.width > 0 && crop.height > 0;
+    if (!width || !height || !valid) {
+        img.removeAttribute('style');
+        return;
+    }
+    const rect = box.getBoundingClientRect();
+    const aspect = rect.width > 0 && rect.height > 0 ? rect.width / rect.height : 5 / 7;
+    let viewW = Math.max(crop.width * width, crop.height * height * aspect);
+    let viewH = viewW / aspect;
+    if (viewW > width) { viewW = width; viewH = viewW / aspect; }
+    if (viewH > height) { viewH = height; viewW = viewH * aspect; }
+    const centerX = (crop.x + crop.width / 2) * width;
+    const centerY = (crop.y + crop.height / 2) * height;
+    const left = Math.min(Math.max(centerX - viewW / 2, 0), Math.max(0, width - viewW));
+    const top = Math.min(Math.max(centerY - viewH / 2, 0), Math.max(0, height - viewH));
+    img.style.inset = 'auto';
+    img.style.maxWidth = 'none';
+    img.style.objectFit = 'fill';
+    img.style.width = `${width / viewW * 100}%`;
+    img.style.height = `${height / viewH * 100}%`;
+    img.style.left = `${-left / viewW * 100}%`;
+    img.style.top = `${-top / viewH * 100}%`;
+}
+
+// Object URLs leave the cache through these helpers so they are revoked.
+function rememberImageURL(imageId, url) {
+    STATE.imageURLCache.set(imageId, url);
+    trimImageURLCache();
+}
+
+function coverURLsInUse() {
+    const urls = new Set();
+    STATE.coverResolved.forEach(info => { if (info?.url) urls.add(info.url); });
+    return urls;
+}
+
+function trimImageURLCache() {
+    if (STATE.imageURLCache.size <= IMAGE_URL_CACHE_LIMIT) return;
+    const keep = coverURLsInUse();
+    for (const [imageId, url] of STATE.imageURLCache) {
+        if (STATE.imageURLCache.size <= IMAGE_URL_CACHE_LIMIT) break;
+        if (keep.has(url)) continue;
+        URL.revokeObjectURL(url);
+        STATE.imageURLCache.delete(imageId);
+    }
+}
+
+function releaseImageURL(imageId) {
+    const url = STATE.imageURLCache.get(imageId);
+    if (!url) return;
+    STATE.imageURLCache.delete(imageId);
+    STATE.coverResolved.forEach((info, bookId) => {
+        if (info?.url === url) STATE.coverResolved.delete(bookId);
+    });
+    URL.revokeObjectURL(url);
+}
+
+// Drop every cached image except covers that are on screen right now.
+function releaseImageURLs() {
+    const keep = coverURLsInUse();
+    for (const [imageId, url] of [...STATE.imageURLCache]) {
+        if (keep.has(url)) continue;
+        URL.revokeObjectURL(url);
+        STATE.imageURLCache.delete(imageId);
+    }
+}
+
+function paintPlayerArt() {
+    const art = document.getElementById('player-art');
+    if (!art) return;
+    const bookId = STATE.currentBook ? STATE.currentBookId : null;
+    if (art.dataset.coverFor !== (bookId || '')) {
+        art.querySelector('img.cover__img')?.remove();
+        delete art.dataset.coverStatus;
+        art.dataset.coverFor = bookId || '';
+    }
+    if (!bookId) return;
+    if (STATE.coverResolved.has(bookId)) {
+        paintCover(art, STATE.coverResolved.get(bookId));
+        return;
+    }
+    const entry = findLibraryEntry(bookId);
+    if (entry?.hasImages || STATE.imageManifest?.images?.length) void requestCover(bookId);
+}
+
+// ── Rows and cards ──────────────────────────────────────────────────────────
+let libraryRowSeq = 0;
+
+function iconSVG(name, extraClass = '') {
+    return `<svg class="ic ${extraClass}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+}
+
+function buildProgressRing(entry) {
+    const ring = document.createElement('button');
+    ring.type = 'button';
+    ring.className = 'prog-ring';
+    ring.dataset.action = 'play';
+    const pct = Math.round(entry.percent * 10) / 10;
+    ring.innerHTML = `<svg class="ring__svg" viewBox="0 0 30 30" aria-hidden="true"><circle class="ring__track" cx="15" cy="15" r="12.5"/><circle class="ring__fill" cx="15" cy="15" r="12.5" pathLength="100" stroke-dasharray="${pct} 100"${pct > 0 ? '' : ' data-empty=""'}/></svg>${iconSVG('play', 'ring__play')}${iconSVG('pause', 'ring__pause')}`;
+    return ring;
+}
+
+function buildLibraryRow(entry, listName) {
+    const row = document.createElement('li');
+    row.className = 'lib-row';
+    row.dataset.bookId = entry.id;
+    row.dataset.list = listName;
+
+    const head = document.createElement('div');
+    head.className = 'lib-row__head';
+    const main = document.createElement('button');
+    main.type = 'button';
+    main.className = 'lib-row__main';
+    main.dataset.action = 'toggle';
+    main.setAttribute('aria-expanded', 'false');
+    const panelId = `lib-row-x-${++libraryRowSeq}`;
+    main.setAttribute('aria-controls', panelId);
+    const text = document.createElement('span');
+    text.className = 'lib-row__text';
+    const title = document.createElement('span');
+    title.className = 'lib-row__title';
+    title.textContent = entry.title;
+    const meta = document.createElement('span');
+    meta.className = 'lib-row__meta';
+    meta.textContent = formatEntryMeta(entry);
+    text.append(title, meta);
+    main.append(createCoverElement(entry, 'thumb'), text);
+    head.append(main, buildProgressRing(entry));
+
+    const details = document.createElement('div');
+    details.className = 'lib-row__x';
+    details.id = panelId;
+    details.hidden = true;
+    row.append(head, details);
+    return row;
+}
+
+function buildShelfCard(entry) {
+    const card = document.createElement('li');
+    card.className = 'shelf-card';
+    card.dataset.bookId = entry.id;
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'shelf-card__open';
+    open.dataset.action = 'open';
+    const bar = document.createElement('span');
+    bar.className = 'shelf-card__bar';
+    bar.setAttribute('aria-hidden', 'true');
+    const fill = document.createElement('span');
+    fill.style.width = `${entry.percent}%`;
+    bar.append(fill);
+    const title = document.createElement('span');
+    title.className = 'shelf-card__title';
+    title.textContent = entry.title;
+    const meta = document.createElement('span');
+    meta.className = 'shelf-card__meta';
+    meta.textContent = formatEntryMeta(entry);
+    open.append(createCoverElement(entry, 'grid'), bar, title, meta);
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'icon-btn shelf-card__more';
+    more.dataset.action = 'more';
+    more.setAttribute('aria-haspopup', 'menu');
+    more.setAttribute('aria-expanded', 'false');
+    more.setAttribute('aria-label', tr('book-options', 'Tuỳ chọn cho {title}', { title: entry.title }));
+    more.innerHTML = iconSVG('dots');
+    card.append(open, more);
+    return card;
+}
+
+function buildChapterStrip(entry) {
+    const strip = document.createElement('div');
+    strip.className = 'strip';
+    const chapter = getLibraryChapter(entry);
+    if (!chapter) {
+        strip.dataset.state = 'loading';
+        strip.setAttribute('aria-hidden', 'true');
+        ['prev', 'now', 'next'].forEach(kind => {
+            const cell = document.createElement('div');
+            cell.className = `strip__cell strip__cell--${kind}`;
+            cell.innerHTML = '<span class="strip__n">—</span><span class="strip__c">…</span>';
+            strip.append(cell);
+        });
+        return strip;
+    }
+    strip.setAttribute('aria-label', tr('chapter-strip', 'Chương đang nghe'));
+    const cells = [
+        { kind: 'prev', index: chapter.index - 1, empty: tr('strip-first', 'Đầu truyện') },
+        { kind: 'now', index: chapter.index, empty: '' },
+        { kind: 'next', index: chapter.index + 1, empty: tr('strip-last', 'Hết truyện') }
+    ];
+    cells.forEach(({ kind, index, empty }) => {
+        const cell = document.createElement('div');
+        cell.className = `strip__cell strip__cell--${kind}`;
+        const exists = index >= 0 && index < chapter.total;
+        const number = document.createElement('span');
+        number.className = 'strip__n';
+        number.textContent = exists
+            ? `C.${index + 1}${kind === 'now' ? ` · ${tr('strip-now', 'đang nghe')}` : ''}`
+            : '—';
+        const name = document.createElement('span');
+        name.className = 'strip__c';
+        name.textContent = exists ? (chapter.titleAt(index) || `${tr('chapter-word', 'Chương')} ${index + 1}`) : empty;
+        cell.append(number, name);
+        strip.append(cell);
+    });
+    return strip;
+}
+
+function buildRowActions(entry) {
+    const actions = document.createElement('div');
+    actions.className = 'lib-row__acts';
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'btn';
+    open.dataset.action = 'open';
+    open.textContent = tr('open-reader', 'Mở trang đọc');
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.className = 'btn btn--primary';
+    play.dataset.action = 'play';
+    play.dataset.role = 'listen';
+    const more = document.createElement('button');
+    more.type = 'button';
+    more.className = 'icon-btn icon-btn--line';
+    more.dataset.action = 'more';
+    more.setAttribute('aria-haspopup', 'menu');
+    more.setAttribute('aria-expanded', 'false');
+    more.setAttribute('aria-label', tr('book-options', 'Tuỳ chọn cho {title}', { title: entry.title }));
+    more.innerHTML = iconSVG('dotsh');
+    actions.append(open, play, more);
+    return actions;
+}
+
+function setRowExpanded(row, expanded) {
+    const main = row.querySelector('.lib-row__main');
+    const details = row.querySelector('.lib-row__x');
+    const entry = findLibraryEntry(row.dataset.bookId);
+    if (!main || !details || !entry) return;
+    main.setAttribute('aria-expanded', String(expanded));
+    details.hidden = !expanded;
+    if (!expanded) {
+        details.replaceChildren();
+        return;
+    }
+    details.replaceChildren(buildChapterStrip(entry), buildRowActions(entry));
+    syncLibraryItemState(row, entry);
+    if (!getLibraryChapter(entry)) {
+        void fetchLibraryToc(entry.id).then(toc => {
+            if (!row.isConnected || details.hidden) return;
+            if (!toc) {
+                details.querySelector('.strip')?.setAttribute('hidden', '');
+                return;
+            }
+            details.querySelector('.strip')?.replaceWith(buildChapterStrip(entry));
+            document.querySelectorAll(`[data-book-id="${CSS.escape(entry.id)}"] .lib-row__meta, [data-book-id="${CSS.escape(entry.id)}"] .shelf-card__meta`)
+                .forEach(meta => { meta.textContent = formatEntryMeta(entry); });
+        });
+    }
+}
+
+function toggleLibraryRow(row) {
+    const listName = row.dataset.list;
+    const willExpand = row.querySelector('.lib-row__main')?.getAttribute('aria-expanded') !== 'true';
+    row.parentElement?.querySelectorAll(':scope > .lib-row').forEach(other => {
+        if (other !== row && other.querySelector('.lib-row__main')?.getAttribute('aria-expanded') === 'true') {
+            setRowExpanded(other, false);
+        }
+    });
+    setRowExpanded(row, willExpand);
+    libraryView.expanded[listName] = willExpand ? row.dataset.bookId : null;
+}
+
+// ── Rendering, filter, sort ─────────────────────────────────────────────────
+function sortedLibraryEntries() {
+    const entries = [...discoveryLibrary];
+    if (libraryView.sort === 'title') {
+        entries.sort((a, b) => a.title.localeCompare(b.title, 'vi'));
+    } else if (libraryView.sort === 'progress') {
+        entries.sort((a, b) => (b.percent - a.percent) || (b.lastListenedAt - a.lastListenedAt));
+    }
+    return entries;
+}
+
+function entryPassesFilter(entry) {
+    if (libraryView.filter === 'all') return true;
+    return libraryView.filter === 'done' ? entry.done : !entry.done;
+}
+
+function renderLibraryViews() {
+    closeBookMenu();
+    coverObserver?.disconnect();
+    const bookListEl = document.getElementById('book-list');
+    const shelfEl = document.getElementById('discovery-grid');
+    const entries = sortedLibraryEntries();
+    if (bookListEl) {
+        bookListEl.replaceChildren(...entries.map(entry => buildLibraryRow(entry, 'sidebar')));
+        bookListEl.setAttribute('aria-busy', String(libraryView.status === 'loading'));
+    }
+    if (shelfEl) {
+        const isGrid = libraryView.discovery === 'grid';
+        shelfEl.className = `shelf-list ${isGrid ? 'shelf-list--grid' : 'shelf-list--rows'}`;
+        shelfEl.replaceChildren(...entries.map(entry => isGrid ? buildShelfCard(entry) : buildLibraryRow(entry, 'shelf')));
+        shelfEl.setAttribute('aria-busy', String(libraryView.status === 'loading'));
+    }
+    [['sidebar', bookListEl], ['shelf', shelfEl]].forEach(([listName, listEl]) => {
+        const expandedId = libraryView.expanded[listName];
+        if (!expandedId || !listEl) return;
+        const row = listEl.querySelector(`:scope > .lib-row[data-book-id="${CSS.escape(expandedId)}"]`);
+        if (row) setRowExpanded(row, true);
+        else libraryView.expanded[listName] = null;
+    });
+    syncLibraryControls();
+    applyLibraryFilters();
+    updateLibraryHighlight();
+}
+
+function syncLibraryControls() {
+    document.querySelectorAll('[data-lib-filter] [data-filter]').forEach(button => {
+        button.setAttribute('aria-pressed', String(button.dataset.filter === libraryView.filter));
+        button.disabled = libraryView.status === 'signed-out';
+    });
+    const sort = document.getElementById('discovery-sort');
+    if (sort) {
+        sort.value = libraryView.sort;
+        sort.disabled = libraryView.status === 'signed-out';
+    }
+    const isList = libraryView.discovery === 'list';
+    document.getElementById('discovery-grid-view')?.setAttribute('aria-pressed', String(!isList));
+    document.getElementById('discovery-list-view')?.setAttribute('aria-pressed', String(isList));
+}
+
+function libraryEmptyState(query, rawQuery, visible) {
+    if (libraryView.status === 'signed-out') {
+        return { text: tr('library-signed-out', 'Đăng nhập để thấy thư viện và vị trí đang nghe trên mọi máy.'), action: 'sign-in', label: tr('sign-in-google', 'Đăng nhập Google') };
+    }
+    if (libraryView.status === 'loading' && !discoveryLibrary.length) {
+        return { text: tr('library-loading', 'Đang tải thư viện…') };
+    }
+    if (libraryView.status === 'error') {
+        return { text: tr('library-error', 'Không tải được thư viện.'), action: 'retry', label: tr('retry', 'Thử lại') };
+    }
+    if (libraryView.status === 'ready' && !discoveryLibrary.length) {
+        return { text: tr('library-empty', 'Chưa có truyện nào. Thêm file .txt, .epub hoặc .pdf để bắt đầu.'), action: 'add', label: tr('add-book', 'Thêm truyện') };
+    }
+    if (visible > 0 || libraryView.status !== 'ready') return null;
+    if (query) {
+        return { text: tr('search-no-match', 'Không tìm thấy “{query}”.', { query: rawQuery }), action: 'clear-search', label: tr('clear-search', 'Xoá tìm kiếm') };
+    }
+    const key = libraryView.filter === 'done' ? 'filter-empty-done' : 'filter-empty-listening';
+    const fallback = libraryView.filter === 'done' ? 'Chưa có truyện nào nghe xong.' : 'Không có truyện đang nghe.';
+    return { text: tr(key, fallback), action: 'show-all', label: tr('show-all', 'Xem tất cả') };
+}
+
+function setLibraryEmpty(boxId, textId, buttonId, state, scope) {
+    const box = document.getElementById(boxId);
+    const text = document.getElementById(textId);
+    const button = document.getElementById(buttonId);
+    if (!box) return;
+    box.hidden = !state;
+    if (!state) return;
+    if (text) text.textContent = state.text;
+    if (button) {
+        button.hidden = !state.action;
+        button.textContent = state.label || '';
+        button.dataset.emptyAction = state.action || '';
+        button.dataset.scope = scope;
+    }
+}
+
+function filterLibraryList(listEl, rawQuery) {
+    const query = normalizedQuery(rawQuery);
+    let visible = 0;
+    listEl?.querySelectorAll(':scope > [data-book-id]').forEach(item => {
+        const entry = findLibraryEntry(item.dataset.bookId);
+        const show = !!entry && entryPassesFilter(entry) && (!query || entry.searchKey.includes(query));
+        item.hidden = !show;
+        if (show) visible += 1;
+    });
+    return { query, visible };
+}
+
+function applyLibraryFilters() {
+    const librarySearch = document.getElementById('library-search');
+    const shelfSearch = document.getElementById('discovery-search');
+    const sidebar = filterLibraryList(document.getElementById('book-list'), librarySearch?.value);
+    const shelf = filterLibraryList(document.getElementById('discovery-grid'), shelfSearch?.value);
+    const libraryClear = document.getElementById('library-clear-search');
+    const shelfClear = document.getElementById('discovery-search-clear');
+    if (libraryClear) libraryClear.hidden = !librarySearch?.value;
+    if (shelfClear) shelfClear.hidden = !shelfSearch?.value;
+    setLibraryEmpty('library-empty', 'library-empty-text', 'library-empty-btn',
+        libraryEmptyState(sidebar.query, librarySearch?.value.trim(), sidebar.visible), 'sidebar');
+    setLibraryEmpty('discovery-search-empty', 'discovery-search-empty-text', 'discovery-clear-search',
+        libraryEmptyState(shelf.query, shelfSearch?.value.trim(), shelf.visible), 'shelf');
+    const count = document.getElementById('discovery-result-count');
+    if (count) {
+        count.textContent = libraryView.status === 'ready' && discoveryLibrary.length
+            ? tr('shelf-count', '{shown}/{total} truyện', { shown: shelf.visible, total: discoveryLibrary.length })
+            : '';
+    }
+}
+
+// Kept for existing callers.
+const applyDiscoverySearch = applyLibraryFilters;
+const applyLibrarySearch = applyLibraryFilters;
+
+function setLibraryFilter(filter) {
+    if (!LIBRARY_FILTERS.includes(filter)) return;
+    libraryView.filter = filter;
+    writePref(LIBRARY_FILTER_KEY, filter);
+    syncLibraryControls();
+    applyLibraryFilters();
+}
+
+function setLibrarySort(sort) {
+    if (!LIBRARY_SORTS.includes(sort)) return;
+    libraryView.sort = sort;
+    writePref(LIBRARY_SORT_KEY, sort);
+    renderLibraryViews();
 }
 
 function setDiscoveryView(view, persist = true) {
-    const grid = document.getElementById('discovery-grid');
-    const gridButton = document.getElementById('discovery-grid-view');
-    const listButton = document.getElementById('discovery-list-view');
-    if (!grid || !gridButton || !listButton) return;
-    const isList = view === 'list';
-    grid.classList.toggle('discovery-list-view', isList);
-    gridButton.classList.toggle('bg-primary/15', !isList);
-    gridButton.classList.toggle('text-primary', !isList);
-    gridButton.classList.toggle('text-slate-400', isList);
-    listButton.classList.toggle('bg-primary/15', isList);
-    listButton.classList.toggle('text-primary', isList);
-    listButton.classList.toggle('text-slate-400', !isList);
-    gridButton.setAttribute('aria-pressed', String(!isList));
-    listButton.setAttribute('aria-pressed', String(isList));
-    if (persist) localStorage.setItem(DISCOVERY_VIEW_STORAGE_KEY, isList ? 'list' : 'grid');
+    libraryView.discovery = view === 'list' ? 'list' : 'grid';
+    if (persist) writePref(DISCOVERY_VIEW_STORAGE_KEY, libraryView.discovery);
+    renderLibraryViews();
+}
 
-    applyDiscoverySearch();
-
-    if (window.gsap && persist) {
-        const visibleCards = Array.from(grid.querySelectorAll('.discovery-book-card')).filter(c => c.style.display !== 'none' && !c.classList.contains('is-search-hidden'));
-        if (visibleCards.length > 0) {
-            window.gsap.fromTo(visibleCards,
-                { opacity: 0, y: 12, scale: 0.98 },
-                { opacity: 1, y: 0, scale: 1, duration: 0.28, stagger: 0.03, ease: 'power2.out', clearProps: 'opacity,transform' }
-            );
-        }
+// ── Current book: highlight, ring state, "Nghe tiếp" ───────────────────────
+function syncLibraryItemState(item, entry) {
+    const isCurrent = item.dataset.bookId === STATE.currentBookId && !!STATE.currentBook;
+    const isPlaying = isCurrent && typeof audio !== 'undefined' && !audio.paused;
+    if (isCurrent) item.setAttribute('aria-current', 'true');
+    else item.removeAttribute('aria-current');
+    const vars = { title: entry.title, percent: formatPercent(entry.percent) };
+    item.querySelectorAll('.prog-ring').forEach(ring => {
+        ring.setAttribute('aria-pressed', String(isPlaying));
+        ring.setAttribute('aria-label', isPlaying
+            ? tr('pause-book', 'Tạm dừng {title}', vars)
+            : tr('play-book', 'Nghe {title}, đã {percent}', vars));
+    });
+    const listen = item.querySelector('[data-role="listen"]');
+    if (listen) {
+        listen.innerHTML = `${iconSVG(isPlaying ? 'pause' : 'play', 'ic--sm')}<span>${isPlaying ? tr('pause', 'Tạm dừng') : tr('listen', 'Nghe')}</span>`;
     }
+    item.querySelectorAll('.lib-row__meta, .shelf-card__meta').forEach(meta => {
+        meta.textContent = formatEntryMeta(entry);
+    });
+}
+
+function updateLibraryHighlight() {
+    document.querySelectorAll('#book-list > [data-book-id], #discovery-grid > [data-book-id]').forEach(item => {
+        const entry = findLibraryEntry(item.dataset.bookId);
+        if (entry) syncLibraryItemState(item, entry);
+    });
+    updateDiscoveryContinueCard();
+    paintPlayerArt();
+}
+
+function getResumeTarget() {
+    const current = STATE.currentBook ? findLibraryEntry(STATE.currentBookId) : null;
+    if (current) return { entry: current, isOpen: true };
+    const recent = discoveryLibrary
+        .filter(entry => entry.lastListenedAt > 0 && !entry.done)
+        .sort((a, b) => b.lastListenedAt - a.lastListenedAt)[0];
+    return recent ? { entry: recent, isOpen: false } : null;
 }
 
 function updateDiscoveryContinueCard() {
@@ -917,44 +1647,268 @@ function updateDiscoveryContinueCard() {
     const title = document.getElementById('discovery-continue-title');
     const meta = document.getElementById('discovery-continue-meta');
     const progress = document.getElementById('discovery-continue-progress');
-    const active = discoveryLibrary.find(book => book.id === STATE.currentBookId);
+    const label = document.getElementById('discovery-continue-label');
     if (!card || !title || !meta || !progress) return;
-    card.hidden = !active;
-    if (!active) return;
-    title.textContent = active.title;
-    meta.textContent = `${active.progress}% đã đọc · Bấm để quay lại phiên đang nghe`;
-    progress.style.width = `${active.progress}%`;
+    const target = getResumeTarget();
+    card.hidden = !target;
+    if (!target) return;
+    const { entry, isOpen } = target;
+    const isPlaying = isOpen && typeof audio !== 'undefined' && !audio.paused;
+    title.textContent = entry.title;
+    meta.textContent = formatEntryMeta(entry);
+    progress.style.width = `${entry.percent}%`;
+    if (label) {
+        label.textContent = isPlaying
+            ? tr('now-playing', 'Đang phát')
+            : (isOpen ? tr('resume-open', 'Đang mở') : tr('resume-last', 'Nghe gần nhất'));
+    }
+    card.dataset.bookId = entry.id;
+    const oldCover = document.getElementById('discovery-continue-cover');
+    if (oldCover?.dataset.coverFor !== entry.id) {
+        const cover = createCoverElement(entry, 'resume');
+        cover.id = 'discovery-continue-cover';
+        oldCover?.replaceWith(cover);
+    }
 }
 
-const discoverySearch = document.getElementById('discovery-search');
-discoverySearch?.addEventListener('input', applyDiscoverySearch);
-document.getElementById('discovery-clear-search')?.addEventListener('click', () => {
-    if (!discoverySearch) return;
-    discoverySearch.value = '';
-    applyDiscoverySearch();
-    discoverySearch.focus();
+function handleContinueListening(event) {
+    event?.stopPropagation?.();
+    const target = getResumeTarget();
+    if (!target) return;
+    if (target.isOpen) {
+        toggleDiscoveryMode(false);
+        if (audio.paused) void togglePlayback();
+        return;
+    }
+    void loadBookFromStorage(target.entry.id, target.entry.data);
+}
+
+function openLibraryBook(entry) {
+    if (entry.id === STATE.currentBookId && STATE.currentBook) {
+        toggleSidebar(false);
+        toggleDiscoveryMode(false);
+        return;
+    }
+    void loadBookFromStorage(entry.id, entry.data);
+}
+
+function playLibraryBook(entry, trigger) {
+    if (entry.id === STATE.currentBookId && STATE.currentBook) {
+        void togglePlayback();
+        return;
+    }
+    trigger?.setAttribute('aria-busy', 'true');
+    void loadBookFromStorage(entry.id, entry.data).finally(() => trigger?.removeAttribute('aria-busy'));
+}
+
+async function renameLibraryBook(entry) {
+    if (entry.id === STATE.currentBookId && STATE.currentBook) {
+        await editTitle();
+        return;
+    }
+    if (!STATE.user) return;
+    const requested = prompt(tr('rename-prompt', 'Tên mới cho truyện:'), entry.title);
+    const newTitle = requested?.trim();
+    if (!newTitle || newTitle === entry.title) return;
+    try {
+        await setDoc(doc(db, 'users', STATE.user.uid, 'progress', entry.id), { title: newTitle }, { merge: true });
+        await refreshLibrary();
+        APP_STATUS.toast(tr('rename-done', 'Đã đổi tên truyện.'), 'success');
+    } catch (err) {
+        console.error('[Title] Rename failed:', err);
+        APP_STATUS.error(`Không thể lưu tên truyện: ${err.message}`);
+    }
+}
+
+// ── Shared per-book menu (anchored popover; bottom sheet under 640px) ───────
+const bookMenu = { entry: null, trigger: null };
+let mergeTarget = null;
+
+function bookMenuItems() {
+    return [...document.querySelectorAll('#book-menu [role="menuitem"]:not(:disabled)')];
+}
+
+function onBookMenuOutside(event) {
+    const menu = document.getElementById('book-menu');
+    if (menu?.contains(event.target) || bookMenu.trigger?.contains(event.target)) return;
+    closeBookMenu();
+}
+
+function onBookMenuKey(event) {
+    const items = bookMenuItems();
+    const index = items.indexOf(document.activeElement);
+    if (event.key === 'Escape') {
+        event.preventDefault();
+        closeBookMenu({ restoreFocus: true });
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const step = event.key === 'ArrowDown' ? 1 : -1;
+        items[(index + step + items.length) % items.length]?.focus();
+    } else if (event.key === 'Home' || event.key === 'End') {
+        event.preventDefault();
+        items[event.key === 'Home' ? 0 : items.length - 1]?.focus();
+    } else if (event.key === 'Tab') {
+        closeBookMenu();
+    }
+}
+
+function onBookMenuViewportChange() {
+    closeBookMenu();
+}
+
+function openBookMenu(entry, trigger) {
+    const menu = document.getElementById('book-menu');
+    const scrim = document.getElementById('book-menu-scrim');
+    if (!menu) return;
+    if (bookMenu.entry?.id === entry.id && bookMenu.trigger === trigger && !menu.hidden) {
+        closeBookMenu({ restoreFocus: true });
+        return;
+    }
+    closeBookMenu();
+    bookMenu.entry = entry;
+    bookMenu.trigger = trigger;
+    const title = document.getElementById('book-menu-title');
+    if (title) title.textContent = entry.title;
+    const isSheet = window.matchMedia('(max-width: 639.98px)').matches;
+    menu.style.left = '';
+    menu.style.top = '';
+    menu.hidden = false;
+    if (scrim) scrim.hidden = !isSheet;
+    if (!isSheet) {
+        const rect = trigger.getBoundingClientRect();
+        const width = menu.offsetWidth;
+        const height = menu.offsetHeight;
+        const left = Math.min(Math.max(8, rect.right - width), window.innerWidth - width - 8);
+        let top = rect.bottom + 6;
+        if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 6);
+        menu.style.left = `${left}px`;
+        menu.style.top = `${top}px`;
+    }
+    trigger.setAttribute('aria-expanded', 'true');
+    document.addEventListener('pointerdown', onBookMenuOutside, true);
+    menu.addEventListener('keydown', onBookMenuKey);
+    window.addEventListener('resize', onBookMenuViewportChange);
+    document.getElementById('book-list')?.addEventListener('scroll', onBookMenuViewportChange, { passive: true });
+    document.getElementById('discovery-mode')?.addEventListener('scroll', onBookMenuViewportChange, { passive: true });
+    bookMenuItems()[0]?.focus();
+}
+
+function closeBookMenu({ restoreFocus = false } = {}) {
+    const menu = document.getElementById('book-menu');
+    const scrim = document.getElementById('book-menu-scrim');
+    if (!menu || menu.hidden) return;
+    menu.hidden = true;
+    if (scrim) scrim.hidden = true;
+    document.removeEventListener('pointerdown', onBookMenuOutside, true);
+    menu.removeEventListener('keydown', onBookMenuKey);
+    window.removeEventListener('resize', onBookMenuViewportChange);
+    document.getElementById('book-list')?.removeEventListener('scroll', onBookMenuViewportChange);
+    document.getElementById('discovery-mode')?.removeEventListener('scroll', onBookMenuViewportChange);
+    const trigger = bookMenu.trigger;
+    trigger?.setAttribute('aria-expanded', 'false');
+    bookMenu.trigger = null;
+    if (restoreFocus && trigger?.isConnected) trigger.focus();
+}
+
+function runBookAction(action, entry) {
+    closeBookMenu();
+    if (!entry) return;
+    switch (action) {
+        case 'open': openLibraryBook(entry); break;
+        case 'rename': void renameLibraryBook(entry); break;
+        case 'images': void openImageManager(entry.id, entry.title); break;
+        case 'merge': {
+            const input = document.getElementById('merge-input');
+            if (!input) return;
+            mergeTarget = entry;
+            input.value = '';
+            input.click();
+            break;
+        }
+        case 'export': void downloadTextBook(entry.id, entry.title); break;
+        case 'delete': void deleteBook(entry.id, entry.data.filename, entry.title); break;
+        default: break;
+    }
+}
+
+// Earlier per-row menus were closed through this name.
+function closeAllKebabMenus() {
+    closeBookMenu();
+}
+
+document.getElementById('book-menu')?.addEventListener('click', event => {
+    const item = event.target.closest('[data-book-action]');
+    if (item) runBookAction(item.dataset.bookAction, bookMenu.entry);
 });
+document.getElementById('book-menu-scrim')?.addEventListener('click', () => closeBookMenu());
+document.getElementById('merge-input')?.addEventListener('change', event => {
+    if (mergeTarget) void mergeChapterFile(event, mergeTarget.id, mergeTarget.data);
+});
+
+function onLibraryListClick(event) {
+    const control = event.target.closest('[data-action]');
+    if (!control || !event.currentTarget.contains(control)) return;
+    const item = control.closest('[data-book-id]');
+    const entry = findLibraryEntry(item?.dataset.bookId);
+    if (!entry) return;
+    switch (control.dataset.action) {
+        case 'toggle': toggleLibraryRow(item); break;
+        case 'play': playLibraryBook(entry, control); break;
+        case 'open': openLibraryBook(entry); break;
+        case 'more': openBookMenu(entry, control); break;
+        default: break;
+    }
+}
+
+document.getElementById('book-list')?.addEventListener('click', onLibraryListClick);
+document.getElementById('discovery-grid')?.addEventListener('click', onLibraryListClick);
+document.querySelectorAll('[data-lib-filter]').forEach(group => group.addEventListener('click', event => {
+    const button = event.target.closest('[data-filter]');
+    if (button && !button.disabled) setLibraryFilter(button.dataset.filter);
+}));
+document.getElementById('discovery-sort')?.addEventListener('change', event => setLibrarySort(event.target.value));
 document.getElementById('discovery-grid-view')?.addEventListener('click', () => setDiscoveryView('grid'));
 document.getElementById('discovery-list-view')?.addEventListener('click', () => setDiscoveryView('list'));
-const handleContinueListening = (e) => {
-    e?.stopPropagation?.();
-    if (!STATE.currentBook) return;
-    toggleDiscoveryMode(false);
-    if (audio.paused) void togglePlayback();
-};
+
+const librarySearchInput = document.getElementById('library-search');
+const discoverySearch = document.getElementById('discovery-search');
+librarySearchInput?.addEventListener('input', applyLibraryFilters);
+discoverySearch?.addEventListener('input', applyLibraryFilters);
+[['library-clear-search', librarySearchInput], ['discovery-search-clear', discoverySearch]].forEach(([id, input]) => {
+    document.getElementById(id)?.addEventListener('click', () => {
+        if (!input) return;
+        input.value = '';
+        applyLibraryFilters();
+        input.focus();
+    });
+});
+['library-empty-btn', 'discovery-clear-search'].forEach(id => {
+    document.getElementById(id)?.addEventListener('click', event => {
+        const button = event.currentTarget;
+        const input = button.dataset.scope === 'sidebar' ? librarySearchInput : discoverySearch;
+        switch (button.dataset.emptyAction) {
+            case 'clear-search':
+                if (input) input.value = '';
+                applyLibraryFilters();
+                input?.focus();
+                break;
+            case 'show-all': setLibraryFilter('all'); break;
+            case 'add':
+                STATE.uploadInputTarget = button.dataset.scope === 'sidebar' ? 'sidebar' : 'discovery';
+                openUploadOptions();
+                break;
+            case 'sign-in': document.getElementById('auth-btn')?.click(); break;
+            case 'retry': void refreshLibrary(); break;
+            default: break;
+        }
+    });
+});
 document.getElementById('discovery-continue-btn')?.addEventListener('click', handleContinueListening);
 document.getElementById('discovery-continue-card')?.addEventListener('click', handleContinueListening);
-// Default: mobile (<768px) → list view, tablet/desktop → grid view
-// Respects any explicit user preference that was already saved.
-const _savedView = localStorage.getItem(DISCOVERY_VIEW_STORAGE_KEY);
-const _defaultView = _savedView || (window.innerWidth < 768 ? 'list' : 'grid');
-setDiscoveryView(_defaultView, false);
+window.addEventListener('uilanguagechange', () => {
+    if (libraryView.status !== 'idle') renderLibraryViews();
+});
 
-function removeVietnameseTones(str) {
-    str = str.normalize('NFD').replace(/[\u0300-\u036f]/g, "");
-    str = str.replace(/[đĐ]/g, m => m === 'đ' ? 'd' : 'D');
-    return str;
-}
 
 // ── Sidebar Segmented Tabs (library | toc | voice) ──────────────────────────
 const SIDEBAR_TAB_KEY = 'sidebar-active-tab';
@@ -990,40 +1944,6 @@ SIDEBAR_TABS.forEach(name => {
     document.getElementById(`tab-${name}`)?.addEventListener('click', () => switchSidebarTab(name));
 });
 switchSidebarTab(localStorage.getItem(SIDEBAR_TAB_KEY) || 'library');
-
-// ── Library quick search (accent-insensitive) ───────────────────────────────
-const librarySearchInput = document.getElementById('library-search');
-const libraryClearSearchBtn = document.getElementById('library-clear-search');
-
-function applyLibrarySearch() {
-    if (!librarySearchInput) return;
-    const query = removeVietnameseTones(librarySearchInput.value.trim().toLowerCase());
-    let visible = 0;
-    document.querySelectorAll('#book-list > [data-book-title]').forEach(card => {
-        const hit = !query || card.dataset.bookTitle.includes(query);
-        card.style.display = hit ? '' : 'none';
-        if (hit) visible += 1;
-    });
-    if (libraryClearSearchBtn) libraryClearSearchBtn.hidden = !librarySearchInput.value;
-    if (!bookList) return;
-    let emptyEl = bookList.querySelector('[data-library-empty]');
-    if (!emptyEl && query) {
-        emptyEl = document.createElement('div');
-        emptyEl.dataset.libraryEmpty = '';
-        emptyEl.className = 'text-center p-8 text-slate-500 italic text-sm';
-        emptyEl.textContent = 'Không tìm thấy truyện phù hợp.';
-        bookList.appendChild(emptyEl);
-    }
-    if (emptyEl) emptyEl.classList.toggle('hidden', visible > 0 || !query);
-}
-
-librarySearchInput?.addEventListener('input', applyLibrarySearch);
-libraryClearSearchBtn?.addEventListener('click', () => {
-    if (!librarySearchInput) return;
-    librarySearchInput.value = '';
-    applyLibrarySearch();
-    librarySearchInput.focus();
-});
 
 // ── TOC quick search (accent-insensitive) ───────────────────────────────────
 const tocSearchInput = document.getElementById('toc-search');
@@ -1449,13 +2369,28 @@ const playBtn = document.getElementById('play-btn');
 const textContainer = document.getElementById('text-container');
 const fileInput = document.getElementById('file-input');
 const imageInput = document.getElementById('image-input');
-const bookList = document.getElementById('book-list');
+
+const modalReturnFocus = new Map();
 
 function setModalVisibility(id, visible) {
     const modal = document.getElementById(id);
     if (!modal) return;
+    const wasVisible = !modal.classList.contains('hidden');
     modal.classList.toggle('hidden', !visible);
     modal.classList.toggle('flex', visible);
+    if (visible && !wasVisible) {
+        modalReturnFocus.set(id, document.activeElement);
+        requestAnimationFrame(() => {
+            const target = modal.querySelector('[data-autofocus]')
+                || modal.querySelector('.modal-card button:not([disabled]):not([data-close-upload-options]):not([data-close-upload-files]):not([data-close-image-manager]), .modal-card input:not([type="file"]):not([readonly])')
+                || modal.querySelector('.modal-card button');
+            target?.focus({ preventScroll: true });
+        });
+    } else if (!visible && wasVisible) {
+        const previous = modalReturnFocus.get(id);
+        modalReturnFocus.delete(id);
+        if (previous?.isConnected && typeof previous.focus === 'function') previous.focus({ preventScroll: true });
+    }
 }
 
 function openUploadOptions() {
@@ -1486,7 +2421,7 @@ function beginBookUpload(withImages, inputTarget = STATE.uploadInputTarget || 's
         ? document.getElementById('discovery-file-input')
         : fileInput;
     if (input) {
-        input.accept = '.txt';
+        input.accept = '.txt,.epub,.pdf';
         input.multiple = false;
         input.value = '';
         input.click();
@@ -1565,7 +2500,14 @@ async function handleImageInputSelection() {
     await processImageFiles(imageInput?.files || []);
 }
 
-document.getElementById('upload-book-btn')?.addEventListener('click', openUploadOptions);
+document.getElementById('upload-book-btn')?.addEventListener('click', () => {
+    STATE.uploadInputTarget = 'sidebar';
+    openUploadOptions();
+});
+document.getElementById('discovery-add-btn')?.addEventListener('click', () => {
+    STATE.uploadInputTarget = 'discovery';
+    openUploadOptions();
+});
 document.getElementById('upload-txt-only-btn')?.addEventListener('click', () => beginBookUpload(false));
 document.getElementById('upload-txt-images-btn')?.addEventListener('click', () => beginBookUpload(true));
 document.querySelectorAll('[data-close-upload-options]').forEach(el => el.addEventListener('click', () => {
@@ -1573,42 +2515,38 @@ document.querySelectorAll('[data-close-upload-options]').forEach(el => el.addEve
     setModalVisibility('upload-options-modal', false);
 }));
 document.querySelectorAll('[data-close-image-manager]').forEach(el => el.addEventListener('click', () => setModalVisibility('image-manager-modal', false)));
-document.getElementById('select-images-btn')?.addEventListener('click', () => {
-    if (!STATE.currentBookId) {
-        APP_STATUS.toast('Hãy mở truyện cần quản lý ảnh trước.', 'warning');
-        return;
-    }
-    openImageManager();
-});
-document.getElementById('discovery-select-images-btn')?.addEventListener('click', () => {
-    if (!STATE.currentBookId) {
-        APP_STATUS.toast('Hãy mở truyện cần quản lý ảnh trước.', 'warning');
-        return;
-    }
-    openImageManager();
-});
 document.getElementById('image-manager-add-btn')?.addEventListener('click', () => {
     STATE.imageEditTargetId = null;
     imageInput?.click();
 });
 if (imageInput) imageInput.addEventListener('change', handleImageInputSelection);
-document.getElementById('discovery-drop-zone')?.addEventListener('click', event => {
-    if (event.target.closest('#discovery-file-input')) return;
-    STATE.uploadInputTarget = 'discovery';
-    openUploadOptions();
-});
 const imageManagerList = document.getElementById('image-manager-list');
 if (imageManagerList) {
     ['dragenter', 'dragover'].forEach(eventName => imageManagerList.addEventListener(eventName, event => {
         event.preventDefault();
-        imageManagerList.classList.add('border-primary', 'bg-primary/5');
+        imageManagerList.classList.add('is-drop');
     }));
     ['dragleave', 'drop'].forEach(eventName => imageManagerList.addEventListener(eventName, event => {
         event.preventDefault();
-        imageManagerList.classList.remove('border-primary', 'bg-primary/5');
+        imageManagerList.classList.remove('is-drop');
     }));
     imageManagerList.addEventListener('drop', event => processImageFiles(event.dataTransfer?.files || []));
 }
+document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape' || imageCropSession) return;
+    const isOpen = id => !document.getElementById(id)?.classList.contains('hidden');
+    if (isOpen('upload-files-modal')) {
+        closeUploadFilesModal();
+    } else if (isOpen('upload-options-modal')) {
+        STATE.uploadImagesChoice = false;
+        setModalVisibility('upload-options-modal', false);
+    } else if (isOpen('image-manager-modal')) {
+        setModalVisibility('image-manager-modal', false);
+    } else {
+        return;
+    }
+    event.preventDefault();
+});
 document.addEventListener('paste', event => {
     const modal = document.getElementById('image-manager-modal');
     if (!modal || modal.classList.contains('hidden') || !(imageManagerBookId || STATE.currentBookId)) return;
@@ -2286,9 +3224,12 @@ async function saveImageManifest(bookId, manifest) {
 
 async function uploadBookImages(bookId, files, bookTitle = '') {
     if (!STATE.user || !bookId || !files?.length) return null;
-    const manifest = STATE.currentBookId === bookId && STATE.imageManifest
+    // Start from the book's stored manifest so images added from the
+    // library (book not open) keep the ones already there.
+    const manifest = STATE.currentBookId === bookId && STATE.imageManifest?.images
         ? STATE.imageManifest
-        : { version: 1, coverId: null, images: [] };
+        : await loadImageManifest(bookId);
+    if (manifest._retryable) throw new Error('Không đọc được danh sách ảnh hiện có. Hãy thử lại sau.');
     const totalFiles = files.length;
     for (let idx = 0; idx < totalFiles; idx++) {
         const sourceFile = files[idx];
@@ -2349,22 +3290,31 @@ async function uploadBookImages(bookId, files, bookTitle = '') {
     await setDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId), {
         has_images: manifest.images.length > 0
     }, { merge: true });
-    STATE.imageManifest = manifest;
-    STATE.imageURLCache.clear();
+    if (bookId === STATE.currentBookId) STATE.imageManifest = manifest;
+    releaseImageURLs();
     return manifest;
 }
 
 async function getImageURL(bookId, image) {
     if (!image?.id) return null;
-    if (STATE.imageURLCache.has(image.id)) return STATE.imageURLCache.get(image.id);
+    if (STATE.imageURLCache.has(image.id)) {
+        const cached = STATE.imageURLCache.get(image.id);
+        // Re-insert so the least recently used URLs are trimmed first.
+        STATE.imageURLCache.delete(image.id);
+        STATE.imageURLCache.set(image.id, cached);
+        return cached;
+    }
     try {
         const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images/${encodeURIComponent(image.id)}`);
         if (!response.ok) {
             const storageBackend = response.headers.get('X-Storage-Backend') || 'unknown';
             throw new Error(`Image HTTP ${response.status} (backend: ${storageBackend})`);
         }
-        const url = URL.createObjectURL(await response.blob());
-        STATE.imageURLCache.set(image.id, url);
+        const blob = await response.blob();
+        // A concurrent request for the same image may have finished first.
+        if (STATE.imageURLCache.has(image.id)) return STATE.imageURLCache.get(image.id);
+        const url = URL.createObjectURL(blob);
+        rememberImageURL(image.id, url);
         return url;
     } catch (err) {
         console.warn('[Images] Cannot load image:', image.id, 'for book:', bookId, err.message);
@@ -2372,65 +3322,12 @@ async function getImageURL(bookId, image) {
     }
 }
 
-async function hydrateBookCover(bookId, elements, options = {}) {
-    const manifest = await loadImageManifest(bookId);
-    const cover = manifest.images.find(image => image.id === manifest.coverId) || manifest.images[0];
-    const elementsList = (Array.isArray(elements) ? elements : [elements]).filter(Boolean);
-
-    if (!cover) {
-        if (options.hasImagesKnown || manifest._retryable) {
-            console.warn(`[Images] Cover hydration: Book "${bookId}" has_images=true in Firestore, but manifest returned 0 images (backend: ${manifest._storageBackend || 'unknown'}, found in storage: ${manifest._found ? 'yes' : 'no'}).`);
-            elementsList.forEach(el => {
-                const parent = el.parentElement;
-                if (parent) parent.dataset.coverStatus = 'empty';
-            });
-        }
-        return manifest;
-    }
-
-    const url = await getImageURL(bookId, cover);
-    if (!url) {
-        console.warn(`[Images] Cover hydration failed: Cannot load image blob for book "${bookId}" (coverId: ${cover.id})`);
-        elementsList.forEach(el => {
-            const parent = el.parentElement;
-            if (parent) parent.dataset.coverStatus = 'error';
-        });
-        return manifest;
-    }
-
-    elementsList.forEach(el => {
-        el.src = url;
-        const crop = cover.coverCrop;
-        if (crop && Number.isFinite(crop.x) && Number.isFinite(crop.y) && Number.isFinite(crop.width) && Number.isFinite(crop.height)) {
-            el.style.position = 'absolute';
-            el.style.maxWidth = 'none';
-            el.style.width = `${100 / crop.width}%`;
-            el.style.height = 'auto';
-            el.style.left = `${-(crop.x / crop.width * 100)}%`;
-            el.style.top = `${-(crop.y / crop.height * 100)}%`;
-            el.style.objectFit = 'fill';
-        } else {
-            el.removeAttribute('style');
-        }
-        el.classList.remove('hidden');
-        const parent = el.parentElement;
-        if (parent) {
-            parent.dataset.coverStatus = 'loaded';
-            const badge = parent.querySelector('.discovery-art-badge');
-            if (badge) badge.classList.add('hidden');
-            const fallbackIcon = parent.querySelector('i.fa-book, i.fa-volume-up');
-            if (fallbackIcon) fallbackIcon.remove();
-        }
-    });
-    return manifest;
-}
-
 async function deleteBookImages(bookId) {
     if (!STATE.user || !bookId) return;
     const response = await authFetch(`/api/stories/${encodeURIComponent(STATE.user.uid)}/${encodeURIComponent(bookId)}/images`, { method: 'DELETE' });
     if (!response.ok) throw new Error(`Image cleanup failed (${response.status})`);
     STATE.imageManifestCache.delete(bookId);
-    STATE.imageURLCache.clear();
+    releaseImageURLs();
 }
 
 async function saveBookImageCrop(bookId, imageId, crop, sourceWidth, sourceHeight) {
@@ -2445,7 +3342,7 @@ async function saveBookImageCrop(bookId, imageId, crop, sourceWidth, sourceHeigh
     };
     image.updatedAt = new Date().toISOString();
     await saveImageManifest(bookId, manifest);
-    STATE.imageManifest = manifest;
+    if (bookId === STATE.currentBookId) STATE.imageManifest = manifest;
 }
 
 async function replaceBookImage(bookId, imageId, sourceFile, { cropSquare, crop } = {}) {
@@ -2464,8 +3361,8 @@ async function replaceBookImage(bookId, imageId, sourceFile, { cropSquare, crop 
     image.size = file.size;
     image.updatedAt = new Date().toISOString();
     await saveImageManifest(bookId, manifest);
-    STATE.imageManifest = manifest;
-    STATE.imageURLCache.delete(imageId);
+    if (bookId === STATE.currentBookId) STATE.imageManifest = manifest;
+    releaseImageURL(imageId);
 }
 
 async function removeBookImage(bookId, imageId) {
@@ -2479,8 +3376,8 @@ async function removeBookImage(bookId, imageId) {
     await setDoc(doc(db, 'users', STATE.user.uid, 'progress', bookId), {
         has_images: manifest.images.length > 0
     }, { merge: true });
-    STATE.imageManifest = manifest;
-    STATE.imageURLCache.delete(imageId);
+    if (bookId === STATE.currentBookId) STATE.imageManifest = manifest;
+    releaseImageURL(imageId);
 }
 
 async function setBookCover(bookId, imageId) {
@@ -2490,7 +3387,24 @@ async function setBookCover(bookId, imageId) {
     manifest.coverId = imageId;
     manifest.images.forEach(image => { image.role = image.id === imageId ? 'cover' : 'illustration'; });
     await saveImageManifest(bookId, manifest);
-    STATE.imageManifest = manifest;
+    if (bookId === STATE.currentBookId) STATE.imageManifest = manifest;
+}
+
+function imageManagerButton(label, onClick, { danger = false, disabled = false, title = '' } = {}) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = danger ? 'btn btn--danger' : 'btn';
+    button.textContent = label;
+    button.disabled = disabled;
+    if (title) button.title = title;
+    if (onClick) button.addEventListener('click', onClick);
+    return button;
+}
+
+async function afterImageChange(message) {
+    await renderImageManager();
+    await refreshLibrary();
+    if (message) APP_STATUS.toast(message, 'success');
 }
 
 async function renderImageManager() {
@@ -2499,106 +3413,85 @@ async function renderImageManager() {
     const bookId = imageManagerBookId || STATE.currentBookId;
     if (!list || !bookId) return;
 
-    // Show skeleton placeholders before manifest arrives if list is empty
     if (!list.children.length) {
-        list.innerHTML = `
-            <div class="skeleton-card skeleton-shimmer">
-                <div class="skeleton-thumb skeleton-shimmer"></div>
-                <div class="flex-1 space-y-2">
-                    <div class="skeleton-line skeleton-shimmer w-3/5 h-4"></div>
-                    <div class="skeleton-line skeleton-shimmer w-2/5 h-3"></div>
-                </div>
-            </div>
-            <div class="skeleton-card skeleton-shimmer">
-                <div class="skeleton-thumb skeleton-shimmer"></div>
-                <div class="flex-1 space-y-2">
-                    <div class="skeleton-line skeleton-shimmer w-4/5 h-4"></div>
-                    <div class="skeleton-line skeleton-shimmer w-1/3 h-3"></div>
-                </div>
-            </div>
-        `;
-        window.MotionLayer?.animateSkeletonEntrance?.(list);
+        list.innerHTML = '<div class="img-skeleton"></div><div class="img-skeleton"></div>';
     }
 
     const manifest = await loadImageManifest(bookId);
-    STATE.imageManifest = manifest;
-    if (title) title.textContent = `${imageManagerBookTitle || STATE.currentBook?.title || 'Truyện hiện tại'} · ${manifest.images.length} ảnh`;
-    list.innerHTML = '';
+    if (bookId === STATE.currentBookId) STATE.imageManifest = manifest;
+    const bookTitle = imageManagerBookTitle || STATE.currentBook?.title || tr('current-book', 'Truyện hiện tại');
+    if (title) title.textContent = `${bookTitle} · ${tr(manifest.images.length === 1 ? 'image-count-one' : 'image-count', '{count} ảnh', { count: manifest.images.length })}`;
+    list.replaceChildren();
     if (!manifest.images.length) {
         const backendNote = manifest._storageBackend && manifest._storageBackend !== 'unknown' ? ` (${manifest._storageBackend.toUpperCase()})` : '';
-        list.innerHTML = `<div class="rounded-2xl border border-dashed border-white/10 p-8 text-center text-sm text-slate-400">
-            <p class="font-medium text-slate-300">Chưa có ảnh trong kho lưu trữ${backendNote}.</p>
-            <p class="text-xs text-slate-500 mt-1">Bấm “Thêm ảnh” ở trên để tải lên ảnh bìa và tranh minh họa mới.</p>
-        </div>`;
+        const empty = document.createElement('div');
+        empty.className = 'img-empty';
+        const line1 = document.createElement('p');
+        line1.textContent = tr('images-empty', 'Chưa có ảnh trong kho lưu trữ') + backendNote + '.';
+        const line2 = document.createElement('p');
+        line2.textContent = tr('images-empty-hint', 'Bấm “Thêm ảnh” để tải ảnh bìa và tranh minh hoạ.');
+        empty.append(line1, line2);
+        list.append(empty);
         return;
     }
     for (const image of manifest.images) {
+        const isCover = manifest.coverId === image.id;
         const row = document.createElement('div');
-        row.className = 'flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 p-3 transition-all';
+        row.className = 'img-row';
         const thumb = document.createElement('img');
-        thumb.className = 'w-16 h-16 rounded-xl object-cover bg-black/20 shrink-0';
-        thumb.alt = image.alt || 'Ảnh minh họa';
-        thumb.src = await getImageURL(bookId, image) || '/static/icon.svg';
+        thumb.className = 'img-row__thumb';
+        thumb.alt = image.alt || tr('illustration', 'Ảnh minh hoạ');
+        thumb.loading = 'lazy';
+        thumb.decoding = 'async';
+        void getImageURL(bookId, image).then(url => { thumb.src = url || '/static/icon.svg'; });
         const info = document.createElement('div');
-        info.className = 'min-w-0 flex-1';
-        const name = document.createElement('div');
-        name.className = 'truncate text-sm font-bold text-white';
-        name.textContent = image.alt || 'Ảnh minh họa';
-        const meta = document.createElement('div');
-        meta.className = 'text-xs text-slate-500 mt-1';
-        meta.textContent = `${Math.round((image.size || 0) / 1024)} KB${manifest.coverId === image.id ? ' · Cover' : ''}`;
+        info.className = 'img-row__info';
+        const name = document.createElement('span');
+        name.className = 'img-row__name';
+        name.textContent = image.alt || tr('illustration', 'Ảnh minh hoạ');
+        const meta = document.createElement('span');
+        meta.className = 'img-row__meta';
+        meta.textContent = `${Math.round((image.size || 0) / 1024)} KB`;
         info.append(name, meta);
+        if (isCover) {
+            const badge = document.createElement('span');
+            badge.className = 'img-row__badge';
+            badge.textContent = tr('cover-badge', 'Bìa');
+            info.append(badge);
+        }
         const actions = document.createElement('div');
-        actions.className = 'flex flex-wrap justify-end items-center gap-2 shrink-0';
-        const coverBtn = document.createElement('button');
-        coverBtn.className = 'rounded-lg px-2.5 py-2 text-xs font-bold hover:bg-primary/15 hover:text-primary transition-colors';
-        coverBtn.textContent = manifest.coverId === image.id ? 'Đang là bìa' : 'Đặt bìa';
-        coverBtn.disabled = manifest.coverId === image.id;
-        coverBtn.onclick = async () => {
-            setButtonLoading(coverBtn, true, '...');
+        actions.className = 'img-row__acts';
+        const coverBtn = imageManagerButton(isCover ? tr('is-cover', 'Đang là bìa') : tr('set-cover', 'Đặt bìa'), async () => {
+            setButtonLoading(coverBtn, true, '…');
             try {
                 await setBookCover(bookId, image.id);
-                await renderImageManager();
-                await refreshLibrary();
-                APP_STATUS.toast('Đã đặt làm ảnh bìa.', 'success');
+                await afterImageChange(tr('cover-set-done', 'Đã đặt làm ảnh bìa.'));
             } catch (err) {
                 APP_STATUS.error(err, 'Không thể đặt ảnh bìa');
             } finally {
                 setButtonLoading(coverBtn, false);
             }
-        };
-        const cropBtn = document.createElement('button');
-        cropBtn.className = 'rounded-lg px-2.5 py-2 text-xs font-bold hover:bg-primary/15 hover:text-primary transition-colors';
-        cropBtn.textContent = 'Crop bìa';
-        cropBtn.title = 'Chọn vùng artwork hiển thị trong Discovery';
-        cropBtn.onclick = () => openImageCropper(bookId, image);
-        const replaceBtn = document.createElement('button');
-        replaceBtn.className = 'rounded-lg px-2.5 py-2 text-xs font-bold hover:bg-primary/15 hover:text-primary transition-colors';
-        replaceBtn.textContent = 'Thay';
-        replaceBtn.onclick = () => { STATE.imageEditTargetId = image.id; imageInput?.click(); };
-        const deleteBtn = document.createElement('button');
-        deleteBtn.className = 'rounded-lg px-2.5 py-2 text-xs font-bold text-red-400 hover:bg-red-500/15 transition-colors';
-        deleteBtn.textContent = 'Xóa';
-        deleteBtn.onclick = async () => {
-            if (!confirm(`Xóa ảnh “${image.alt || 'minh họa'}”?`)) return;
-            setButtonLoading(deleteBtn, true, '...');
-            if (window.MotionLayer?.animateItemRemoval) {
-                window.MotionLayer.animateItemRemoval(row, async () => {
-                    await removeBookImage(bookId, image.id);
-                    await renderImageManager();
-                    await refreshLibrary();
-                    APP_STATUS.toast('Đã xóa ảnh.', 'success');
-                });
-            } else {
+        }, { disabled: isCover });
+        const cropBtn = imageManagerButton(tr('crop-title', 'Căn bìa'), () => openImageCropper(bookId, image),
+            { title: tr('crop-hint', 'Kéo ảnh để chọn vùng hiện trên bìa. Ảnh gốc không bị cắt.') });
+        const replaceBtn = imageManagerButton(tr('replace-image', 'Thay'), () => {
+            STATE.imageEditTargetId = image.id;
+            imageInput?.click();
+        });
+        const deleteBtn = imageManagerButton(tr('delete', 'Xoá'), async () => {
+            if (!confirm(tr('delete-image-confirm', 'Xoá ảnh “{name}”?', { name: image.alt || tr('illustration', 'Ảnh minh hoạ') }))) return;
+            setButtonLoading(deleteBtn, true, '…');
+            try {
                 await removeBookImage(bookId, image.id);
-                await renderImageManager();
-                await refreshLibrary();
-                APP_STATUS.toast('Đã xóa ảnh.', 'success');
+                await afterImageChange(tr('image-deleted', 'Đã xoá ảnh.'));
+            } catch (err) {
+                APP_STATUS.error(err, 'Không thể xoá ảnh');
+                setButtonLoading(deleteBtn, false);
             }
-        };
+        }, { danger: true });
         actions.append(coverBtn, cropBtn, replaceBtn, deleteBtn);
         row.append(thumb, info, actions);
-        list.appendChild(row);
+        list.append(row);
     }
 }
 
@@ -2607,6 +3500,7 @@ async function openImageManager(bookId = STATE.currentBookId, bookTitle = STATE.
         APP_STATUS.toast('Hãy mở một truyện trước.', 'warning');
         return;
     }
+    if (imageManagerBookId !== bookId) document.getElementById('image-manager-list')?.replaceChildren();
     imageManagerBookId = bookId;
     imageManagerBookTitle = bookTitle;
     setModalVisibility('image-manager-modal', true);
@@ -2852,38 +3746,20 @@ async function refreshLibrary() {
         }
         return;
     }
-    const bookList = document.getElementById('book-list');
-    const discoveryGrid = document.getElementById('discovery-grid');
-    discoveryLibrary = [];
-
-    bookList.innerHTML = '<div class="text-center p-4 text-primary animate-pulse text-xs uppercase font-bold tracking-widest">Updating Library...</div>';
-    if (discoveryGrid) discoveryGrid.innerHTML = '';
-
     const libraryUid = STATE.user.uid;
+    const refreshId = ++libraryView.refreshSeq;
+    libraryView.status = 'loading';
+    document.getElementById('book-list')?.setAttribute('aria-busy', 'true');
+    document.getElementById('discovery-grid')?.setAttribute('aria-busy', 'true');
+    applyLibraryFilters();
+
     try {
         const q = query(collection(db, "users", libraryUid, "progress"));
         const querySnapshot = await getDocs(q);
-        if (STATE.user?.uid !== libraryUid) return;
-        bookList.innerHTML = '';
-        // A second refresh can start while this Firestore request is pending.
-        // Clear the discovery grid again after the await so overlapping
-        // refreshes cannot append the same snapshot on top of the first one.
-        if (discoveryGrid) discoveryGrid.innerHTML = '';
+        // A newer refresh or an account switch owns the views now.
+        if (STATE.user?.uid !== libraryUid || refreshId !== libraryView.refreshSeq) return;
 
-        if (querySnapshot.empty) {
-            bookList.innerHTML = '<div class="text-center p-8 text-slate-500 italic text-sm">No books loaded. Upload a .txt file!</div>';
-            if (discoveryGrid) {
-                discoveryGrid.innerHTML = '<div class="col-span-full flex flex-col items-center justify-center p-12 text-slate-500 italic bg-surface-low rounded-2xl border border-white/5"><i class="fas fa-book-open text-4xl mb-4 opacity-50"></i><span>No recent reads found.</span></div>';
-            }
-            if (!STATE.currentBookId) toggleDiscoveryMode(true);
-            updateDiscoveryContinueCard();
-            applyDiscoverySearch();
-            return;
-        }
-
-        if (!STATE.currentBookId) toggleDiscoveryMode(true);
-
-        const libraryEntries = [];
+        const entries = [];
         querySnapshot.forEach((docSnap) => {
             const data = docSnap.data();
             const bookId = docSnap.id;
@@ -2899,241 +3775,25 @@ async function refreshLibrary() {
             data.title = typeof data.title === 'string' && data.title.trim()
                 ? data.title.trim()
                 : filename;
-            libraryEntries.push({ bookId, data });
+            entries.push(createLibraryEntry(bookId, data));
         });
 
-        // Sắp xếp: truyện nghe gần nhất lên đầu. Truyện chưa có mốc
-        // last_listened_at (dữ liệu cũ) xếp cuối theo thứ tự bảng chữ cái.
-        const listenedTime = (value) => {
-            if (typeof value === 'number') return value;
-            if (typeof value?.toMillis === 'function') return value.toMillis();
-            const parsed = Date.parse(value);
-            return Number.isFinite(parsed) ? parsed : 0;
-        };
-        libraryEntries.sort((a, b) => {
-            const diff = listenedTime(b.data.last_listened_at) - listenedTime(a.data.last_listened_at);
-            if (diff !== 0) return diff;
-            return a.data.title.localeCompare(b.data.title, 'vi');
-        });
+        // Default order: most recently listened first; books never listened
+        // to (no last_listened_at) follow in Vietnamese alphabetical order.
+        entries.sort((a, b) => (b.lastListenedAt - a.lastListenedAt) || a.title.localeCompare(b.title, 'vi'));
 
-        for (const { bookId, data } of libraryEntries) {
-            const progress = getProgressPercent(data).toFixed(1);
-            discoveryLibrary.push({
-                id: bookId,
-                title: data.title || data.filename,
-                progress,
-                lastListenedAt: listenedTime(data.last_listened_at)
-            });
-
-            // ── Sidebar Book List Card ───────────────────────────────────────
-            const wrapper = document.createElement('div');
-            wrapper.className = 'relative group/item';
-            wrapper.dataset.bookId = bookId;
-            wrapper.dataset.bookTitle = removeVietnameseTones(data.title.toLowerCase()) + ' ' + data.title.toLowerCase();
-
-            const div = document.createElement('div');
-            const isActive = bookId === STATE.currentBookId;
-            div.dataset.bookId = bookId;
-            div.className = `glass p-3 pr-9 flex flex-col gap-1 cursor-pointer hover:bg-primary/5 transition-all group border-l-2 rounded-lg ${isActive ? 'book-active' : 'border-transparent hover:border-primary'}`;
-            div.innerHTML = `
-                <div class="flex items-center justify-between gap-2">
-                    <span class="text-sm font-bold ${isActive ? 'text-primary' : 'text-white'} group-hover:text-primary transition-colors line-clamp-1 flex-1 min-w-0" title="${data.title}">
-                        ${isActive ? '<i class="fas fa-headphones-alt mr-2 text-[10px] animate-pulse"></i>' : ''}${data.title}
-                    </span>
-                    <span class="text-[10px] text-primary font-mono shrink-0">${progress}%</span>
-                </div>
-                <div class="w-full bg-slate-800 h-1 rounded-full overflow-hidden">
-                    <div class="bg-primary h-full transition-all duration-500" style="width: ${progress}%"></div>
-                </div>
-            `;
-            div.onclick = () => loadBookFromStorage(bookId, data);
-
-            // ── Hidden file input for merge ────────────────────────────────────
-            const mergeInput = document.createElement('input');
-            mergeInput.type = 'file';
-            mergeInput.accept = '.txt,.epub,.pdf';
-            mergeInput.className = 'hidden';
-            mergeInput.id = `merge-input-${bookId}`;
-            mergeInput.onchange = (e) => mergeChapterFile(e, bookId, data);
-            mergeInput.onclick = (e) => e.stopPropagation(); // Stop bubble when triggered by .click()
-
-            // ── Kebab (⋮) button ──────────────────────────────────────────────
-            const kebabBtn = document.createElement('button');
-            kebabBtn.className = 'icon-btn absolute top-1/2 -translate-y-1/2 right-1.5 w-8 h-8 rounded-lg flex items-center justify-center text-slate-500 hover:text-primary hover:bg-white/10 transition-all opacity-0 group-hover/item:opacity-100 z-10';
-            kebabBtn.title = 'Tùy chọn';
-            kebabBtn.setAttribute('aria-label', `Tùy chọn cho ${data.title}`);
-            kebabBtn.innerHTML = '<i class="fas fa-ellipsis-v text-xs"></i>';
-            kebabBtn.onclick = (e) => {
-                e.stopPropagation();
-                toggleKebabMenu(bookId);
-            };
-
-            // ── Dropdown menu ─────────────────────────────────────────────────
-            const dropdown = document.createElement('div');
-            dropdown.id = `kebab-menu-${bookId}`;
-            dropdown.className = 'hidden absolute right-0 top-full mt-1 w-44 bg-surface-high/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl z-[100] overflow-hidden py-1';
-            dropdown.onclick = (e) => e.stopPropagation();
-
-            const mergeBtn = document.createElement('button');
-            mergeBtn.className = 'w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-slate-300';
-            mergeBtn.innerHTML = '<i class="fas fa-file-import w-4 text-center"></i> Nối chương';
-            mergeBtn.onclick = (e) => {
-                e.stopPropagation();
-                toggleKebabMenu(bookId);
-                document.getElementById(`merge-input-${bookId}`).click();
-            };
-
-            const downloadTextBtn = document.createElement('button');
-            downloadTextBtn.className = 'w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-slate-300';
-            downloadTextBtn.innerHTML = '<i class="fas fa-file-download w-4 text-center"></i> Tải file TXT';
-            downloadTextBtn.onclick = (e) => {
-                e.stopPropagation();
-                toggleKebabMenu(bookId);
-                downloadTextBook(bookId, data.title);
-            };
-
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'w-full text-left px-4 py-2.5 text-sm flex items-center gap-3 hover:bg-red-500/10 hover:text-red-400 transition-colors text-slate-300';
-            deleteBtn.innerHTML = '<i class="fas fa-trash-alt w-4 text-center"></i> Xóa truyện';
-            deleteBtn.onclick = (e) => {
-                e.stopPropagation();
-                deleteBook(bookId, data.filename, data.title);
-            };
-
-            dropdown.appendChild(mergeBtn);
-            dropdown.appendChild(downloadTextBtn);
-            dropdown.appendChild(deleteBtn);
-
-            wrapper.appendChild(div);
-            wrapper.appendChild(mergeInput);
-            wrapper.appendChild(kebabBtn);
-            wrapper.appendChild(dropdown);
-            bookList.appendChild(wrapper);
-
-            // ── Discovery Grid Card ───────────────────────────────────────────
-            if (discoveryGrid) {
-                const discCard = document.createElement('div');
-                const isActive = bookId === STATE.currentBookId;
-                discCard.dataset.bookId = bookId;
-                discCard.className = `discovery-book-card glass rounded-3xl cursor-pointer hover:shadow-lg hover:shadow-primary/10 transition-all border group relative ${isActive ? 'border-primary bg-primary/10 ring-2 ring-primary/20 shadow-2xl shadow-primary/20' : 'border-white/5 border-t-white/10'}`;
-                discCard.dataset.title = removeVietnameseTones(data.title.toLowerCase()) + " " + data.title.toLowerCase();
-
-                // ── Hidden file input for merge ────────────────────────────────────
-                const mergeInput = document.createElement('input');
-                mergeInput.type = 'file';
-                mergeInput.accept = '.txt,.epub,.pdf';
-                mergeInput.className = 'hidden';
-                mergeInput.id = `merge-input-discovery-${bookId}`;
-                mergeInput.onchange = (e) => mergeChapterFile(e, bookId, data);
-                mergeInput.onclick = (e) => e.stopPropagation(); // Stop bubble when triggered by .click()
-
-                // ── Kebab (⋮) button ──────────────────────────────────────────────
-                const kebabBtn = document.createElement('button');
-                kebabBtn.className = 'icon-btn absolute top-2 right-2 sm:top-3 sm:right-3 w-8 h-8 sm:w-10 sm:h-10 rounded-xl sm:rounded-2xl flex items-center justify-center hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary transition-all z-20';
-                kebabBtn.title = 'Tùy chọn';
-                kebabBtn.setAttribute('aria-label', `Tùy chọn cho ${data.title}`);
-                kebabBtn.innerHTML = '<i class="fas fa-ellipsis-v text-xs sm:text-sm"></i>';
-                kebabBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    toggleKebabMenu(bookId, true);
-                };
-
-                // ── Dropdown menu ─────────────────────────────────────────────────
-                const dropdown = document.createElement('div');
-                dropdown.id = `discovery-kebab-menu-${bookId}`;
-                dropdown.className = 'hidden absolute right-3 sm:right-4 top-12 sm:top-16 w-48 bg-surface-high/95 backdrop-blur-xl border border-glass-border rounded-2xl shadow-2xl z-50 overflow-hidden py-1';
-                dropdown.onclick = (e) => e.stopPropagation();
-
-                const mergeBtn = document.createElement('button');
-                mergeBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-main font-bold';
-                mergeBtn.innerHTML = '<i class="fas fa-file-import w-4 text-center"></i> Nối chương';
-                mergeBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    toggleKebabMenu(bookId, true);
-                    document.getElementById(`merge-input-discovery-${bookId}`).click();
-                };
-
-                const downloadTextBtn = document.createElement('button');
-                downloadTextBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-main font-bold';
-                downloadTextBtn.innerHTML = '<i class="fas fa-file-download w-4 text-center"></i> Tải file TXT';
-                downloadTextBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    toggleKebabMenu(bookId, true);
-                    downloadTextBook(bookId, data.title);
-                };
-
-                const imagesBtn = document.createElement('button');
-                imagesBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-primary/10 hover:text-primary transition-colors text-main font-bold';
-                imagesBtn.innerHTML = '<i class="fas fa-images w-4 text-center"></i> Quản lý ảnh & crop';
-                imagesBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    toggleKebabMenu(bookId, true);
-                    openImageManager(bookId, data.title);
-                };
-
-                const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'w-full text-left px-5 py-3 text-sm flex items-center gap-3 hover:bg-red-500/10 hover:text-red-400 transition-colors text-main font-bold';
-                deleteBtn.innerHTML = '<i class="fas fa-trash-alt w-4 text-center"></i> Xóa truyện';
-                deleteBtn.onclick = (e) => {
-                    e.stopPropagation();
-                    deleteBook(bookId, data.filename, data.title);
-                };
-
-                dropdown.appendChild(mergeBtn);
-                dropdown.appendChild(downloadTextBtn);
-                dropdown.appendChild(imagesBtn);
-                dropdown.appendChild(deleteBtn);
-
-                discCard.innerHTML = `
-                    <div class="book-spine-accent"></div>
-                    <div class="book-ribbon"></div>
-                    <div class="discovery-book-art ${isActive ? 'text-primary' : 'text-primary'} flex items-center justify-center">
-                        <img data-cover-image="${bookId}" class="hidden" alt="Bìa truyện ${data.title}">
-                        <div class="discovery-art-badge">
-                            <i class="fas ${isActive ? 'fa-crown' : 'fa-book-open'} text-2xl sm:text-3xl text-primary"></i>
-                        </div>
-                    </div>
-                    <div class="discovery-book-content">
-                        <div class="min-w-0 pr-11 sm:pr-14">
-                            <h3 class="discovery-book-title font-cinzel ${isActive ? 'text-primary' : 'text-main'} font-bold group-hover:text-primary transition-colors" title="${data.title}">${data.title}</h3>
-                            <div class="discovery-book-meta text-xs ${isActive ? 'text-primary' : 'text-muted'} flex items-center gap-2 mt-1 font-serif-royal">
-                                <i class="fas ${isActive ? 'fa-play' : 'fa-bookmark'} text-[10px] text-primary"></i> ${isActive ? 'Currently Reading' : 'Continue Reading'}
-                            </div>
-                        </div>
-                        <div class="discovery-book-progress mt-3 sm:mt-5">
-                            <div class="flex justify-between items-center text-xs font-mono font-bold mb-2">
-                                <span class="text-muted text-[10px] font-serif-royal">TIẾN ĐỘ ĐỌC</span>
-                                <span class="text-primary font-mono">${progress}%</span>
-                            </div>
-                            <div class="w-full bg-surface-high/60 border border-glass-border h-1.5 rounded-full overflow-hidden">
-                                <div class="bg-gradient-to-r from-primary/70 via-primary to-primary h-full transition-all duration-500 shadow-[0_0_8px_var(--theme-glow)]" style="width: ${progress}%"></div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                discCard.onclick = () => loadBookFromStorage(bookId, data);
-
-                discCard.appendChild(mergeInput);
-                discCard.appendChild(kebabBtn);
-                discCard.appendChild(dropdown);
-
-                discoveryGrid.appendChild(discCard);
-                // Only books explicitly known to contain images need a
-                // manifest request. This prevents expected missing-manifest
-                // 404s for the rest of the legacy library.
-                if (data.has_images === true) {
-                    void hydrateBookCover(bookId, [discCard.querySelector(`[data-cover-image="${bookId}"]`)], { hasImagesKnown: true })
-                        .catch(err => console.warn('[Images] Cover hydration warning:', bookId, err.message));
-                }
-            }
-        }
-        updateDiscoveryContinueCard();
-        applyDiscoverySearch();
-        applyLibrarySearch();
+        discoveryLibrary = entries;
+        libraryView.status = 'ready';
+        // Covers are re-derived from the cached manifests/URLs, so a cover
+        // change made in the image manager shows up after this refresh.
+        STATE.coverResolved.clear();
+        if (!STATE.currentBookId) toggleDiscoveryMode(true);
+        renderLibraryViews();
     } catch (err) {
+        if (STATE.user?.uid !== libraryUid || refreshId !== libraryView.refreshSeq) return;
         console.error("Library Refresh Error:", err);
-        bookList.innerHTML = '<div class="text-center p-8 text-red-400 italic text-sm">Error updating library.</div>';
-        if (discoveryGrid) discoveryGrid.innerHTML = '<div class="text-center p-8 text-red-400 italic">Error loading recent reads.</div>';
+        libraryView.status = 'error';
+        renderLibraryViews();
     }
 }
 
@@ -3199,44 +3859,6 @@ async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
     }
 }
 
-// ── Kebab Menu Helpers ───────────────────────────────────────────────────────
-
-function closeAllKebabMenus(exceptId = null) {
-    document.querySelectorAll('[id*="kebab-menu-"]').forEach(menu => {
-        if (!exceptId || menu.id !== exceptId) {
-            menu.classList.add('hidden');
-            const owner = menu.closest('[data-book-id], .group\\/item, .discovery-book-card');
-            if (owner) owner.style.zIndex = '';
-        }
-    });
-}
-
-/**
- * Toggles a kebab dropdown menu. Closes all other open menus first.
- */
-function toggleKebabMenu(bookId, isDiscovery = false) {
-    const prefix = isDiscovery ? 'discovery-kebab-menu-' : 'kebab-menu-';
-    const targetId = prefix + bookId;
-
-    // Hide ALL other open menus (sidebar and discovery)
-    closeAllKebabMenus(targetId);
-
-    const menu = document.getElementById(targetId);
-    if (menu) {
-        const isHidden = menu.classList.contains('hidden');
-        menu.classList.toggle('hidden', !isHidden);
-        const owner = menu.closest('[data-book-id], .group\\/item, .discovery-book-card');
-        if (owner) {
-            owner.style.zIndex = isHidden ? '100' : '';
-        }
-    }
-}
-
-// Close all kebab menus when clicking anywhere outside
-document.addEventListener('click', () => {
-    closeAllKebabMenus();
-});
-
 // ── Feature 1: Delete Book ───────────────────────────────────────────────────
 
 /**
@@ -3297,7 +3919,8 @@ function closeCurrentBook() {
     const playerTitle = document.getElementById('player-title');
     const playerAuthor = document.getElementById('player-author');
     if (playerTitle) { playerTitle.innerText = 'System Ready'; playerTitle.title = ''; }
-    if (playerAuthor) { playerAuthor.innerText = 'Aureum Studio Audio'; playerAuthor.title = ''; }
+    if (playerAuthor) { playerAuthor.innerText = 'Cloud TTS'; playerAuthor.title = ''; }
+    paintPlayerArt();
     if ('mediaSession' in navigator) {
         navigator.mediaSession.metadata = null;
         navigator.mediaSession.playbackState = 'none';
@@ -3482,18 +4105,18 @@ document.getElementById('save-image-crop-btn')?.addEventListener('click', async 
     const crop = getImageCropArea();
     try {
         button.disabled = true;
-        button.textContent = 'Đang lưu…';
+        button.textContent = tr('saving', 'Đang lưu…');
         await saveBookImageCrop(session.bookId, session.imageId, crop, session.width, session.height);
         closeImageCropper();
         await renderImageManager();
         await refreshLibrary();
-        APP_STATUS.toast('Đã lưu crop ảnh.', 'success');
+        APP_STATUS.toast(tr('crop-saved', 'Đã lưu vùng bìa.'), 'success');
     } catch (err) {
         console.error('[Images] Crop save error:', err);
         APP_STATUS.error(`Không thể lưu crop: ${err.message}`);
     } finally {
         button.disabled = false;
-        button.textContent = 'Lưu crop';
+        button.textContent = tr('crop-save', 'Lưu vùng bìa');
     }
 });
 
@@ -3845,46 +4468,64 @@ fileInput.onchange = handleFileUpload;
 const discoveryFileInput = document.getElementById('discovery-file-input');
 if (discoveryFileInput) discoveryFileInput.onchange = handleFileUpload;
 
+const dragCarriesFiles = event => Array.from(event.dataTransfer?.types || []).includes('Files');
+
 /**
- * Sets up drag and drop functionality for the upload zone.
+ * Book files can be dropped on Home, on the library column and on the
+ * "Thêm truyện" dialog. Drops import the book only (no illustrations); images
+ * go through the dialog's second option or the image manager.
  */
 function setupDragAndDrop() {
-    const dropZone = document.getElementById('discovery-drop-zone');
-    if (!dropZone) return;
+    const zones = [
+        { el: document.getElementById('discovery-mode'), target: 'discovery' },
+        { el: document.getElementById('panel-library'), target: 'sidebar' },
+        { el: document.querySelector('#upload-options-modal [data-drop-target]'), target: null, highlight: document.getElementById('upload-txt-only-btn') }
+    ].filter(zone => zone.el);
 
-    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-        }, false);
-    });
-
-    ['dragenter', 'dragover'].forEach(eventName => {
-        dropZone.addEventListener(eventName, () => {
-            dropZone.classList.add('drag-over');
-        }, false);
-    });
-
-    ['dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, () => {
-            dropZone.classList.remove('drag-over');
-        }, false);
-    });
-
-    dropZone.addEventListener('drop', (e) => {
-        const dt = e.dataTransfer;
-        const files = dt.files;
-        if (files && files.length > 0) {
-            // Drag-and-drop is intentionally TXT-only; image import is explicit
-            // through the popup so the user understands what will be uploaded.
+    zones.forEach(zone => {
+        let depth = 0;
+        const marked = zone.highlight || zone.el;
+        const clear = () => { depth = 0; marked.classList.remove('drag-over'); };
+        zone.el.addEventListener('dragenter', event => {
+            if (!dragCarriesFiles(event)) return;
+            event.preventDefault();
+            depth += 1;
+            marked.classList.add('drag-over');
+        });
+        zone.el.addEventListener('dragover', event => {
+            if (!dragCarriesFiles(event)) return;
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'copy';
+        });
+        zone.el.addEventListener('dragleave', event => {
+            if (!dragCarriesFiles(event)) return;
+            depth = Math.max(0, depth - 1);
+            if (depth === 0) marked.classList.remove('drag-over');
+        });
+        zone.el.addEventListener('drop', event => {
+            if (!dragCarriesFiles(event)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            clear();
+            const files = event.dataTransfer.files;
+            if (!files?.length) return;
             STATE.uploadImagesChoice = false;
-            STATE.uploadInputTarget = 'discovery';
-            handleFileUpload({ target: { files: files } });
-        }
-    }, false);
+            STATE.uploadInputTarget = zone.target || STATE.uploadInputTarget || 'discovery';
+            setModalVisibility('upload-options-modal', false);
+            handleFileUpload({ target: { files, value: '' } });
+        });
+    });
+
+    // A file dropped outside a zone must not navigate away from the app.
+    window.addEventListener('dragover', event => { if (dragCarriesFiles(event)) event.preventDefault(); });
+    window.addEventListener('drop', event => { if (dragCarriesFiles(event)) event.preventDefault(); });
 }
 
 setupDragAndDrop();
+
+// Rings, "Nghe tiếp" and the player art follow playback.
+audio.addEventListener('play', updateLibraryHighlight);
+audio.addEventListener('pause', updateLibraryHighlight);
 
 async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
     const loadGeneration = ++STATE.loadGeneration;
@@ -3954,9 +4595,10 @@ async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
                 void renderChapter(STATE.currentChapterIndex).catch(err => console.debug('[Images] Deferred render skipped:', err.message));
             }
         }
+        paintPlayerArt();
         return manifest;
     });
-    STATE.imageURLCache.clear();
+    releaseImageURLs();
 
     // Check for existing progress. The library card already came from the
     // same user's progress collection, so keep it as a safe fallback if this
@@ -4137,91 +4779,6 @@ async function fetchSegment(segmentIndex, expectedLoadGeneration = STATE.loadGen
  * Updates the highlighting for books in the sidebar and discovery grid
  * based on the currently open book ID.
  */
-function updateLibraryHighlight() {
-    if (!STATE.currentBookId) return;
-
-    // Update Sidebar Book List
-    const bookListItems = document.querySelectorAll('#book-list [data-book-id]');
-    bookListItems.forEach(item => {
-        const isActive = item.dataset.bookId === STATE.currentBookId;
-        const titleSpan = item.querySelector('span');
-
-        if (isActive) {
-            item.classList.add('book-active');
-            item.classList.remove('border-transparent');
-            if (titleSpan) {
-                titleSpan.classList.add('text-primary');
-                titleSpan.classList.remove('text-white');
-                if (!titleSpan.querySelector('.fa-headphones-alt')) {
-                    titleSpan.innerHTML = `<i class="fas fa-headphones-alt mr-2 text-[10px] animate-pulse"></i>${titleSpan.textContent}`;
-                }
-            }
-        } else {
-            item.classList.remove('book-active');
-            item.classList.add('border-transparent');
-            if (titleSpan) {
-                titleSpan.classList.remove('text-primary');
-                titleSpan.classList.add('text-white');
-                const icon = titleSpan.querySelector('.fa-headphones-alt');
-                if (icon) icon.remove();
-            }
-        }
-    });
-
-    // Update Discovery Grid
-    const discoveryCards = document.querySelectorAll('#discovery-grid [data-book-id]');
-    discoveryCards.forEach(card => {
-        const isActive = card.dataset.bookId === STATE.currentBookId;
-        const titleH3 = card.querySelector('h3');
-        const iconDiv = card.querySelector('.discovery-book-art');
-        const statusDiv = card.querySelector('.text-xs');
-
-        if (isActive) {
-            card.className = `discovery-book-card glass rounded-3xl cursor-pointer hover:shadow-lg hover:shadow-primary/10 transition-all border border-primary bg-primary/10 ring-2 ring-primary/20 shadow-2xl shadow-primary/20 group relative`;
-            if (titleH3) {
-                titleH3.classList.add('text-primary');
-                titleH3.classList.remove('text-white');
-            }
-            if (iconDiv) {
-                const isCoverLoaded = iconDiv.dataset.coverStatus === 'loaded' || !iconDiv.querySelector('img')?.classList.contains('hidden');
-                iconDiv.className = `discovery-book-art text-black flex items-center justify-center`;
-                const fallbackIcon = iconDiv.querySelector('i');
-                if (fallbackIcon) fallbackIcon.className = 'fas fa-volume-up text-2xl sm:text-3xl';
-                const badge = iconDiv.querySelector('.discovery-art-badge');
-                if (badge) {
-                    if (isCoverLoaded) badge.classList.add('hidden');
-                    else badge.classList.remove('hidden');
-                }
-            }
-            if (statusDiv) {
-                statusDiv.className = `text-xs text-primary/70 flex items-center gap-2 mt-1`;
-                statusDiv.innerHTML = '<i class="fas fa-play text-[10px]"></i> Currently Reading';
-            }
-        } else {
-            card.className = `discovery-book-card glass rounded-3xl cursor-pointer hover:shadow-lg hover:shadow-primary/10 transition-all border border-white/5 border-t-white/10 group relative`;
-            if (titleH3) {
-                titleH3.classList.remove('text-primary');
-                titleH3.classList.add('text-white');
-            }
-            if (iconDiv) {
-                const isCoverLoaded = iconDiv.dataset.coverStatus === 'loaded' || !iconDiv.querySelector('img')?.classList.contains('hidden');
-                iconDiv.className = `discovery-book-art text-primary flex items-center justify-center`;
-                const fallbackIcon = iconDiv.querySelector('i');
-                if (fallbackIcon) fallbackIcon.className = 'fas fa-book text-2xl sm:text-3xl';
-                const badge = iconDiv.querySelector('.discovery-art-badge');
-                if (badge) {
-                    if (isCoverLoaded) badge.classList.add('hidden');
-                    else badge.classList.remove('hidden');
-                }
-            }
-            if (statusDiv) {
-                statusDiv.className = `text-xs text-slate-400 flex items-center gap-2 mt-1`;
-                statusDiv.innerHTML = '<i class="fas fa-bookmark text-[10px]"></i> Continue Reading';
-            }
-        }
-    });
-}
-
 async function fetchChapterSentences(index, expectedLoadGeneration = STATE.loadGeneration, expectedBookId = STATE.currentBookId) {
     if (!STATE.user || !STATE.currentFilename) return;
     const expectedFilename = STATE.currentFilename;
@@ -6311,6 +6868,10 @@ function updateMediaSession() {
             artist: STATE.currentBook.title,
             album: `Chapter ${STATE.currentChapterIndex + 1}`,
             artwork: [
+                // Same object URL as the library cover; the app icon stays as fallback.
+                ...(STATE.coverResolved.get(STATE.currentBookId)?.url
+                    ? [{ src: STATE.coverResolved.get(STATE.currentBookId).url, sizes: '512x512', type: 'image/webp' }]
+                    : []),
                 { src: '/static/icon.svg', sizes: '512x512', type: 'image/svg+xml' },
                 { src: 'https://cdn-icons-png.flaticon.com/512/3771/3771417.png', sizes: '512x512', type: 'image/png' }
             ]
