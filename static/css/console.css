@@ -125,6 +125,7 @@
 
 :root {
     --cover-aspect: 5 / 7;
+    --color-crop-grid: oklch(100% 0 0 / 0.45);
     --color-scrim-solid: color-mix(in oklch, var(--color-paper) 88%, transparent);
     --font-ui: "Be Vietnam Pro", system-ui, -apple-system, "Segoe UI", sans-serif;
     --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -2994,6 +2995,100 @@
         .console-utils .chip { padding: 0 6px; min-width: 40px; }
         .wordmark { font-size: var(--text-md); padding: 0 var(--space-1); }
     }
+
+    /* ============================================================ desktop power-use fixes */
+    /* Home on desktop: the main pane owns search, filters and "Thêm truyện", so the
+       library column keeps only its list (one search field, one filter row on screen). */
+    @media (min-width: 1024px) {
+        body[data-view="discovery"] #panel-library .lib-tools,
+        body[data-view="discovery"] #panel-library .lib-filter { display: none; }
+    }
+    /* Keyboard hints only while a book is open in the reader. */
+    body:not([data-has-book]) .hdr-keys,
+    body[data-view="discovery"] .hdr-keys { display: none; }
+    .hdr-keys { color: var(--color-muted-raised); }
+    .hdr-keys kbd { font-size: var(--text-xs); color: var(--color-text); }
+
+    /* Narrow phones: the idle timer chip is just the moon (its aria-label names it). */
+    @media (max-width: 399.98px) {
+        #sleep-chip[data-on="false"] #sleep-chip-label {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip-path: inset(50%);
+            white-space: nowrap;
+        }
+    }
+
+    /* Title pen: a full 44px target, pulled into the line so the header keeps its height. */
+    .reader-top__pen { min-width: var(--tap); min-height: var(--tap); margin-block: -8px; }
+    .reader-top__pen::before { content: none; }
+
+    /* Chapter just saved: a short tint on its row. */
+    .toc-row.is-flash { animation: cc-row-flash 1.2s var(--ease-out); }
+    @keyframes cc-row-flash { from { background: color-mix(in oklch, var(--color-accent) 28%, var(--toc-bg, var(--color-paper))); } }
+
+    /* Edit chapter: title field above a body that fills the dialog. */
+    .edit-body { flex: 1; min-height: 0; }
+    .edit-body .edit-text { flex: 1; }
+
+    /* Toast action ("Hoàn tác"). */
+    .toast-hud-glass .toast-action {
+        align-self: center;
+        min-height: 32px;
+        padding: 0 var(--space-2);
+        border-radius: var(--radius-sm);
+        color: var(--color-accent);
+        font: 600 var(--text-sm)/1 var(--font-ui);
+        white-space: nowrap;
+    }
+    .toast-hud-glass .toast-action:hover { background: var(--color-surface); }
+    .toast-hud-glass .toast-action:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 1px; }
+    .toast-progress-fill { animation-duration: var(--toast-duration, 4.8s); }
+    /* Desktop side sheet open: toasts sit beside it, not on top of its controls. */
+    @media (min-width: 1024px) {
+        :root[data-settings-open] .toast-region { right: calc(min(480px, 100vw) + var(--space-3)); }
+    }
+
+    /* Settings: the jump link of the section in view; × closes the side sheet, ← the phone page. */
+    .settings__jump a[aria-current="true"] { color: var(--color-text); box-shadow: inset 0 -2px 0 var(--color-accent); border-radius: 0; }
+    .settings__close-x { display: none; }
+    @media (min-width: 640px) {
+        .settings__close-back { display: none; }
+        .settings__close-x { display: block; }
+    }
+
+    /* "Xem định dạng chương": a chevron says it opens. */
+    .format-help summary { gap: var(--space-2); list-style: none; }
+    .format-help summary::-webkit-details-marker { display: none; }
+    .format-help summary::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        border-right: 2px solid currentColor;
+        border-bottom: 2px solid currentColor;
+        transform: rotate(-45deg);
+        transition: transform var(--dur-fast) var(--ease-out);
+    }
+    .format-help[open] summary::before { transform: rotate(45deg); }
+
+    /* Cover crop: thirds grid on the frame, live previews at list and grid size. */
+    .crop-stage::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        background:
+            linear-gradient(to right, transparent calc(33.33% - 0.5px), var(--color-crop-grid) 0 calc(33.33% + 0.5px), transparent 0 calc(66.66% - 0.5px), var(--color-crop-grid) 0 calc(66.66% + 0.5px), transparent 0),
+            linear-gradient(to bottom, transparent calc(33.33% - 0.5px), var(--color-crop-grid) 0 calc(33.33% + 0.5px), transparent 0 calc(66.66% - 0.5px), var(--color-crop-grid) 0 calc(66.66% + 0.5px), transparent 0);
+    }
+    .crop-stage:focus-visible { outline: 3px solid var(--color-focus); outline-offset: 2px; }
+    .crop-stage { width: min(100%, calc(42dvh * 5 / 7)); }
+    .crop-previews { display: flex; align-items: flex-end; justify-content: center; gap: var(--space-3); }
+    .crop-preview { flex: none; background: var(--color-pocket-bg); }
+    .crop-preview--card { width: 64px; }
+    .crop-previews .field-hint { max-width: 10rem; }
 }
 
 /* ------------------------------------------------------------ motion */

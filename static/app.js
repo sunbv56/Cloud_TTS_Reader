@@ -1,9 +1,10 @@
 // Firebase Modules
 import { initializeFirestore, getFirestore, waitForPendingWrites, terminate, doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { compressImageForStorage, IMAGE_MAX_BYTES } from "./js/image-manager.js";
-import { toggleSidebar, normalizeThemeId, applyTheme as applyThemeTokens, ensureReaderFont, readerFontStack, DEFAULT_READER_FONT } from "./js/modules/ui-interactions.js";
+import { toggleSidebar, trapTab, normalizeThemeId, applyTheme as applyThemeTokens, ensureReaderFont, readerFontStack, DEFAULT_READER_FONT } from "./js/modules/ui-interactions.js";
 import { AccountSessions } from "./js/modules/account-sessions.js";
 import { createAccountMenu } from "./js/modules/account-menu.js";
+import { displayTitle, shortChapterTitle } from "./js/modules/utils.js";
 
 // Firebase placeholders (Initialized via API); swapped on account switch
 let app, auth, db;
@@ -397,9 +398,18 @@ const STATS_MANAGER = {
         }
         if (timeEl) {
             const mins = Math.floor(STATE.stats.totalTime / 60);
-            timeEl.innerText = mins > 60 ? `${(mins / 60).toFixed(1)}h` : `${mins}m`;
+            timeEl.innerText = mins > 60
+                ? tr('hours-n', '{n} giờ', { n: (mins / 60).toFixed(1) })
+                : tr('minutes-n', '{n} phút', { n: mins });
         }
-        if (streakDot) streakDot.classList.toggle('hidden', !(STATE.user && STATE.stats.streak > 0));
+        const hasStreak = !!(STATE.user && STATE.stats.streak > 0);
+        if (streakDot) streakDot.classList.toggle('hidden', !hasStreak);
+        // The dot on the menu button is explained next to "Thống kê đọc".
+        const streakValue = document.getElementById('stats-streak-value');
+        if (streakValue) {
+            streakValue.hidden = !hasStreak;
+            streakValue.textContent = hasStreak ? tr('streak-days-n', '{n} ngày', { n: STATE.stats.streak }) : '';
+        }
     },
 
     scheduleSync() {
@@ -705,7 +715,7 @@ const APP_STATUS = {
         indicator.innerText = text;
         indicator.style.color = '';
     },
-    toast(message, kind = 'error', { key = null } = {}) {
+    toast(message, kind = 'error', { key = null, action = null, duration = 4800 } = {}) {
         const region = document.getElementById('app-toast-region');
         if (!region) return;
 
@@ -757,6 +767,20 @@ const APP_STATUS = {
 
         const closeBtn = toast.querySelector('button');
         let removeTimer = null;
+        // Optional action (e.g. "Hoàn tác"): runs once, then the toast leaves.
+        if (action?.label && typeof action.onClick === 'function') {
+            const actionBtn = document.createElement('button');
+            actionBtn.type = 'button';
+            actionBtn.className = 'toast-action';
+            actionBtn.textContent = action.label;
+            actionBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                dismiss();
+                action.onClick();
+            });
+            closeBtn?.before(actionBtn);
+            toast.style.setProperty('--toast-duration', `${duration}ms`);
+        }
         const dismiss = () => {
             if (removeTimer) clearTimeout(removeTimer);
             toast.dataset.leaving = 'true';
@@ -798,7 +822,7 @@ const APP_STATUS = {
         if (window.MotionLayer?.animateToastIn) {
             window.MotionLayer.animateToastIn(toast);
         }
-        removeTimer = setTimeout(dismiss, 4800);
+        removeTimer = setTimeout(dismiss, duration);
         requestAnimationFrame(() => revealFocusAboveToasts(region));
     },
     error(error, fallback = 'Đã xảy ra lỗi. Vui lòng thử lại.') {
@@ -851,6 +875,13 @@ function toggleDiscoveryMode(isActive, options = {}) {
     const mediaPlayer = document.getElementById('media-player');
     const playerInfoLayer = document.getElementById('player-info-layer');
 
+    document.body.dataset.view = isActive ? 'discovery' : 'reader';
+    if (isActive && libraryView.orderFrozen) {
+        libraryView.orderFrozen = false;
+        discoveryLibrary.sort(byRecency);
+        renderLibraryViews();
+    }
+
     if (isActive) {
         // Keep the current audio/session context while browsing. Opening a
         // different book still resets it through loadBook as before.
@@ -880,6 +911,9 @@ function toggleDiscoveryMode(isActive, options = {}) {
 
         if (discoveryMode) discoveryMode.classList.remove('hidden');
         updateDiscoveryContinueCard();
+        // From 1024px Home hides the column's search box; it must not keep filtering unseen.
+        const columnSearch = document.getElementById('library-search');
+        if (columnSearch?.value && window.matchMedia('(min-width: 1024px)').matches) columnSearch.value = '';
         applyDiscoverySearch();
         // Master–detail: from 1024px the library column stays beside Home;
         // below that the sidebar is the off-canvas drawer, so just close it.
@@ -966,6 +1000,8 @@ const COVER_CONCURRENCY = 3;
 const IMAGE_URL_CACHE_LIMIT = 48;
 const LIBRARY_TOC_CACHE_LIMIT = 12;
 let discoveryLibrary = [];
+const BOOK_DELETE_UNDO_MS = 6000;
+const pendingBookDeletes = new Map();
 
 function readPref(key, allowed, fallback) {
     try {
@@ -986,8 +1022,13 @@ const libraryView = {
     sort: readPref(LIBRARY_SORT_KEY, LIBRARY_SORTS, 'recent'),
     discovery: readPref(DISCOVERY_VIEW_STORAGE_KEY, ['grid', 'list'], window.innerWidth < 768 ? 'list' : 'grid'),
     expanded: { sidebar: null, shelf: null },
-    refreshSeq: 0
+    refreshSeq: 0,
+    orderFrozen: false
 };
+
+function byRecency(a, b) {
+    return (b.lastListenedAt - a.lastListenedAt) || a.title.localeCompare(b.title, 'vi');
+}
 
 function uiLang() {
     try { return localStorage.getItem('ui-lang') === 'vi' ? 'vi' : 'en'; } catch (_) { return 'en'; }
@@ -1008,9 +1049,7 @@ function trCount(key, fallback, n) {
 // File-derived titles such as "Dạ_Hành_Thư_Sinh" have no spaces; a <wbr>
 // after each "_" lets them wrap there instead of mid-word (text is unchanged).
 function setBreakableTitle(el, text) {
-    const parts = String(text ?? '').split('_');
-    el.replaceChildren(parts[0]);
-    for (let i = 1; i < parts.length; i++) el.append('_', document.createElement('wbr'), parts[i]);
+    el.textContent = displayTitle(text);
 }
 
 function removeVietnameseTones(str) {
@@ -1042,7 +1081,8 @@ function isBookDone(data) {
 }
 
 function createLibraryEntry(bookId, data) {
-    const title = data.title || data.filename;
+    const rawTitle = data.title || data.filename;
+    const title = displayTitle(rawTitle) || rawTitle;
     const done = isBookDone(data);
     return {
         id: bookId,
@@ -1052,7 +1092,7 @@ function createLibraryEntry(bookId, data) {
         done,
         lastListenedAt: listenedTime(data.last_listened_at),
         hasImages: data.has_images === true,
-        searchKey: librarySearchKey(title),
+        searchKey: librarySearchKey(rawTitle),
         chapter: null
     };
 }
@@ -1567,7 +1607,9 @@ function sortedLibraryEntries() {
 
 function entryPassesFilter(entry) {
     if (libraryView.filter === 'all') return true;
-    return libraryView.filter === 'done' ? entry.done : !entry.done;
+    if (libraryView.filter === 'done') return entry.done;
+    // "Đang nghe" = started and not finished; the open book always counts.
+    return !entry.done && (entry.lastListenedAt > 0 || entry.percent > 0 || entry.id === STATE.currentBookId);
 }
 
 function renderLibraryViews() {
@@ -1628,7 +1670,8 @@ function libraryEmptyState(query, rawQuery, visible) {
     }
     if (visible > 0 || libraryView.status !== 'ready') return null;
     if (query) {
-        return { text: tr('search-no-match', 'Không tìm thấy “{query}”.', { query: rawQuery }), action: 'clear-search', label: tr('clear-search', 'Xoá tìm kiếm') };
+        const filterName = tr(`filter-${libraryView.filter}`, libraryView.filter);
+        return { text: tr('search-no-match-in', 'Không có truyện nào khớp “{query}” trong {filter}.', { query: rawQuery, filter: filterName }), action: 'clear-search', label: tr('clear-search', 'Xoá tìm kiếm') };
     }
     const key = libraryView.filter === 'done' ? 'filter-empty-done' : 'filter-empty-listening';
     const fallback = libraryView.filter === 'done' ? 'Chưa có truyện nào nghe xong.' : 'Không có truyện đang nghe.';
@@ -1833,8 +1876,7 @@ async function renameLibraryBook(entry, trigger) {
         return;
     }
     if (!STATE.user) return;
-    const requested = prompt(tr('rename-prompt', 'Tên mới cho truyện:'), entry.title);
-    const newTitle = requested?.trim();
+    const newTitle = await askBookTitle(entry.title);
     if (!newTitle || newTitle === entry.title) return;
     try {
         await setDoc(doc(db, 'users', STATE.user.uid, 'progress', entry.id), { title: newTitle }, { merge: true });
@@ -2062,6 +2104,18 @@ const librarySearchInput = document.getElementById('library-search');
 const discoverySearch = document.getElementById('discovery-search');
 librarySearchInput?.addEventListener('input', applyLibraryFilters);
 discoverySearch?.addEventListener('input', applyLibraryFilters);
+// Esc clears a search first; a second Esc leaves the field.
+[librarySearchInput, discoverySearch].forEach(input => input?.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (input.value) {
+        input.value = '';
+        applyLibraryFilters();
+    } else {
+        input.blur();
+    }
+}));
 [['library-clear-search', librarySearchInput], ['discovery-search-clear', discoverySearch]].forEach(([id, input]) => {
     document.getElementById(id)?.addEventListener('click', () => {
         if (!input) return;
@@ -2105,7 +2159,7 @@ window.addEventListener('uilanguagechange', () => {
     // The reader top bar carries data-i18n for its empty state; put the open book back.
     if (STATE.currentBook) {
         const titleEl = document.getElementById('current-title');
-        if (titleEl) titleEl.innerText = STATE.currentBook.title;
+        if (titleEl) titleEl.innerText = displayTitle(STATE.currentBook.title);
         const index = STATE.currentChapterIndex || 0;
         const chapter = STATE.currentBook.chapters?.[index];
         const chapterLabel = document.getElementById('current-chapter');
@@ -3195,7 +3249,10 @@ async function initWebSocket() {
         // must stay closed. Buffered chunks alone are not proof that playback
         // is active and previously caused endless background reconnects.
         if (socket._intentionalClose) {
-            setStatusKeepingStopReason(tr('status-disconnected', 'Disconnected'));
+            // We closed it (book switch, idle pause, finished download): that is
+            // not a failure, so do not paint the warning state over "Loading…".
+            const current = document.getElementById('status-indicator')?.innerText;
+            if (!statusMatches(current, 'status-loading-meta')) setStatusKeepingStopReason(idleStatus());
             return;
         }
 
@@ -3800,24 +3857,24 @@ async function renderImageManager() {
 
     const manifest = await loadImageManifest(bookId);
     if (bookId === STATE.currentBookId) STATE.imageManifest = manifest;
-    const bookTitle = imageManagerBookTitle || STATE.currentBook?.title || tr('current-book', 'Truyện hiện tại');
+    const bookTitle = displayTitle(imageManagerBookTitle || STATE.currentBook?.title) || tr('current-book', 'Truyện hiện tại');
     if (title) title.textContent = `${bookTitle} · ${tr(manifest.images.length === 1 ? 'image-count-one' : 'image-count', '{count} ảnh', { count: manifest.images.length })}`;
     list.replaceChildren();
     if (!manifest.images.length) {
-        const backendNote = manifest._storageBackend && manifest._storageBackend !== 'unknown' ? ` (${manifest._storageBackend.toUpperCase()})` : '';
         const empty = document.createElement('div');
         empty.className = 'img-empty';
         const line1 = document.createElement('p');
-        line1.textContent = tr('images-empty', 'Chưa có ảnh trong kho lưu trữ') + backendNote + '.';
+        line1.textContent = tr('images-empty', 'Truyện chưa có ảnh.');
         const line2 = document.createElement('p');
-        line2.textContent = tr('images-empty-hint', 'Bấm “Thêm ảnh” để tải ảnh bìa và tranh minh hoạ.');
+        line2.textContent = tr('images-empty-hint', 'Bấm “Thêm ảnh” để thêm bìa hoặc tranh minh hoạ.');
         empty.append(line1, line2);
         list.append(empty);
         restoreImageManagerFocus(list);
         return;
     }
+    const effectiveCoverId = (manifest.images.find(image => image.id === manifest.coverId) || manifest.images[0])?.id;
     for (const image of manifest.images) {
-        const isCover = manifest.coverId === image.id;
+        const isCover = effectiveCoverId === image.id;
         const row = document.createElement('div');
         row.className = 'img-row';
         row.dataset.imageId = image.id;
@@ -3844,7 +3901,8 @@ async function renderImageManager() {
         }
         const actions = document.createElement('div');
         actions.className = 'img-row__acts';
-        const coverBtn = imageManagerButton(isCover ? tr('is-cover', 'Đang là bìa') : tr('set-cover', 'Đặt bìa'), async () => {
+        // The cover row shows its "Bìa" badge and offers "Căn bìa"; other rows offer "Đặt bìa".
+        const coverBtn = isCover ? null : imageManagerButton(tr('set-cover', 'Đặt bìa'), async () => {
             rememberImageManagerFocus(image.id, 'cover');
             setButtonLoading(coverBtn, true, '…');
             try {
@@ -3856,9 +3914,9 @@ async function renderImageManager() {
             } finally {
                 setButtonLoading(coverBtn, false);
             }
-        }, { disabled: isCover, act: 'cover' });
-        const cropBtn = imageManagerButton(tr('crop-title', 'Căn bìa'), () => openImageCropper(bookId, image),
-            { title: tr('crop-hint', 'Kéo ảnh để chọn vùng hiện trên bìa. Ảnh gốc không bị cắt.'), act: 'crop' });
+        }, { act: 'cover' });
+        const cropBtn = isCover ? imageManagerButton(tr('crop-title', 'Căn bìa'), () => openImageCropper(bookId, image),
+            { title: tr('crop-hint', 'Kéo ảnh để chọn vùng hiện trên bìa. Ảnh gốc không bị cắt.'), act: 'crop' }) : null;
         const replaceBtn = imageManagerButton(tr('replace-image', 'Thay'), () => {
             STATE.imageEditTargetId = image.id;
             rememberImageManagerFocus(image.id, 'replace');
@@ -3877,7 +3935,7 @@ async function renderImageManager() {
                 setButtonLoading(deleteBtn, false);
             }
         }, { danger: true, act: 'delete' });
-        actions.append(coverBtn, cropBtn, replaceBtn, deleteBtn);
+        actions.append(...[coverBtn, cropBtn, replaceBtn, deleteBtn].filter(Boolean));
         row.append(thumb, info, actions);
         list.append(row);
     }
@@ -4155,6 +4213,7 @@ async function refreshLibrary() {
         querySnapshot.forEach((docSnap) => {
             const data = docSnap.data();
             const bookId = docSnap.id;
+            if (pendingBookDeletes.has(bookId)) return;
             const filename = data.filename || (bookId.replace('book_', '') + '.txt');
             if (!hasBookProgressIdentity({ ...data, filename })) {
                 console.warn('[Progress] Skipping incomplete library document', {
@@ -4172,7 +4231,14 @@ async function refreshLibrary() {
 
         // Default order: most recently listened first; books never listened
         // to (no last_listened_at) follow in Vietnamese alphabetical order.
-        entries.sort((a, b) => (b.lastListenedAt - a.lastListenedAt) || a.title.localeCompare(b.title, 'vi'));
+        entries.sort(byRecency);
+        // While the reader is open, rows keep their places (new books on top),
+        // so the list never jumps under the cursor; Home re-sorts by recency.
+        if (document.body.dataset.view === 'reader' && discoveryLibrary.length) {
+            const previous = new Map(discoveryLibrary.map((entry, i) => [entry.id, i]));
+            entries.sort((a, b) => (previous.get(a.id) ?? -1) - (previous.get(b.id) ?? -1));
+            libraryView.orderFrozen = true;
+        }
 
         discoveryLibrary = entries;
         libraryView.status = 'ready';
@@ -4261,10 +4327,51 @@ async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
 
 // ── Feature 1: Delete Book ───────────────────────────────────────────────────
 
+function escapeHTML(text) {
+    return String(text ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+}
+
+// Optimistic delete: the book leaves the lists now, a toast offers "Hoàn tác"
+// for a few seconds, and only then is the cloud data removed. Leaving the page
+// inside that window keeps the book (nothing was deleted yet).
 async function deleteBook(bookId, filename, title, bypassConfirm = false) {
     closeAllKebabMenus(); // close menu first
+    if (bypassConfirm) return commitDeleteBook(bookId, filename, title);
+    if (!STATE.user || pendingBookDeletes.has(bookId)) return;
 
-    if (!bypassConfirm && !confirm(tr('delete-book-confirm', 'Xóa truyện "{title}"?\n\nHành động này sẽ xóa vĩnh viễn dữ liệu trên Cloud. Không thể hoàn tác!', { title }))) return;
+    const index = discoveryLibrary.findIndex(entry => entry.id === bookId);
+    const removed = index >= 0 ? discoveryLibrary.splice(index, 1)[0] : null;
+    if (STATE.currentBookId === bookId && !audio.paused) audio.pause();
+    renderLibraryViews();
+
+    const uid = STATE.user.uid;
+    const timer = setTimeout(() => {
+        pendingBookDeletes.delete(bookId);
+        if (STATE.user?.uid !== uid) return;
+        void commitDeleteBook(bookId, filename, title);
+    }, BOOK_DELETE_UNDO_MS);
+    pendingBookDeletes.set(bookId, timer);
+
+    APP_STATUS.toast(tr('book-deleted-undo', 'Đã xoá “{title}”.', { title: escapeHTML(displayTitle(title)) }), 'info', {
+        duration: BOOK_DELETE_UNDO_MS,
+        action: {
+            label: tr('undo', 'Hoàn tác'),
+            onClick: () => {
+                clearTimeout(pendingBookDeletes.get(bookId));
+                pendingBookDeletes.delete(bookId);
+                if (removed && !findLibraryEntry(bookId)) {
+                    discoveryLibrary.splice(Math.min(index, discoveryLibrary.length), 0, removed);
+                    renderLibraryViews();
+                }
+                const control = [...document.querySelectorAll(`[data-book-id="${CSS.escape(bookId)}"] :is([data-action="toggle"], [data-action="open"])`)]
+                    .find(el => el.getClientRects().length);
+                requestAnimationFrame(() => control?.focus({ preventScroll: true }));
+            }
+        }
+    });
+}
+
+async function commitDeleteBook(bookId, filename, title) {
     if (!STATE.user) return;
 
     APP_STATUS.set(tr('status-deleting', 'Đang xóa...'));
@@ -4292,6 +4399,8 @@ async function deleteBook(bookId, filename, title, bypassConfirm = false) {
         console.error('[Delete] Error:', err);
         APP_STATUS.error(tr('delete-failed', 'Xóa thất bại: {reason}', { reason: err?.message || err }));
         setTimeout(() => APP_STATUS.set(tr('status-ready', 'Ready')), 3000);
+        // The row was hidden optimistically; bring it back.
+        void refreshLibrary();
     }
 }
 
@@ -4389,6 +4498,31 @@ function renderImageCropPreview() {
     if (zoomValue) zoomValue.textContent = `${Math.round(scale / baseScale * 100)}%`;
     imageCropSession.stageWidth = stageWidth;
     imageCropSession.stageHeight = stageHeight;
+    paintCropPreviews();
+}
+
+// The two small covers show the crop exactly as the list (40×56) and grid will.
+function paintCropPreviews() {
+    if (!imageCropSession) return;
+    const area = getImageCropArea();
+    const { width, height, objectURL } = imageCropSession;
+    if (!area || !width || !height) return;
+    const crop = { x: area.x / width, y: area.y / height, width: area.width / width, height: area.height / height };
+    ['image-crop-thumb', 'image-crop-card'].forEach(id => {
+        const box = document.getElementById(id);
+        const img = box?.querySelector('img');
+        if (!box || !img) return;
+        const paint = () => {
+            applyCoverCrop(img, box, crop);
+            box.dataset.coverStatus = 'loaded';
+        };
+        if (img.getAttribute('src') !== objectURL) {
+            img.onload = paint;
+            img.src = objectURL;
+        } else if (img.complete && img.naturalWidth) {
+            paint();
+        }
+    });
 }
 
 function clampImageCropPosition() {
@@ -4401,6 +4535,10 @@ function clampImageCropPosition() {
 }
 
 function closeImageCropper() {
+    ['image-crop-thumb', 'image-crop-card'].forEach(id => {
+        const img = document.getElementById(id)?.querySelector('img');
+        if (img) { img.onload = null; img.removeAttribute('src'); img.removeAttribute('style'); }
+    });
     if (imageCropSession?.objectURL) URL.revokeObjectURL(imageCropSession.objectURL);
     imageCropSession = null;
     setModalVisibility('image-crop-modal', false);
@@ -4481,6 +4619,30 @@ const endCropDrag = event => {
     cropDrag = null;
 };
 cropStage?.addEventListener('pointerup', endCropDrag);
+// Keyboard crop: arrows move 2% of the frame (Shift: 10%), + / − zoom.
+cropStage?.addEventListener('keydown', event => {
+    if (!imageCropSession || !cropZoom) return;
+    const step = (event.shiftKey ? 0.1 : 0.02);
+    const moves = { ArrowLeft: [1, 0], ArrowRight: [-1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] };
+    if (event.key in moves) {
+        const [dx, dy] = moves[event.key];
+        imageCropSession.offsetX += dx * step * imageCropSession.stageWidth;
+        imageCropSession.offsetY += dy * step * imageCropSession.stageHeight;
+    } else if (event.key === '+' || event.key === '=' || event.key === '-' || event.key === '_') {
+        const delta = (event.key === '-' || event.key === '_') ? -0.1 : 0.1;
+        const next = Math.min(Number(cropZoom.max), Math.max(Number(cropZoom.min), Number(cropZoom.value) + delta));
+        cropZoom.value = String(next);
+        imageCropSession.scale = imageCropSession.baseScale * next;
+    } else {
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    clampImageCropPosition();
+    renderImageCropPreview();
+    const status = document.getElementById('image-crop-status');
+    if (status) status.textContent = tr('crop-zoom-status', 'Phóng {v}', { v: document.getElementById('image-crop-zoom-value')?.textContent || '' });
+});
 cropStage?.addEventListener('pointercancel', endCropDrag);
 document.querySelectorAll('[data-close-image-crop]').forEach(element => element.addEventListener('click', closeImageCropper));
 document.getElementById('close-image-crop-btn')?.addEventListener('click', closeImageCropper);
@@ -4610,11 +4772,11 @@ async function loadBookFromStorage(bookId, bookData) {
     // Close sidebar immediately on selection
     toggleSidebar(false);
 
-    showLoading(tr('status-opening-book', 'Opening {title}…', { title: bookData.title }));
+    showLoading(tr('status-opening-book', 'Opening {title}…', { title: displayTitle(bookData.title) }));
     document.getElementById('status-indicator').innerText = tr('status-loading-meta', 'Loading book info…');
     const currentTitleEl = document.getElementById('current-title');
-    currentTitleEl.innerText = tr('status-opening-book', 'Opening {title}…', { title: bookData.title });
-    currentTitleEl.title = bookData.title;
+    currentTitleEl.innerText = tr('status-opening-book', 'Opening {title}…', { title: displayTitle(bookData.title) });
+    currentTitleEl.title = displayTitle(bookData.title);
 
     try {
         // Check if book is segmented in the new stories collection
@@ -4709,6 +4871,7 @@ async function loadBookFromStorage(bookId, bookData) {
     } catch (err) {
         if (err?.name === 'AbortError' || loadController.signal.aborted) return;
         console.error("Load from Storage Error:", err);
+        if (isCurrentSelection()) endReaderOpening({ failed: true });
         APP_STATUS.error(err?.userFacing
             ? err.message
             : tr('book-load-failed', 'Không thể tải sách từ bộ nhớ. Hãy kiểm tra file có còn tồn tại.'));
@@ -4928,6 +5091,34 @@ setupDragAndDrop();
 // Rings, "Nghe tiếp" and the player art follow playback.
 audio.addEventListener('play', updateLibraryHighlight);
 audio.addEventListener('pause', updateLibraryHighlight);
+audio.addEventListener('play', syncTOCNowLabels);
+audio.addEventListener('pause', syncTOCNowLabels);
+
+// Between the click and the first chapter: a skeleton for the chosen book
+// instead of the "pick a book" empty state, and its title in the console.
+function showReaderOpening(title) {
+    const name = displayTitle(title);
+    textContainer.setAttribute('aria-busy', 'true');
+    textContainer.innerHTML = '<div class="reader-skeleton" aria-hidden="true">' + '<span></span>'.repeat(8) + '</div>';
+    const chapterLabel = document.getElementById('current-chapter');
+    if (chapterLabel) { chapterLabel.innerText = tr('opening-book-short', 'Đang mở…'); chapterLabel.title = ''; }
+    document.getElementById('media-player')?.setAttribute('data-loading', 'true');
+    const author = document.getElementById('player-author');
+    if (author && name) { author.innerText = name; author.title = name; }
+    const playerTitle = document.getElementById('player-title');
+    if (playerTitle) { playerTitle.innerText = tr('loading-short', 'Đang tải…'); playerTitle.title = ''; }
+}
+
+function endReaderOpening({ failed = false } = {}) {
+    document.getElementById('media-player')?.removeAttribute('data-loading');
+    if (!failed || !textContainer.querySelector(':scope > .reader-skeleton')) return;
+    textContainer.removeAttribute('aria-busy');
+    const error = document.createElement('p');
+    error.className = 'reader-error';
+    error.setAttribute('role', 'alert');
+    error.textContent = tr('book-load-failed', 'Không thể tải sách từ bộ nhớ. Hãy kiểm tra file có còn tồn tại.');
+    textContainer.replaceChildren(error);
+}
 
 async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
     const loadGeneration = ++STATE.loadGeneration;
@@ -4941,6 +5132,7 @@ async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
 
     toggleSidebar(false);
     toggleDiscoveryMode(false, { restoreFocus: false });
+    showReaderOpening(fallbackProgress?.title || bookData.title);
 
     // Offline audio is disposable. Do not block first-paint on IndexedDB cleanup.
     void OFFLINE_MANAGER.clearCache().catch(err => console.debug('[Offline] Cache cleanup skipped:', err.message));
@@ -5069,12 +5261,13 @@ async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
     applySettingsToUI();
 
     const currentTitleEl = document.getElementById('current-title');
-    currentTitleEl.innerText = STATE.currentBook.title;
-    currentTitleEl.title = STATE.currentBook.title;
+    currentTitleEl.innerText = displayTitle(STATE.currentBook.title);
+    currentTitleEl.title = displayTitle(STATE.currentBook.title);
     document.getElementById('edit-title-btn').classList.remove('hidden');
 
     await renderChapter(STATE.currentChapterIndex);
     if (loadGeneration !== STATE.loadGeneration) return false;
+    endReaderOpening();
     renderTOC();
     updateUI();
 
@@ -5283,8 +5476,9 @@ async function renderChapter(index, expectedLoadGeneration = STATE.loadGeneratio
     const chapterCount = STATE.currentBook.chapters.length;
     const chapterTitle = chapter.title || `${tr('chapter-word', 'Chương')} ${index + 1}`;
     const chapterLabel = document.getElementById('current-chapter');
-    chapterLabel.innerText = `C.${index + 1}/${chapterCount} · ${chapterTitle}`;
+    chapterLabel.innerText = `C.${index + 1}/${chapterCount} · ${shortChapterTitle(chapterTitle)}`;
     chapterLabel.title = chapterTitle;
+    document.dispatchEvent(new CustomEvent('readerchapterchange', { detail: { index } }));
 
     // Lazy load sentences if missing
     if (!chapter.sentences) {
@@ -5428,7 +5622,7 @@ function buildTOCRow(chap, i, isActive) {
     num.textContent = `C.${i + 1}`;
     const name = document.createElement('span');
     name.className = 'toc-row__title';
-    name.textContent = title;
+    name.textContent = shortChapterTitle(title);
     name.title = chap?.title || '';
     main.append(num, name);
     if (isActive) main.appendChild(buildTOCNowLabel());
@@ -5445,11 +5639,25 @@ function buildTOCRow(chap, i, isActive) {
     return row;
 }
 
+function isAudioPlaying() {
+    return typeof audio !== 'undefined' && !audio.paused;
+}
+
+function tocNowText() {
+    return isAudioPlaying() ? tr('toc-now', 'đang nghe') : tr('toc-here', 'đang đọc');
+}
+
 function buildTOCNowLabel() {
     const now = document.createElement('span');
     now.className = 'toc-row__now';
-    now.textContent = tr('toc-now', 'đang nghe');
+    now.textContent = tocNowText();
     return now;
+}
+
+// "đang nghe" only while audio plays; paused or blocked, the marker says where the reader is.
+function syncTOCNowLabels() {
+    document.querySelectorAll('#toc-list .toc-row__now').forEach(label => { label.textContent = tocNowText(); });
+    updateTOCCount();
 }
 
 function updateTOCCount() {
@@ -5464,7 +5672,9 @@ function updateTOCCount() {
     const query = tocSearchInput?.value.trim();
     countEl.textContent = query
         ? tr('toc-count-filtered', '{shown}/{total} chương', { shown, total })
-        : tr('toc-count', '{total} chương · đang nghe C.{current}', { total, current: STATE.currentChapterIndex + 1 });
+        : isAudioPlaying()
+            ? tr('toc-count', '{total} chương · đang nghe C.{current}', { total, current: STATE.currentChapterIndex + 1 })
+            : tr('toc-count-here', '{total} chương · đang đọc C.{current}', { total, current: STATE.currentChapterIndex + 1 });
 }
 
 function renderTOC() {
@@ -5474,7 +5684,7 @@ function renderTOC() {
     tocList.innerHTML = '';
 
     const labelEl = document.getElementById('toc-book-label');
-    if (labelEl) labelEl.textContent = STATE.currentBook?.title || tr('toc-no-book', 'Chưa mở truyện');
+    if (labelEl) labelEl.textContent = displayTitle(STATE.currentBook?.title) || tr('toc-no-book', 'Chưa mở truyện');
 
     if (!STATE.currentBook || !Array.isArray(STATE.currentBook.chapters) || STATE.currentBook.chapters.length === 0) {
         const empty = document.createElement('p');
@@ -6436,16 +6646,68 @@ audio.onpause = () => {
     }
 };
 
+// In-app rename dialog (themeable, unlike prompt()). Resolves to the trimmed
+// new title, or null when cancelled.
+let renameDialog = null;
+
+function askBookTitle(currentTitle) {
+    const modal = document.getElementById('rename-modal');
+    const form = document.getElementById('rename-form');
+    const input = document.getElementById('rename-input');
+    if (!modal || !form || !input) return Promise.resolve(null);
+    renameDialog?.finish(null);
+    return new Promise(resolve => {
+        const finish = (value) => {
+            if (renameDialog?.finish !== finish) return;
+            renameDialog = null;
+            modal.removeEventListener('keydown', onKey);
+            form.removeEventListener('submit', onSubmit);
+            modal.querySelectorAll('[data-close-rename]').forEach(el => el.removeEventListener('click', onCancel));
+            input.removeAttribute('aria-invalid');
+            setModalVisibility('rename-modal', false);
+            resolve(value);
+        };
+        const onCancel = () => finish(null);
+        const onSubmit = (event) => {
+            event.preventDefault();
+            const value = input.value.trim();
+            if (!value) {
+                input.setAttribute('aria-invalid', 'true');
+                input.focus();
+                return;
+            }
+            finish(value);
+        };
+        const onKey = (event) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                finish(null);
+                return;
+            }
+            trapTab(modal, event);
+        };
+        renameDialog = { finish };
+        input.value = currentTitle || '';
+        modal.addEventListener('keydown', onKey);
+        form.addEventListener('submit', onSubmit);
+        modal.querySelectorAll('[data-close-rename]').forEach(el => el.addEventListener('click', onCancel));
+        setModalVisibility('rename-modal', true);
+        requestAnimationFrame(() => input.select());
+    });
+}
+
 async function editTitle() {
     if (!STATE.currentBook || !STATE.user) return;
     const previousTitle = STATE.currentBook.title;
-    const requestedTitle = prompt(tr('rename-prompt', 'Tên mới cho truyện:'), previousTitle);
-    const newTitle = requestedTitle?.trim();
-    if (!newTitle || newTitle === previousTitle) return;
+    const newTitle = await askBookTitle(displayTitle(previousTitle));
+    if (!newTitle || newTitle === previousTitle || !STATE.currentBook) return;
 
     STATE.currentBook.title = newTitle;
-    document.getElementById('current-title').innerText = newTitle;
-    document.getElementById('current-title').title = newTitle;
+    document.getElementById('current-title').innerText = displayTitle(newTitle);
+    document.getElementById('current-title').title = displayTitle(newTitle);
+    const tocLabel = document.getElementById('toc-book-label');
+    if (tocLabel) tocLabel.textContent = displayTitle(newTitle);
     updateUI(); // Keep player and author tokens in sync
 
     try {
@@ -6458,10 +6720,12 @@ async function editTitle() {
             throw new Error('Firestore returned a different title after saving');
         }
         await refreshLibrary();
+        APP_STATUS.toast(tr('rename-done', 'Đã đổi tên truyện.'), 'success');
     } catch (err) {
         STATE.currentBook.title = previousTitle;
-        document.getElementById('current-title').innerText = previousTitle;
-        document.getElementById('current-title').title = previousTitle;
+        document.getElementById('current-title').innerText = displayTitle(previousTitle);
+        document.getElementById('current-title').title = displayTitle(previousTitle);
+        if (tocLabel) tocLabel.textContent = displayTitle(previousTitle);
         updateUI();
         console.error('[Title] Save failed:', err);
         APP_STATUS.error(tr('rename-failed', 'Không thể lưu tên truyện: {reason}', { reason: err.message }));
@@ -6892,7 +7156,7 @@ function updatePocketModeInfo() {
     const playIcon = document.getElementById('pocket-play-icon');
 
     if (STATE.currentBook) {
-        if (bookTitleEl) bookTitleEl.textContent = STATE.currentBook.title || 'Cloud TTS Reader';
+        if (bookTitleEl) bookTitleEl.textContent = displayTitle(STATE.currentBook.title) || 'Cloud TTS Reader';
         const chap = STATE.currentBook.chapters?.[STATE.currentChapterIndex];
         if (chapterTitleEl) chapterTitleEl.textContent = `C.${STATE.currentChapterIndex + 1} · ${chap?.title || `${tr('chapter-word', 'Chương')} ${STATE.currentChapterIndex + 1}`}`;
         if (sentenceEl) {
@@ -7105,12 +7369,14 @@ function updateUI() {
         const authorEl = document.getElementById('player-author');
         const chapterTitle = STATE.currentBook.chapters[STATE.currentChapterIndex].title;
 
-        titleEl.innerText = chapterTitle;
+        titleEl.innerText = shortChapterTitle(chapterTitle);
         titleEl.title = chapterTitle;
 
-        authorEl.innerText = STATE.currentBook.title;
-        authorEl.title = STATE.currentBook.title;
+        authorEl.innerText = displayTitle(STATE.currentBook.title);
+        authorEl.title = displayTitle(STATE.currentBook.title);
     }
+    // Keyboard hints only mean something once a book is open.
+    document.body.toggleAttribute('data-has-book', !!STATE.currentBook);
     updatePipUI();
     if (STATE.isLiteMode) {
         updatePocketModeInfo();
@@ -7128,6 +7394,9 @@ function updatePipUI() {
         [prevChapterBtn, nextChapterBtn, prevChunkBtn, nextChunkBtn].forEach(btn => { btn.disabled = true; });
         const emptySentence = document.getElementById('player-sentence');
         if (emptySentence) emptySentence.innerText = tr('player-no-sentence', 'Chưa có câu đang đọc');
+        const counter = document.getElementById('current-time-mock');
+        if (counter) counter.innerText = '—';
+        STATE.lastCurrentMock = '—';
         return;
     }
 
@@ -7140,6 +7409,14 @@ function updatePipUI() {
     nextChapterBtn.disabled = STATE.currentChapterIndex >= chapters.length - 1;
     prevChunkBtn.disabled = currentIndex <= 0;
     nextChunkBtn.disabled = sentenceCount === 0 || currentIndex >= sentenceCount - 1;
+
+    // Counter: "n / N" once the chapter's size is known, a dash until then.
+    const counter = document.getElementById('current-time-mock');
+    const counterText = sentenceCount > 0 ? `${Math.min(currentIndex + 1, sentenceCount)} / ${sentenceCount}` : '—';
+    if (counter && STATE.lastCurrentMock !== counterText) {
+        counter.innerText = counterText;
+        STATE.lastCurrentMock = counterText;
+    }
 
     const sentenceEl = document.getElementById('player-sentence');
     if (sentenceEl) {
@@ -7288,6 +7565,12 @@ async function switchChapter(targetChapterIndex, startSentenceIndex = 0, autoPla
             return false;
         }
 
+        // The console, the library row and the chapter buttons follow the reader
+        // now, even if playback below is blocked or waits for the socket.
+        STATE.currentSentenceIndex = startSentenceIndex;
+        updateUI();
+        updateLibraryHighlight();
+
         // 3. Cập nhật TOC UI nếu đang mở
         if (isTOCVisible()) {
             refreshTOCCurrent();
@@ -7344,7 +7627,7 @@ function updateMediaSession() {
 
         navigator.mediaSession.metadata = new MediaMetadata({
             title: chapter.title,
-            artist: STATE.currentBook.title,
+            artist: displayTitle(STATE.currentBook.title),
             album: `Chapter ${STATE.currentChapterIndex + 1}`,
             artwork: [
                 // Same object URL as the library cover; the app icon stays as fallback.
@@ -7897,18 +8180,14 @@ document.addEventListener('keydown', async (e) => {
         e.preventDefault();
         await playPrevChunk();
 
-    } else if (e.code === 'ArrowRight' && e.shiftKey) {
+    } else if ((e.code === 'ArrowRight' && e.shiftKey) || (e.key === ']' && !e.ctrlKey && !e.metaKey && !e.altKey)) {
         e.preventDefault();
-        await playNextChapter();
-    } else if (e.code === 'ArrowLeft' && e.shiftKey) {
+        if (curChap >= chapters.length - 1) APP_STATUS.toast(tr('at-last-chapter', 'Đã ở chương cuối.'), 'info', { key: 'chapter-edge' });
+        else await playNextChapter();
+    } else if ((e.code === 'ArrowLeft' && e.shiftKey) || (e.key === '[' && !e.ctrlKey && !e.metaKey && !e.altKey)) {
         e.preventDefault();
-        await playPrevChapter();
-    } else if (e.key === ']' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        await playNextChapter();
-    } else if (e.key === '[' && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        e.preventDefault();
-        await playPrevChapter();
+        if (curChap <= 0) APP_STATUS.toast(tr('at-first-chapter', 'Đã ở chương đầu.'), 'info', { key: 'chapter-edge' });
+        else await playPrevChapter();
     }
 });
 
@@ -7974,10 +8253,16 @@ async function openEditChapterModal(index, triggerBtn = null) {
 
         const data = await response.json();
         if (data.content !== undefined) {
-            textarea.value = data.content;
+            // The server takes a chapter's title from its first non-empty line;
+            // edit that line in its own field.
+            const parts = splitChapterContent(data.content);
+            const nameInput = document.getElementById('edit-chapter-name');
+            if (nameInput) nameInput.value = parts.title;
+            editingChapterGap = parts.gap;
+            textarea.value = nameInput ? parts.body : data.content;
             modal.classList.remove('hidden');
             textarea.scrollTop = 0;
-            textarea.focus({ preventScroll: true });
+            (nameInput || textarea).focus({ preventScroll: true });
             if (statusIndicator) statusIndicator.innerText = tr('status-ready', 'Ready');
         } else {
             throw new Error(data.error || "Failed to fetch content");
@@ -7993,6 +8278,34 @@ async function openEditChapterModal(index, triggerBtn = null) {
             triggerBtn.removeAttribute('aria-busy');
         }
     }
+}
+
+function splitChapterContent(content) {
+    const text = String(content ?? '');
+    const match = text.match(/^\s*([^\n]*?)[ \t]*(?:\r?\n|$)/);
+    if (!match || !match[1].trim()) return { title: '', body: text, gap: '\n\n' };
+    const rest = text.slice(match[0].length);
+    const blank = rest.match(/^(?:[ \t]*\r?\n)*/)[0];
+    return { title: match[1].trim(), body: rest.slice(blank.length), gap: (match[0].endsWith('\n') ? '\n' : '') + blank };
+}
+
+let editingChapterGap = '\n\n';
+
+function joinChapterContent(title, body) {
+    const name = String(title ?? '').trim().replace(/\s+/g, ' ');
+    if (!name) return body;
+    return body ? `${name}${editingChapterGap.includes('\n') ? editingChapterGap : '\n\n'}${body}` : name;
+}
+
+// After a save, point at the changed row: brief tint, focus on its edit pen.
+function flashTOCRow(index) {
+    const row = document.getElementById(`toc-item-${index}`);
+    if (!row) return;
+    row.classList.remove('is-flash');
+    void row.offsetWidth;
+    row.classList.add('is-flash');
+    setTimeout(() => row.classList.remove('is-flash'), 1200);
+    row.scrollIntoView({ block: 'nearest' });
 }
 
 function closeEditModal() {
@@ -8012,7 +8325,9 @@ async function saveChapterEdit() {
     if (editingChapterIndex === -1 || !STATE.user || !STATE.currentFilename) return;
 
     const textarea = document.getElementById('edit-chapter-textarea');
-    const newContent = textarea.value;
+    const nameInput = document.getElementById('edit-chapter-name');
+    const newContent = nameInput ? joinChapterContent(nameInput.value, textarea.value) : textarea.value;
+    const savedIndex = editingChapterIndex;
     const saveBtn = document.getElementById('save-edit-btn');
     const statusIndicator = document.getElementById('status-indicator');
 
@@ -8074,6 +8389,9 @@ async function saveChapterEdit() {
             saveProgress(true);
 
             closeEditModal();
+            flashTOCRow(savedIndex);
+            if (STATE.currentChapterIndex === savedIndex) updateUI();
+            APP_STATUS.toast(tr('chapter-saved', 'Đã lưu chương {n}.', { n: savedIndex + 1 }), 'success');
             if (statusIndicator) {
                 statusIndicator.innerText = tr('status-saved', 'Changes saved');
                 setTimeout(() => statusIndicator.innerText = tr('status-ready', 'Ready'), 3000);
