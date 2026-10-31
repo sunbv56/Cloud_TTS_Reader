@@ -386,7 +386,14 @@ const STATS_MANAGER = {
         const timeEl = document.getElementById('stat-total-time');
         const streakDot = document.getElementById('streak-dot');
 
-        if (streakEl) streakEl.innerText = STATE.stats.streak;
+        if (streakEl) {
+            streakEl.innerText = STATE.stats.streak;
+            const label = streakEl.nextElementSibling;
+            if (label?.dataset.i18n?.startsWith('day-streak')) {
+                label.dataset.i18n = STATE.stats.streak === 1 ? 'day-streak-one' : 'day-streak';
+                label.textContent = tr(label.dataset.i18n, 'days in a row');
+            }
+        }
         if (timeEl) {
             const mins = Math.floor(STATE.stats.totalTime / 60);
             timeEl.innerText = mins > 60 ? `${(mins / 60).toFixed(1)}h` : `${mins}m`;
@@ -451,7 +458,7 @@ async function startFirebase() {
 
         if (!firebaseConfig.apiKey) {
             console.error("Firebase Configuration is missing! Check your environment variables.");
-            document.getElementById('status-indicator').innerText = "Config Error";
+            document.getElementById('status-indicator').innerText = tr('status-config-error', 'Config Error');
             return;
         }
 
@@ -679,6 +686,7 @@ function setPlayIcon(isPlaying) {
     btn.setAttribute('aria-label', label);
     btn.title = label;
     document.querySelector('#pocket-play-icon use')?.setAttribute('href', isPlaying ? '#i-pause' : '#i-play');
+    updateDiscoveryContinueCard();
 }
 
 function setAudioWaveState(isPlaying) {
@@ -765,6 +773,7 @@ const APP_STATUS = {
             window.MotionLayer.animateToastIn(toast);
         }
         removeTimer = setTimeout(dismiss, 4800);
+        requestAnimationFrame(() => revealFocusAboveToasts(region));
     },
     error(error, fallback = 'Đã xảy ra lỗi. Vui lòng thử lại.') {
         const message = (typeof error === 'string' ? error : error?.message) || fallback;
@@ -773,6 +782,18 @@ const APP_STATUS = {
     }
 };
 window.APP_STATUS = APP_STATUS;
+
+// A toast must not sit on the control the user just pressed: scroll that control up above the stack.
+function revealFocusAboveToasts(region) {
+    const el = document.activeElement;
+    if (!el || el === document.body || region.contains(el)) return;
+    const box = el.getBoundingClientRect();
+    const stack = region.getBoundingClientRect();
+    if (!box.height || box.bottom <= stack.top || box.top >= stack.bottom || box.right <= stack.left || box.left >= stack.right) return;
+    el.style.scrollMarginBottom = `${Math.ceil(window.innerHeight - stack.top) + 8}px`;
+    el.scrollIntoView({ block: 'nearest' });
+    el.style.scrollMarginBottom = '';
+}
 let imageManagerBookId = null;
 let imageManagerBookTitle = '';
 
@@ -1708,6 +1729,14 @@ function updateDiscoveryContinueCard() {
             : (isOpen ? tr('resume-open', 'Đang mở') : tr('resume-last', 'Nghe gần nhất'));
     }
     card.dataset.bookId = entry.id;
+    // Same control as the dock and the library row: pause while this book is playing.
+    const btn = document.getElementById('discovery-continue-btn');
+    btn?.querySelector('use')?.setAttribute('href', isPlaying ? '#i-pause' : '#i-play');
+    const btnLabel = btn?.querySelector('[data-i18n]');
+    if (btnLabel) {
+        btnLabel.dataset.i18n = isPlaying ? 'pause' : 'continue-listening';
+        btnLabel.textContent = isPlaying ? tr('pause', 'Pause') : tr('continue-listening', 'Nghe tiếp');
+    }
     const oldCover = document.getElementById('discovery-continue-cover');
     if (oldCover?.dataset.coverFor !== entry.id || oldCover.dataset.coverTitle !== entry.title) {
         const cover = createCoverElement(entry, 'resume');
@@ -1720,6 +1749,10 @@ function handleContinueListening(event) {
     event?.stopPropagation?.();
     const target = getResumeTarget();
     if (!target) return;
+    if (target.isOpen && !audio.paused && event?.currentTarget?.id === 'discovery-continue-btn') {
+        void togglePlayback();
+        return;
+    }
     if (target.isOpen) {
         toggleDiscoveryMode(false);
         if (audio.paused) void togglePlayback();
@@ -1878,9 +1911,33 @@ function runBookAction(action, entry) {
             break;
         }
         case 'export': void downloadTextBook(entry.id, entry.title); break;
-        case 'delete': void deleteBook(entry.id, entry.data.filename, entry.title); break;
+        case 'delete': {
+            const neighbourFocus = rowNeighbourFocus(trigger, entry.id);
+            void deleteBook(entry.id, entry.data.filename, entry.title).then(() => {
+                if (findLibraryEntry(entry.id)) return;
+                const target = neighbourFocus();
+                const active = document.activeElement;
+                if (target && (!active || active === document.body)) target.focus({ preventScroll: true });
+            });
+            break;
+        }
         default: break;
     }
+}
+
+// The deleted row is gone after the refresh; land on the row that took its place (or the one above, or the search box).
+function rowNeighbourFocus(trigger, bookId) {
+    const list = trigger?.closest('#book-list, #discovery-grid');
+    const row = list?.querySelector(`[data-book-id="${CSS.escape(bookId)}"]`);
+    const ids = [row?.nextElementSibling?.dataset.bookId, row?.previousElementSibling?.dataset.bookId].filter(Boolean);
+    const searchId = list?.id === 'discovery-grid' ? 'discovery-search' : 'library-search';
+    return () => {
+        for (const id of ids) {
+            const control = list?.querySelector(`[data-book-id="${CSS.escape(id)}"] :is([data-action="toggle"], [data-action="open"])`);
+            if (control) return control;
+        }
+        return document.getElementById(searchId);
+    };
 }
 
 // Earlier per-row menus were closed through this name.
@@ -1957,6 +2014,13 @@ discoverySearch?.addEventListener('input', applyLibraryFilters);
 });
 document.getElementById('discovery-continue-btn')?.addEventListener('click', handleContinueListening);
 document.getElementById('discovery-continue-card')?.addEventListener('click', handleContinueListening);
+function paintIdlePlayerTitle() {
+    const playerTitle = document.getElementById('player-title');
+    if (playerTitle) playerTitle.innerText = tr('system-ready', 'Ready');
+}
+// i18n may have applied the language before this module registered its listener.
+if (!STATE.currentBook) paintIdlePlayerTitle();
+
 window.addEventListener('uilanguagechange', () => {
     if (libraryView.status !== 'idle') renderLibraryViews();
     // The reader top bar carries data-i18n for its empty state; put the open book back.
@@ -1970,7 +2034,10 @@ window.addEventListener('uilanguagechange', () => {
             const chapterTitle = chapter.title || `${tr('chapter-word', 'Chương')} ${index + 1}`;
             chapterLabel.innerText = `C.${index + 1}/${STATE.currentBook.chapters.length} · ${chapterTitle}`;
         }
+    } else {
+        paintIdlePlayerTitle();
     }
+    STATS_MANAGER.updateUI();
     setPlayIcon(!audio.paused);
     updatePipUI();
     const dockRow = document.getElementById('player-info-layer');
@@ -2660,12 +2727,26 @@ document.addEventListener('paste', event => {
 // "Disconnected" that follow them must not replace that reason.
 function setStatusKeepingStopReason(text) {
     const indicator = document.getElementById('status-indicator');
-    if (/^(Session Expired \(|Sleep Timer)/.test(indicator.innerText)) return;
+    if (statusMatches(indicator.innerText, 'status-session-expired', 'status-sleep-stopped')) return;
     indicator.innerText = text;
 }
 
+// True when the status text is one of these keys in either UI language.
+function statusMatches(text, ...keys) {
+    return keys.some(key => ['en', 'vi'].some(lang => window.translations?.[lang]?.[key] === text));
+}
+
 function idleStatus() {
-    return STATE.isPlaying && !audio.paused ? "Streaming" : tr('status-ready', 'Ready');
+    return STATE.isPlaying && !audio.paused ? tr('status-streaming', 'Streaming') : tr('status-ready', 'Ready');
+}
+
+// The server keeps one TTS socket per account and refuses extra ones with 1013.
+function wsRefusedRecently() {
+    return !!STATE.wsRefusedAt && Date.now() - STATE.wsRefusedAt < 15000;
+}
+
+function connectionFailedStatus() {
+    return wsRefusedRecently() ? tr('status-conn-busy', 'Listening in another tab or device') : tr('status-conn-failed', 'Connection failed');
 }
 
 function closeWebSocketIntentionally() {
@@ -2783,7 +2864,7 @@ async function initWebSocket() {
                             const delay = Math.min(400 * 2 ** (retries - 1), 5000);
                             const retrySession = STATE.sessionId;
                             console.warn(`[Streaming] Retrying chunk ${failKey} (attempt ${retries}/${MAX_RETRIES}) in ${delay}ms...`);
-                            document.getElementById('status-indicator').innerText = `Retrying chunk... (${retries})`;
+                            document.getElementById('status-indicator').innerText = tr('status-retry-chunk', 'Retrying sentence… ({n})', { n: retries });
 
                             setTimeout(() => {
                                 if (retrySession !== STATE.sessionId) {
@@ -2957,7 +3038,7 @@ async function initWebSocket() {
         // onclose will fire after onerror in most browsers
     };
 
-    STATE.ws.onclose = () => {
+    STATE.ws.onclose = (event) => {
         console.log("WebSocket Disconnected.");
 
         // Ignore a late close from an older socket after a replacement has
@@ -2980,14 +3061,23 @@ async function initWebSocket() {
         // must stay closed. Buffered chunks alone are not proof that playback
         // is active and previously caused endless background reconnects.
         if (socket._intentionalClose) {
-            setStatusKeepingStopReason("Disconnected");
+            setStatusKeepingStopReason(tr('status-disconnected', 'Disconnected'));
+            return;
+        }
+
+        // Another tab or device holds this account's only socket: reconnecting would just be refused again.
+        if (event?.code === 1013) {
+            const firstRefusal = !wsRefusedRecently();
+            STATE.wsRefusedAt = Date.now();
+            document.getElementById('status-indicator').innerText = tr('status-conn-busy', 'Listening in another tab or device');
+            if (firstRefusal) APP_STATUS.toast(tr('toast-conn-busy', 'This account is already listening in another tab or on another device. Stop it there, then press Play here.'), 'warning');
             return;
         }
 
         if (STATE.isPlaying || STATE.isDownloading) {
             STATE.isStalled = false; // FIX #2: Reset isStalled so future reconnects work
             console.log("Unexpected disconnect, reconnecting in 3s...");
-            document.getElementById('status-indicator').innerText = "Reconnecting...";
+            document.getElementById('status-indicator').innerText = tr('status-reconnecting', 'Reconnecting…');
             setTimeout(() => {
                 if (STATE.isPlaying || STATE.isDownloading) initWebSocket();
             }, 3000);
@@ -3003,7 +3093,7 @@ async function initWebSocket() {
                 }
             }, 4000);
         } else {
-            document.getElementById('status-indicator').innerText = "Disconnected";
+            document.getElementById('status-indicator').innerText = tr('status-disconnected', 'Disconnected');
         }
     };
 }
@@ -3017,7 +3107,7 @@ async function waitForWebSocket() {
 
     if (!STATE.ws || STATE.ws.readyState === WebSocket.CLOSED || STATE.ws.readyState === WebSocket.CLOSING) {
         console.warn("WebSocket not connected. Connecting...");
-        document.getElementById('status-indicator').innerText = "Connecting...";
+        document.getElementById('status-indicator').innerText = tr('status-connecting', 'Connecting…');
         initWebSocket();
     }
 
@@ -3026,6 +3116,8 @@ async function waitForWebSocket() {
         const check = () => {
             if (STATE.ws && STATE.ws.readyState === WebSocket.OPEN) {
                 resolve(true);
+            } else if (STATE.wsRefusedAt >= startTime) {
+                resolve(false);
             } else if (Date.now() - startTime > 10000) {
                 // Timeout after 10s
                 console.error("WebSocket connection timeout.");
@@ -3937,7 +4029,7 @@ async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
 
     const status = document.getElementById('status-indicator');
     const previousStatus = status?.innerText || tr('status-ready', 'Ready');
-    if (status) status.innerText = 'Preparing TXT...';
+    if (status) status.innerText = tr('status-txt-preparing', 'Preparing TXT…');
     APP_STATUS.toast(tr('export-starting', 'Đang xuất file TXT toàn bộ tác phẩm...'), 'info');
 
     try {
@@ -3966,7 +4058,7 @@ async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
         anchor.click();
         anchor.remove();
         setTimeout(() => URL.revokeObjectURL(url), 1000);
-        if (status) status.innerText = 'TXT download started';
+        if (status) status.innerText = tr('status-txt-started', 'TXT download started');
         APP_STATUS.toast(tr('export-done', 'Đã tải xuống file "{name}" thành công!', { name: filename }), 'success');
         if (btn && window.MotionLayer?.animateSuccessCheck) {
             window.MotionLayer.animateSuccessCheck(btn);
@@ -3974,11 +4066,11 @@ async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
     } catch (err) {
         console.error('[Export TXT]', err);
         APP_STATUS.error(tr('export-failed', 'Không thể tải file TXT: {error}', { error: err.message }));
-        if (status) status.innerText = 'TXT download failed';
+        if (status) status.innerText = tr('status-txt-failed', 'TXT download failed');
     } finally {
         if (btn) setButtonLoading(btn, false);
         setTimeout(() => {
-            if (status && (status.innerText === 'TXT download started' || status.innerText === 'TXT download failed')) {
+            if (status && statusMatches(status.innerText, 'status-txt-started', 'status-txt-failed')) {
                 status.innerText = previousStatus || tr('status-ready', 'Ready');
             }
         }, 2500);
@@ -4025,14 +4117,14 @@ function closeCurrentBook() {
     STATE.currentFilename = null;
     STATE.currentChapterIndex = 0;
     STATE.currentSentenceIndex = 0;
-    document.getElementById('current-title').innerText = 'Select a Masterpiece';
-    document.getElementById('current-chapter').innerText = 'Standby Mode';
+    document.getElementById('current-title').innerText = tr('select-masterpiece', 'Select a Masterpiece');
+    document.getElementById('current-chapter').innerText = tr('standby-mode', 'Standby Mode');
     textContainer.replaceChildren(...(readerEmptyTemplate ? [readerEmptyTemplate.cloneNode(true)] : []));
     document.getElementById('minimap-nodes')?.replaceChildren();
     document.getElementById('edit-title-btn').classList.add('hidden');
     const playerTitle = document.getElementById('player-title');
     const playerAuthor = document.getElementById('player-author');
-    if (playerTitle) { playerTitle.innerText = 'System Ready'; playerTitle.title = ''; }
+    if (playerTitle) { playerTitle.innerText = tr('system-ready', 'Ready'); playerTitle.title = ''; }
     if (playerAuthor) { playerAuthor.innerText = 'Cloud TTS'; playerAuthor.title = ''; }
     paintPlayerArt();
     if ('mediaSession' in navigator) {
@@ -4334,10 +4426,10 @@ async function loadBookFromStorage(bookId, bookData) {
     // Close sidebar immediately on selection
     toggleSidebar(false);
 
-    showLoading("Fetching " + bookData.title + "...");
-    document.getElementById('status-indicator').innerText = "Loading Metadata...";
+    showLoading(tr('status-opening-book', 'Opening {title}…', { title: bookData.title }));
+    document.getElementById('status-indicator').innerText = tr('status-loading-meta', 'Loading book info…');
     const currentTitleEl = document.getElementById('current-title');
-    currentTitleEl.innerText = "Fetching " + bookData.title + "...";
+    currentTitleEl.innerText = tr('status-opening-book', 'Opening {title}…', { title: bookData.title });
     currentTitleEl.title = bookData.title;
 
     try {
@@ -4491,7 +4583,7 @@ const handleFileUpload = async (e) => {
     formData.append('userId', uploaderUid);
     formData.append('file', file);
 
-    document.getElementById('status-indicator').innerText = "Processing Story...";
+    document.getElementById('status-indicator').innerText = tr('status-processing', 'Processing story…');
     try {
         // Give the user a useful preview without reading a large file into memory:
         // inspect only the first 4 MB for chapter separators.
@@ -4564,7 +4656,7 @@ const handleFileUpload = async (e) => {
         }
 
         if (illustrations.length) {
-            document.getElementById('status-indicator').innerText = `Đang tối ưu ${illustrations.length} ảnh...`;
+            document.getElementById('status-indicator').innerText = tr('status-optimizing-images', 'Optimizing {n} images…', { n: illustrations.length });
             try {
                 await uploadBookImages(data.storyId, illustrations, bookInfo.title || file.name);
             } catch (imageError) {
@@ -5492,7 +5584,7 @@ async function downloadSelectedChapters() {
         STATE.downloadBuffer = new Map();
         STATE.downloadExpected = chapters.reduce((sum, ch) => sum + ch.sentences.length, 0);
 
-        document.getElementById('status-indicator').innerText = "Downloading Offline (50 Workers)...";
+        document.getElementById('status-indicator').innerText = tr('status-offline-download', 'Downloading for offline…');
         progressBar.style.width = '0%';
         percentEl.innerText = '0%';
         chapterInfo.innerText = `0 / ${STATE.downloadExpected} chunks`;
@@ -5608,7 +5700,7 @@ async function downloadSelectedChapters() {
 
         // Close WebSocket after download (free backend resources)
         closeWebSocketIntentionally();
-        document.getElementById('status-indicator').innerText = "Disconnected";
+        document.getElementById('status-indicator').innerText = tr('status-disconnected', 'Disconnected');
         setPlayIcon(false);
     }
 }
@@ -5894,7 +5986,7 @@ async function playFromSentence(index, expectedLoadGeneration = STATE.loadGenera
 
     if (!(await waitForWebSocket())) {
         if (!isCurrentPlayback()) return;
-        document.getElementById('status-indicator').innerText = "Connection failed";
+        document.getElementById('status-indicator').innerText = connectionFailedStatus();
         return;
     }
     if (!isCurrentPlayback()) return;
@@ -5917,7 +6009,7 @@ async function playFromSentence(index, expectedLoadGeneration = STATE.loadGenera
     console.log(`Starting new audio session: ${currentSessionId} (Jump to chunk ${index})`);
 
     updatePrefetchUI();
-    document.getElementById('status-indicator').innerText = "Buffering...";
+    document.getElementById('status-indicator').innerText = tr('status-buffering', 'Buffering…');
     const { voice, speed, pitch, volume } = STATE.settings;
     const rate = `${Math.round((speed - 1) * 100) >= 0 ? '+' : ''}${Math.round((speed - 1) * 100)}%`;
 
@@ -6072,9 +6164,9 @@ async function togglePlayback() {
 
     if (audio.paused) {
         STATE.socketParked = false;
-        document.getElementById('status-indicator').innerText = "Connecting...";
+        document.getElementById('status-indicator').innerText = tr('status-connecting', 'Connecting…');
         if (!(await waitForWebSocket())) {
-            document.getElementById('status-indicator').innerText = "Connection failed";
+            document.getElementById('status-indicator').innerText = connectionFailedStatus();
             return;
         }
         if (STATE.chunkTimings.length === 0) {
@@ -6105,7 +6197,7 @@ audio.onplay = async () => {
     STATE.streamingRetryCount.clear();
 
     setPlayIcon(true);
-    document.getElementById('status-indicator').innerText = "Streaming";
+    document.getElementById('status-indicator').innerText = tr('status-streaming', 'Streaming');
     updatePipUI();
 
     if ('mediaSession' in navigator) {
@@ -6137,7 +6229,7 @@ audio.onpause = () => {
     setAudioWaveState(false);
 
     setPlayIcon(false);
-    setStatusKeepingStopReason("Paused");
+    setStatusKeepingStopReason(tr('status-paused', 'Paused'));
     updatePipUI();
     if ('mediaSession' in navigator) {
         navigator.mediaSession.playbackState = 'paused';
@@ -6426,6 +6518,7 @@ document.getElementById('font-color-picker').oninput = (e) => {
 
     // Instant preview via CSS variable
     document.documentElement.style.setProperty('--reader-text-color', val);
+    syncColorPresets();
 
     debouncedApplyTypography();
 };
@@ -6497,6 +6590,14 @@ function applyTypographySettings() {
         const colorPicker = document.getElementById('font-color-picker');
         if (colorPicker) colorPicker.value = s.textColor;
     }
+    syncColorPresets();
+}
+
+function syncColorPresets() {
+    const current = String(STATE.settings.textColor || '').toLowerCase();
+    document.querySelectorAll('.preset-color').forEach(btn => {
+        btn.setAttribute('aria-pressed', String(btn.dataset.color.toLowerCase() === current));
+    });
 }
 
 window.addEventListener('themechange', () => {
@@ -7253,7 +7354,7 @@ function expireSleepTimer() {
 
     updateSleepTimerUI(false);
     updateUI();
-    document.getElementById('status-indicator').innerText = "Sleep Timer - Disconnected";
+    document.getElementById('status-indicator').innerText = tr('status-sleep-stopped', 'Sleep timer · stopped');
 }
 
 function cancelSleepTimer() {
@@ -7380,7 +7481,13 @@ setInterval(() => {
     STATE.lastPlaybackTime = audio.currentTime;
 
     if (STATE.stallCount >= 5) {
-        handlePlaybackStall();
+        // Another tab or device holds the account's socket; reconnecting now would only be refused again.
+        if (wsRefusedRecently()) {
+            STATE.stallCount = 0;
+            document.getElementById('status-indicator').innerText = tr('status-conn-busy', 'Listening in another tab or device');
+        } else {
+            handlePlaybackStall();
+        }
     }
 }, 1000);
 
@@ -7392,7 +7499,7 @@ async function handlePauseTimeout() {
 
     // 1. Save Progress
     if (STATE.user && STATE.currentBookId) {
-        document.getElementById('status-indicator').innerText = "Session Expired...";
+        document.getElementById('status-indicator').innerText = tr('status-session-expiring', 'Session expiring…');
         progressSaved = await saveProgress(true);
     }
 
@@ -7405,12 +7512,12 @@ async function handlePauseTimeout() {
 
     const indicator = document.getElementById('status-indicator');
     if (progressSaved) {
-        indicator.innerText = "Session Expired (1m Inactivity)";
+        indicator.innerText = tr('status-session-expired', 'Session ended (1 min idle)');
         indicator.style.color = "#FFB347";
     } else {
         // enqueueProgressSnapshot has already retained the exact cursor and
         // scheduled its retry. Do not overwrite its visible failure state.
-        indicator.innerText = "Chưa lưu tiến độ — đang tự thử lại";
+        indicator.innerText = tr('status-progress-unsaved', 'Progress not saved · retrying');
         indicator.style.color = "#FF5252";
     }
 }
@@ -7447,7 +7554,7 @@ async function handlePlaybackStall() {
     if (currentAttempt <= 2) {
         // --- STAGE 1: SOFT RESET (Reconnect & Re-fetch) ---
         console.warn(`[Stall Stage 1] Soft Reset Attempt #${currentAttempt}...`);
-        document.getElementById('status-indicator').innerText = `Stalled - Recovering (${currentAttempt})...`;
+        document.getElementById('status-indicator').innerText = tr('status-stalled', 'Stalled · recovering ({n})…', { n: currentAttempt });
         document.getElementById('status-indicator').style.color = "#FFD700";
 
         // Reconnect WebSocket
@@ -7501,8 +7608,8 @@ async function handlePlaybackStall() {
         }
     }
 
-    if (!document.getElementById('status-indicator').innerText.startsWith("Session Expired")) {
-        document.getElementById('status-indicator').innerText = "Stalled - RAM/ROM Cleared";
+    if (!statusMatches(document.getElementById('status-indicator').innerText, 'status-session-expiring', 'status-session-expired')) {
+        document.getElementById('status-indicator').innerText = tr('status-stalled-cleared', 'Stalled · buffer cleared');
         document.getElementById('status-indicator').style.color = "#FF5252";
     }
 
@@ -7645,7 +7752,7 @@ async function openEditChapterModal(index, triggerBtn = null) {
         subtext: `Chương ${index + 1}: ${chapTitle}`
     });
 
-    if (statusIndicator) statusIndicator.innerText = "Fetching raw content...";
+    if (statusIndicator) statusIndicator.innerText = tr('status-fetching-raw', 'Fetching original text…');
 
     try {
         const formData = new FormData();
@@ -7672,7 +7779,7 @@ async function openEditChapterModal(index, triggerBtn = null) {
     } catch (err) {
         console.error("Edit fetch error:", err);
         APP_STATUS.error(`Lỗi tải nội dung: ${err.message}`);
-        if (statusIndicator) statusIndicator.innerText = "Error";
+        if (statusIndicator) statusIndicator.innerText = tr('status-error', 'Error');
     } finally {
         hideLoading();
         if (triggerBtn) {
@@ -7706,7 +7813,7 @@ async function saveChapterEdit() {
     const originalText = saveBtn.innerText;
     saveBtn.innerText = tr("saving", "Đang lưu…");
     saveBtn.disabled = true;
-    if (statusIndicator) statusIndicator.innerText = "Saving changes...";
+    if (statusIndicator) statusIndicator.innerText = tr('status-saving', 'Saving changes…');
 
     showLoading("Đang lưu thay đổi chương...", {
         subtext: `Cập nhật chương ${editingChapterIndex + 1}...`
@@ -7762,7 +7869,7 @@ async function saveChapterEdit() {
 
             closeEditModal();
             if (statusIndicator) {
-                statusIndicator.innerText = "Changes saved!";
+                statusIndicator.innerText = tr('status-saved', 'Changes saved');
                 setTimeout(() => statusIndicator.innerText = tr('status-ready', 'Ready'), 3000);
             }
         } else {
@@ -7771,7 +7878,7 @@ async function saveChapterEdit() {
     } catch (err) {
         console.error("Save edit error:", err);
         APP_STATUS.error(`Lỗi lưu nội dung: ${err.message}`);
-        if (statusIndicator) statusIndicator.innerText = "Error saving";
+        if (statusIndicator) statusIndicator.innerText = tr('status-save-error', 'Error saving');
     } finally {
         hideLoading();
         saveBtn.innerText = originalText;
@@ -7863,7 +7970,7 @@ window.addEventListener('themechange', (e) => {
             const indicator = document.getElementById('status-indicator');
             if (indicator) {
                 const oldText = indicator.innerText;
-                indicator.innerText = "Crawler Script Copied!";
+                indicator.innerText = tr('status-crawler-copied', 'Crawler script copied');
 
                 // Visual feedback on logo
                 logoBtn.style.transition = "transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275)";

@@ -345,8 +345,25 @@ function initSleep() {
 }
 
 // ── Status line ──────────────────────────────────────────────────────────────
+const STATUS_TONE_KEYS = {
+    quiet: ['status-ready', 'status-streaming', 'status-paused', 'status-saved', 'status-deleted', 'system-ready'],
+    error: ['status-error', 'status-config-error', 'status-save-error', 'status-stalled-cleared', 'status-progress-unsaved', 'status-chapter-error'],
+    warn: ['status-disconnected', 'status-conn-failed', 'status-conn-busy', 'status-session-expired', 'status-sleep-stopped',
+        'status-tts-timeout', 'status-autoplay-blocked', 'status-offline', 'status-txt-failed']
+};
+
+function keyedTone(text) {
+    const strings = window.translations || {};
+    for (const [tone, keys] of Object.entries(STATUS_TONE_KEYS)) {
+        if (keys.some(key => strings.en?.[key] === text || strings.vi?.[key] === text)) return tone;
+    }
+    return null;
+}
+
 function statusTone(text) {
     const s = (text || '').trim();
+    const keyed = keyedTone(s);
+    if (keyed) return keyed;
     if (!s || /^(Ready|Sẵn sàng|Streaming|Paused|System Ready|Changes saved!|Deleted!?|Đã xóa!?)$/i.test(s)) return 'quiet';
     if (/^(Lỗi|Error|Config Error)|RAM\/ROM|Chưa lưu/i.test(s)) return 'error';
     if (/^Session Expired|^Sleep Timer|Disconnected|failed|không phản hồi|not responding|không đáp|No TTS reply|Bấm Play|Press Play|Ngoại tuyến|^Offline/i.test(s)) return 'warn';
@@ -696,6 +713,8 @@ function initPanel() {
     });
     $('cpanel-advanced')?.addEventListener('click', () => {
         closePanel({ restoreFocus: false });
+        // Settings returns focus to whatever had it; the panel is hidden now, so hand it the panel button.
+        $('console-panel-btn')?.focus({ preventScroll: true });
         window.SettingsSheet?.open('advanced');
     });
 

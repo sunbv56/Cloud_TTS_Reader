@@ -2080,6 +2080,7 @@
         cursor: pointer;
     }
     .preset-color:hover { box-shadow: 0 0 0 2px var(--color-muted); }
+    .preset-color[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--color-accent); }
     .dict-help {
         display: grid;
         gap: 2px;
@@ -2130,6 +2131,10 @@
     }
     @media (min-width: 1024px) {
         .toast-region { bottom: calc(var(--console-h-wide) + env(safe-area-inset-bottom) + var(--space-2)); }
+    }
+    /* The full-screen Settings sheet hides the player bar, so toasts drop to the bottom edge instead of floating mid-sheet. */
+    @media (max-width: 639.98px) {
+        :root[data-settings-open] .toast-region { bottom: calc(env(safe-area-inset-bottom) + var(--space-2)); }
     }
     .toast-region.is-lifted { transform: translateY(calc(-1 * (var(--toast-lift, 0px) + var(--space-2)))); }
     .toast-hud-glass {
