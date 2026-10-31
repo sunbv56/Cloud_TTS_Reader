@@ -399,7 +399,16 @@ const STATS_MANAGER = {
             const mins = Math.floor(STATE.stats.totalTime / 60);
             timeEl.innerText = mins > 60 ? `${(mins / 60).toFixed(1)}h` : `${mins}m`;
         }
-        if (streakDot) streakDot.classList.toggle('hidden', !(STATE.user && STATE.stats.streak > 0));
+        const hasStreak = !!(STATE.user && STATE.stats.streak > 0);
+        if (streakDot) streakDot.classList.toggle('hidden', !hasStreak);
+        // The dot needs words: name it on the button it sits on.
+        const menuBtn = document.getElementById('app-menu-btn');
+        if (menuBtn) {
+            const base = tr('app-menu-label', 'Cài đặt và tiện ích');
+            const label = hasStreak ? `${base} · ${tr('streak-dot-label', 'Chuỗi {n} ngày nghe liên tục', { n: STATE.stats.streak })}` : base;
+            menuBtn.setAttribute('aria-label', label);
+            menuBtn.title = label;
+        }
     },
 
     scheduleSync() {
@@ -682,12 +691,31 @@ window.AudioHapticFX = AudioHapticFX;
 function setPlayIcon(isPlaying) {
     const btn = document.getElementById('play-btn');
     if (!btn) return;
+    // The pause that starts a jump must not hide the loading state.
+    if (!isPlaying && STATE.playLoading) {
+        updateDiscoveryContinueCard();
+        return;
+    }
+    STATE.playLoading = false;
+    btn.removeAttribute('aria-busy');
     btn.dataset.state = isPlaying ? 'playing' : 'paused';
     const label = isPlaying ? tr('pause-key', 'Tạm dừng (Space)') : tr('play-key', 'Phát (Space)');
     btn.setAttribute('aria-label', label);
     btn.title = label;
     document.querySelector('#pocket-play-icon use')?.setAttribute('href', isPlaying ? '#i-pause' : '#i-play');
     updateDiscoveryContinueCard();
+}
+
+// Between a Play tap and the first sound (often several seconds): show it on the button.
+function setPlayLoading() {
+    const btn = document.getElementById('play-btn');
+    if (!btn) return;
+    STATE.playLoading = true;
+    btn.dataset.state = 'loading';
+    btn.setAttribute('aria-busy', 'true');
+    const label = tr('status-buffering', 'Đang nạp âm thanh…');
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
 }
 
 function setAudioWaveState(isPlaying) {
@@ -705,14 +733,14 @@ const APP_STATUS = {
         indicator.innerText = text;
         indicator.style.color = '';
     },
-    toast(message, kind = 'error', { key = null } = {}) {
+    toast(message, kind = 'error', { key = null, actions = [], duration = 4800 } = {}) {
         const region = document.getElementById('app-toast-region');
         if (!region) return;
 
         // A keyed toast (e.g. reading speed) replaces its live predecessor instead of stacking.
         if (key) {
             const previous = [...region.children].find(node => node.dataset.toastKey === key && !node.dataset.leaving);
-            if (previous?.refreshToast) {
+            if (previous?.refreshToast && !actions.length) {
                 AudioHapticFX.haptic(14);
                 previous.refreshToast(message);
                 return;
@@ -756,6 +784,23 @@ const APP_STATUS = {
         `;
 
         const closeBtn = toast.querySelector('button');
+        if (actions.length) {
+            const row = document.createElement('div');
+            row.className = 'toast-actions';
+            actions.forEach(action => {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'toast-action';
+                btn.textContent = action.label;
+                btn.addEventListener('click', event => {
+                    event.stopPropagation();
+                    dismiss();
+                    action.onClick?.();
+                });
+                row.appendChild(btn);
+            });
+            toast.querySelector('.flex-1')?.appendChild(row);
+        }
         let removeTimer = null;
         const dismiss = () => {
             if (removeTimer) clearTimeout(removeTimer);
@@ -785,8 +830,13 @@ const APP_STATUS = {
                     fill.style.animation = '';
                 }
                 if (removeTimer) clearTimeout(removeTimer);
-                removeTimer = setTimeout(dismiss, 4800);
+                removeTimer = setTimeout(dismiss, duration);
             };
+        }
+        if (key) {
+            [...region.children]
+                .filter(node => node.dataset.toastKey === key && !node.dataset.leaving)
+                .forEach(node => (node.dismissToast ? node.dismissToast() : node.remove()));
         }
 
         // Keep the stack short so it never buries the reader on a phone: drop the oldest first.
@@ -798,7 +848,8 @@ const APP_STATUS = {
         if (window.MotionLayer?.animateToastIn) {
             window.MotionLayer.animateToastIn(toast);
         }
-        removeTimer = setTimeout(dismiss, 4800);
+        toast.style.setProperty('--toast-duration', `${duration}ms`);
+        removeTimer = setTimeout(dismiss, duration);
         requestAnimationFrame(() => revealFocusAboveToasts(region));
     },
     error(error, fallback = 'Đã xảy ra lỗi. Vui lòng thử lại.') {
@@ -923,6 +974,8 @@ function toggleDiscoveryMode(isActive, options = {}) {
     }
 }
 
+document.getElementById('reader-back-btn')?.addEventListener('click', () => toggleDiscoveryMode(true));
+
 const logoBtn = document.getElementById('logo-btn');
 if (logoBtn) {
     logoBtn.onclick = (e) => {
@@ -1041,8 +1094,39 @@ function isBookDone(data) {
     return Number.isFinite(current) && Number.isFinite(total) && total > 0 && current >= total - 1;
 }
 
+function escapeHTML(text) {
+    return String(text ?? '').replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+// Titles that came from a file name ("Dạ_Hành_Thư_Sinh", "dem-trang-pho-co") read better with spaces.
+function prettifyBookTitle(title) {
+    let text = String(title || '').trim().replace(/_+/g, ' ');
+    if (!/\s/.test(text) && (text.match(/-/g) || []).length >= 2) text = text.replace(/-+/g, ' ');
+    return text.replace(/\s+/g, ' ').trim();
+}
+
+const CHAPTER_LINE_RE = /^(chương|chuong|chapter|hồi|hoi|quyển|quyen|phần|phan|tập|tap|part|book)\s*[\dIVXLC]+\b/i;
+
+// Best guess for a new book's name: a TXT whose first line is not a chapter heading
+// or a sentence usually starts with its title; otherwise use the file name.
+async function guessBookTitle(file) {
+    const fromName = prettifyBookTitle(String(file?.name || '').replace(/\.[^.]+$/, ''));
+    if (!/\.txt$/i.test(file?.name || '')) return fromName;
+    try {
+        const head = (await file.slice(0, 4096).text()).replace(/^\uFEFF/, '');
+        const first = head.split(/\r?\n/).map(line => line.trim()).find(Boolean) || '';
+        const looksLikeTitle = first.length >= 2 && first.length <= 80
+            && !CHAPTER_LINE_RE.test(first)
+            && !/^={3,}$/.test(first)
+            && !/[.!?…,;:]$/.test(first);
+        return looksLikeTitle ? first : fromName;
+    } catch (_) {
+        return fromName;
+    }
+}
+
 function createLibraryEntry(bookId, data) {
-    const title = data.title || data.filename;
+    const title = prettifyBookTitle(data.title || data.filename);
     const done = isBookDone(data);
     return {
         id: bookId,
@@ -1107,12 +1191,26 @@ function getLibraryChapter(entry) {
     return { index: Math.max(0, index), total: toc.titles.length, titleAt: i => toc.titles[i] || '' };
 }
 
-function formatEntryMeta(entry) {
+// The open book's position moves while it plays; the library snapshot does not.
+function entryPercent(entry) {
+    if (entry.id !== STATE.currentBookId || !STATE.currentBook || entry.done) return entry.percent;
+    const total = getTotalChunks();
+    if (!total) return entry.percent;
+    const current = getGlobalIndex(STATE.currentChapterIndex, STATE.currentSentenceIndex);
+    return Math.max(0, Math.min(100, current / total * 100));
+}
+
+function isEntryPlaying(entry) {
+    return entry.id === STATE.currentBookId && !!STATE.currentBook && typeof audio !== 'undefined' && !audio.paused;
+}
+
+function formatEntryMeta(entry, { withTime = true } = {}) {
     const chapter = getLibraryChapter(entry);
     const parts = [];
     if (chapter) parts.push(`C.${chapter.index + 1}/${chapter.total}`);
-    parts.push(formatPercent(entry.percent));
-    parts.push(formatListenedAgo(entry.lastListenedAt));
+    parts.push(formatPercent(entryPercent(entry)));
+    if (isEntryPlaying(entry)) parts.push(tr('playing-now', 'đang phát'));
+    else if (withTime) parts.push(formatListenedAgo(entry.lastListenedAt));
     return parts.join(' · ');
 }
 
@@ -1437,7 +1535,7 @@ function buildShelfCard(entry) {
     setBreakableTitle(title, entry.title);
     const meta = document.createElement('span');
     meta.className = 'shelf-card__meta';
-    meta.textContent = formatEntryMeta(entry);
+    meta.textContent = formatEntryMeta(entry, { withTime: false });
     open.append(createCoverElement(entry, 'grid'), bar, title, meta);
     const more = document.createElement('button');
     more.type = 'button';
@@ -1537,7 +1635,7 @@ function setRowExpanded(row, expanded) {
             }
             details.querySelector('.strip')?.replaceWith(buildChapterStrip(entry));
             document.querySelectorAll(`[data-book-id="${CSS.escape(entry.id)}"] .lib-row__meta, [data-book-id="${CSS.escape(entry.id)}"] .shelf-card__meta`)
-                .forEach(meta => { meta.textContent = formatEntryMeta(entry); });
+                .forEach(meta => { meta.textContent = formatEntryMeta(entry, { withTime: !meta.classList.contains('shelf-card__meta') }); });
         });
     }
 }
@@ -1721,7 +1819,7 @@ function syncLibraryItemState(item, entry) {
     const isPlaying = isCurrent && typeof audio !== 'undefined' && !audio.paused;
     if (isCurrent) item.setAttribute('aria-current', 'true');
     else item.removeAttribute('aria-current');
-    const vars = { title: entry.title, percent: formatPercent(entry.percent) };
+    const vars = { title: entry.title, percent: formatPercent(entryPercent(entry)) };
     item.querySelectorAll('.prog-ring').forEach(ring => {
         ring.setAttribute('aria-pressed', String(isPlaying));
         ring.setAttribute('aria-label', isPlaying
@@ -1733,8 +1831,17 @@ function syncLibraryItemState(item, entry) {
         listen.innerHTML = `${iconSVG(isPlaying ? 'pause' : 'play', 'ic--sm')}<span>${isPlaying ? tr('pause', 'Tạm dừng') : tr('listen', 'Nghe')}</span>`;
     }
     item.querySelectorAll('.lib-row__meta, .shelf-card__meta').forEach(meta => {
-        meta.textContent = formatEntryMeta(entry);
+        meta.textContent = formatEntryMeta(entry, { withTime: !meta.classList.contains('shelf-card__meta') });
     });
+    if (isCurrent) {
+        const pct = entryPercent(entry);
+        item.querySelectorAll('.shelf-card__bar > span').forEach(fill => { fill.style.width = `${pct}%`; });
+        item.querySelectorAll('.ring__fill').forEach(fill => {
+            const rounded = Math.round(pct * 10) / 10;
+            fill.setAttribute('stroke-dasharray', `${rounded} 100`);
+            fill.toggleAttribute('data-empty', !(rounded > 0));
+        });
+    }
 }
 
 function updateLibraryHighlight() {
@@ -1769,11 +1876,13 @@ function updateDiscoveryContinueCard() {
     const isPlaying = isOpen && typeof audio !== 'undefined' && !audio.paused;
     setBreakableTitle(title, entry.title);
     meta.textContent = formatEntryMeta(entry);
-    progress.style.width = `${entry.percent}%`;
+    progress.style.width = `${entryPercent(entry)}%`;
     if (label) {
         label.textContent = isPlaying
             ? tr('now-playing', 'Đang phát')
-            : (isOpen ? tr('resume-open', 'Đang mở') : tr('resume-last', 'Nghe gần nhất'));
+            : (isOpen
+                ? tr('resume-paused', 'Tạm dừng · nghe tiếp từ C.{n}', { n: STATE.currentChapterIndex + 1 })
+                : tr('resume-last', 'Nghe gần nhất'));
     }
     card.dataset.bookId = entry.id;
     // Same control as the dock and the library row: pause while this book is playing.
@@ -1801,8 +1910,20 @@ function handleContinueListening(event) {
         return;
     }
     if (target.isOpen) {
-        toggleDiscoveryMode(false);
-        if (audio.paused) void togglePlayback();
+        if (!audio.paused) {
+            toggleDiscoveryMode(false);
+            return;
+        }
+        // Stay on Home when another tab or device holds playback; the toast offers "Phát tại đây".
+        STATE.playIntentAt = Date.now();
+        void waitForWebSocket().then(connected => {
+            if (!connected) {
+                document.getElementById('status-indicator').innerText = connectionFailedStatus();
+                return;
+            }
+            toggleDiscoveryMode(false);
+            void togglePlayback();
+        });
         return;
     }
     void loadBookFromStorage(target.entry.id, target.entry.data);
@@ -2470,7 +2591,9 @@ function safeViewTransition(callback) {
     // with its sticky current-chapter row pinned, so skip it there too.
     const tocSheetOpen = document.getElementById('toc-sheet')?.hidden === false;
     if (document.startViewTransition && !STATE.isLiteMode && !tocSheetOpen && document.visibilityState !== 'hidden') {
-        return document.startViewTransition(callback);
+        // Callers await the DOM update (e.g. to scroll to the saved sentence); the
+        // ViewTransition object itself is not awaitable.
+        return document.startViewTransition(callback).updateCallbackDone.catch(err => console.debug('[ViewTransition] Update failed:', err?.message));
     } else {
         return callback();
     }
@@ -2678,6 +2801,38 @@ function setModalVisibility(id, visible) {
     }
 }
 
+// In-app replacement for confirm(): resolves true only on the destructive button.
+function confirmSheet({ title, body = '', confirmLabel }) {
+    const modal = document.getElementById('confirm-modal');
+    if (!modal) return Promise.resolve(confirm(`${title}\n\n${body}`));
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-body').textContent = body;
+    const ok = document.getElementById('confirm-ok-btn');
+    ok.textContent = confirmLabel;
+    return new Promise(resolve => {
+        const cancels = modal.querySelectorAll('[data-confirm-cancel]');
+        const finish = result => {
+            ok.removeEventListener('click', onOk);
+            cancels.forEach(el => el.removeEventListener('click', onCancel));
+            document.removeEventListener('keydown', onKey, true);
+            setModalVisibility('confirm-modal', false);
+            resolve(result);
+        };
+        const onOk = () => finish(true);
+        const onCancel = () => finish(false);
+        const onKey = event => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
+            finish(false);
+        };
+        ok.addEventListener('click', onOk);
+        cancels.forEach(el => el.addEventListener('click', onCancel));
+        document.addEventListener('keydown', onKey, true);
+        setModalVisibility('confirm-modal', true);
+    });
+}
+
 function openUploadOptions() {
     setModalVisibility('upload-options-modal', true);
 }
@@ -2699,6 +2854,7 @@ function beginBookUpload(withImages, inputTarget = STATE.uploadInputTarget || 's
         const imagesInput = document.getElementById('book-image-input');
         if (textInput) textInput.value = '';
         if (imagesInput) imagesInput.value = '';
+        updateUploadFilePaths();
         setModalVisibility('upload-files-modal', true);
         return;
     }
@@ -2717,7 +2873,57 @@ function closeUploadFilesModal() {
     STATE.pendingUploadTextFile = null;
     STATE.pendingUploadImageFiles = [];
     STATE.uploadImagesChoice = false;
+    releaseUploadThumbs();
     setModalVisibility('upload-files-modal', false);
+}
+
+let uploadThumbURLs = [];
+function releaseUploadThumbs() {
+    uploadThumbURLs.forEach(url => URL.revokeObjectURL(url));
+    uploadThumbURLs = [];
+    document.getElementById('book-image-thumbs')?.replaceChildren();
+}
+
+// Picked images as thumbnails; the first one is the cover and a tap moves another one first.
+function renderUploadThumbs() {
+    const list = document.getElementById('book-image-thumbs');
+    if (!list) return;
+    releaseUploadThumbs();
+    const images = STATE.pendingUploadImageFiles;
+    list.hidden = !images.length;
+    images.forEach((file, index) => {
+        const url = URL.createObjectURL(file);
+        uploadThumbURLs.push(url);
+        const item = document.createElement('li');
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'import-thumb';
+        btn.setAttribute('aria-pressed', String(index === 0));
+        btn.setAttribute('aria-label', index === 0
+            ? tr('import-cover-current', 'Ảnh bìa: {name}', { name: file.name })
+            : tr('import-cover-choose', 'Chọn {name} làm bìa', { name: file.name }));
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = '';
+        img.decoding = 'async';
+        btn.appendChild(img);
+        if (index === 0) {
+            const badge = document.createElement('span');
+            badge.className = 'import-thumb__badge';
+            badge.textContent = tr('cover-badge', 'Bìa');
+            btn.appendChild(badge);
+        }
+        btn.addEventListener('click', () => {
+            if (index === 0) return;
+            const next = [...STATE.pendingUploadImageFiles];
+            next.unshift(...next.splice(index, 1));
+            STATE.pendingUploadImageFiles = next;
+            renderUploadThumbs();
+            list.querySelector('.import-thumb')?.focus({ preventScroll: true });
+        });
+        item.appendChild(btn);
+        list.appendChild(item);
+    });
 }
 
 function updateUploadFilePaths() {
@@ -2728,13 +2934,28 @@ function updateUploadFilePaths() {
         const images = STATE.pendingUploadImageFiles;
         imagePath.value = images.length ? tr('import-images-count', '{count} ảnh: {names}', { count: images.length, names: images.map(file => file.name).join(', ') }) : '';
     }
+    const confirmBtn = document.getElementById('confirm-upload-files-btn');
+    if (confirmBtn) confirmBtn.disabled = !STATE.pendingUploadTextFile;
+    const titleField = document.getElementById('book-title-field');
+    if (titleField) titleField.hidden = !STATE.pendingUploadTextFile;
+    renderUploadThumbs();
 }
 
 document.getElementById('browse-book-text-btn')?.addEventListener('click', () => document.getElementById('book-text-input')?.click());
 document.getElementById('browse-book-image-btn')?.addEventListener('click', () => document.getElementById('book-image-input')?.click());
-document.getElementById('book-text-input')?.addEventListener('change', event => {
-    STATE.pendingUploadTextFile = event.target.files?.[0] || null;
+// The read-only path boxes open the picker too.
+document.querySelectorAll('#upload-files-modal [data-pick]').forEach(field => {
+    field.addEventListener('click', () => document.getElementById(field.dataset.pick)?.click());
+});
+document.getElementById('book-text-input')?.addEventListener('change', async event => {
+    const file = event.target.files?.[0] || null;
+    STATE.pendingUploadTextFile = file;
     updateUploadFilePaths();
+    const titleInput = document.getElementById('book-title-input');
+    if (titleInput && file) {
+        const guess = await guessBookTitle(file);
+        if (STATE.pendingUploadTextFile === file) titleInput.value = guess;
+    }
 });
 document.getElementById('book-image-input')?.addEventListener('change', event => {
     STATE.pendingUploadImageFiles = Array.from(event.target.files || []);
@@ -2746,6 +2967,8 @@ document.getElementById('confirm-upload-files-btn')?.addEventListener('click', (
         return;
     }
     const files = [STATE.pendingUploadTextFile, ...STATE.pendingUploadImageFiles];
+    STATE.pendingUploadTitle = document.getElementById('book-title-input')?.value || '';
+    releaseUploadThumbs();
     setModalVisibility('upload-files-modal', false);
     STATE.uploadImagesChoice = true;
     handleFileUpload({ target: { files, value: '' } });
@@ -2850,7 +3073,7 @@ document.addEventListener('paste', event => {
 // "Disconnected" that follow them must not replace that reason.
 function setStatusKeepingStopReason(text) {
     const indicator = document.getElementById('status-indicator');
-    if (statusMatches(indicator.innerText, 'status-session-expired', 'status-sleep-stopped')) return;
+    if (statusMatches(indicator.innerText, 'status-session-expired', 'status-sleep-stopped', 'status-taken-over')) return;
     indicator.innerText = text;
 }
 
@@ -2881,6 +3104,35 @@ function wsRefusedRecently() {
 
 function connectionFailedStatus() {
     return wsRefusedRecently() ? tr('status-conn-busy', 'Listening in another tab or device') : tr('status-conn-failed', 'Connection failed');
+}
+
+// The user pressed Play (or opened a book) in the last few seconds.
+function playRequestedRecently() {
+    return !!STATE.playIntentAt && Date.now() - STATE.playIntentAt < 20000;
+}
+
+function setConnBusy(busy) {
+    document.getElementById('media-player')?.toggleAttribute('data-conn-busy', !!busy);
+    const btn = document.getElementById('play-here-btn');
+    if (btn) btn.hidden = !busy;
+}
+
+function showConnBusyToast(message = tr('toast-conn-busy', 'This account is already listening in another tab or on another device.')) {
+    APP_STATUS.toast(message, 'warning', {
+        key: 'conn-busy',
+        duration: 8000,
+        actions: [{ label: tr('play-here', 'Phát tại đây'), onClick: takeOverPlayback }]
+    });
+}
+
+// "Phát tại đây": the server closes the other tab's or device's socket and gives its slot to this one.
+async function takeOverPlayback() {
+    if (!STATE.currentBook) return;
+    STATE.wsRefusedAt = 0;
+    STATE.wsTakeover = true;
+    setConnBusy(false);
+    if (STATE.ws && STATE.ws.readyState !== WebSocket.OPEN) closeWebSocketIntentionally();
+    if (audio.paused) await togglePlayback();
 }
 
 function closeWebSocketIntentionally() {
@@ -2931,12 +3183,14 @@ async function initWebSocket() {
     // is stored before its PREFETCH_DONE arrives (Blob.arrayBuffer() raced it).
     STATE.ws.binaryType = 'arraybuffer';
     const socket = STATE.ws;
+    socket._takeover = !!STATE.wsTakeover;
+    STATE.wsTakeover = false;
     STATE.wsConnecting = false;
 
     STATE.ws.onopen = () => {
         console.log("Connected to WebSocket");
         document.getElementById('status-indicator').innerText = idleStatus();
-        socket.send(JSON.stringify({ type: "AUTH", token }));
+        socket.send(JSON.stringify({ type: "AUTH", token, ...(socket._takeover ? { takeover: true } : {}) }));
 
         // --- FIXED: Clear existing heartbeat to avoid PING interval leaks ---
         if (STATE.heartbeatInterval) clearInterval(STATE.heartbeatInterval);
@@ -2954,6 +3208,11 @@ async function initWebSocket() {
     STATE.ws.onmessage = async (event) => {
         if (typeof event.data === "string") {
             const data = JSON.parse(event.data);
+            if (data.type === "AUTH_OK") {
+                STATE.wsRefusedAt = 0;
+                setConnBusy(false);
+                return;
+            }
             if (data.type === "METADATA") {
                 // Bỏ qua nếu là session cũ
                 if (data.sessionId && data.sessionId !== STATE.sessionId) {
@@ -3200,11 +3459,25 @@ async function initWebSocket() {
         }
 
         // Another tab or device holds this account's only socket: reconnecting would just be refused again.
+        // Stay quiet on page load; tell the user (with a "Play here" way out) whenever their Play is refused.
         if (event?.code === 1013) {
-            const firstRefusal = !wsRefusedRecently();
             STATE.wsRefusedAt = Date.now();
+            setConnBusy(true);
             document.getElementById('status-indicator').innerText = tr('status-conn-busy', 'Listening in another tab or device');
-            if (firstRefusal) APP_STATUS.toast(tr('toast-conn-busy', 'This account is already listening in another tab or on another device. Stop it there, then press Play here.'), 'warning');
+            if (playRequestedRecently()) showConnBusyToast();
+            return;
+        }
+
+        // This account pressed "Play here" on another tab or device.
+        if (event?.code === 4001) {
+            const wasPlaying = !audio.paused;
+            STATE.wsRefusedAt = Date.now();
+            STATE.socketParked = true;
+            STATE.playIntentAt = 0;
+            if (wasPlaying) audio.pause();
+            setConnBusy(true);
+            document.getElementById('status-indicator').innerText = tr('status-taken-over', 'Playing on another tab or device');
+            if (wasPlaying) showConnBusyToast(tr('toast-taken-over', 'Playback moved to another tab or device.'));
             return;
         }
 
@@ -4264,7 +4537,14 @@ async function downloadTextBook(bookId, title = 'book', triggerBtn = null) {
 async function deleteBook(bookId, filename, title, bypassConfirm = false) {
     closeAllKebabMenus(); // close menu first
 
-    if (!bypassConfirm && !confirm(tr('delete-book-confirm', 'Xóa truyện "{title}"?\n\nHành động này sẽ xóa vĩnh viễn dữ liệu trên Cloud. Không thể hoàn tác!', { title }))) return;
+    if (!bypassConfirm) {
+        const confirmed = await confirmSheet({
+            title: tr('delete-book-title', 'Xoá “{title}”?', { title }),
+            body: tr('delete-book-body', 'Truyện, tiến độ và ảnh sẽ bị xoá vĩnh viễn khỏi đám mây. Không thể hoàn tác.'),
+            confirmLabel: tr('delete-forever', 'Xoá vĩnh viễn')
+        });
+        if (!confirmed) return;
+    }
     if (!STATE.user) return;
 
     APP_STATUS.set(tr('status-deleting', 'Đang xóa...'));
@@ -4286,6 +4566,7 @@ async function deleteBook(bookId, filename, title, bypassConfirm = false) {
         await refreshLibrary();
         restoreLibraryFocus(focusSnapshot);
         APP_STATUS.set(tr('status-deleted', 'Đã xóa!'));
+        APP_STATUS.toast(tr('book-deleted', 'Đã xoá “{title}”', { title: escapeHTML(title) }), 'success');
         setTimeout(() => APP_STATUS.set(tr('status-ready', 'Ready')), 2500);
 
     } catch (err) {
@@ -4756,6 +5037,9 @@ const handleFileUpload = async (e) => {
     }
 
     const illustrations = includeImages ? selectedFiles.filter(candidate => candidate !== file) : [];
+    const chosenTitle = (STATE.pendingUploadTitle || '').trim();
+    STATE.pendingUploadTitle = '';
+    const bookTitle = chosenTitle || await guessBookTitle(file);
 
     showLoading(tr('upload-book-title', 'Đang tải lên {name}', { name: file.name }), {
         subtext: tr('upload-book-checking', 'Đang kiểm tra & phân tách chương...'),
@@ -4839,6 +5123,8 @@ const handleFileUpload = async (e) => {
             }));
         }
 
+        if (bookTitle) bookInfo.title = bookTitle;
+
         if (illustrations.length) {
             document.getElementById('status-indicator').innerText = trCount('img-optimizing-count', 'Đang tối ưu {n} ảnh...', illustrations.length);
             try {
@@ -4855,7 +5141,14 @@ const handleFileUpload = async (e) => {
         const loaded = await loadBook(bookInfo, data.storyId, data.filename || file.name);
         if (!loaded) return;
         await refreshLibrary();
-        APP_STATUS.toast(tr('book-added', 'Đã thêm "{title}" vào thư viện!', { title: bookInfo.title || file.name }), 'success');
+        const addedId = data.storyId;
+        APP_STATUS.toast(tr('book-added', 'Đã thêm "{title}" vào thư viện!', { title: escapeHTML(STATE.currentBook?.title || bookInfo.title || file.name) }), 'success', {
+            duration: 8000,
+            actions: [
+                { label: tr('rename-book', 'Đổi tên'), onClick: () => { if (STATE.currentBookId === addedId) void editTitle(); } },
+                { label: tr('view-on-shelf', 'Xem trên kệ'), onClick: () => toggleDiscoveryMode(true) }
+            ]
+        });
         STATE.pendingImageFiles = [];
         if (imageInput) imageInput.value = '';
     } catch (err) {
@@ -4992,9 +5285,12 @@ async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
         if (manifest.images.length && STATE.user) {
             void setDoc(doc(db, 'users', STATE.user.uid, 'progress', STATE.currentBookId), { has_images: true }, { merge: true })
                 .catch(err => console.debug('[Images] Progress flag skipped:', err.message));
-            // Text is already visible; add images without blocking first render.
+            // Text is already visible; add images without blocking first render,
+            // then bring the reading position back into view.
             if (STATE.currentBook?.chapters?.[STATE.currentChapterIndex]?.sentences) {
-                void renderChapter(STATE.currentChapterIndex).catch(err => console.debug('[Images] Deferred render skipped:', err.message));
+                void renderChapter(STATE.currentChapterIndex)
+                    .then(rendered => { if (rendered) revealCurrentSentence(); })
+                    .catch(err => console.debug('[Images] Deferred render skipped:', err.message));
             }
         }
         paintPlayerArt();
@@ -5030,6 +5326,7 @@ async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
     // Restore metadata independently from the playback cursor. Older records
     // can contain a title without last_read_chunk.
     if (progress?.title) STATE.currentBook.title = progress.title;
+    STATE.currentBook.title = prettifyBookTitle(STATE.currentBook.title) || STATE.currentBook.title;
     if (progress?.filename) STATE.currentFilename = progress.filename;
 
     if (hasSavedProgressCursor(progress)) {
@@ -5078,9 +5375,7 @@ async function loadBook(bookData, bookId, filename, fallbackProgress = null) {
     renderTOC();
     updateUI();
 
-    if (progress) {
-        highlightSentence(STATE.currentSentenceIndex);
-    }
+    if (progress) revealCurrentSentence();
 
     // Progress persistence is not part of first paint. A slow Firestore write
     // must not keep the reader in its loading state.
@@ -5237,7 +5532,11 @@ async function fetchChapterSentences(index, expectedLoadGeneration = STATE.loadG
 
 async function renderChapterImages(index) {
     if (!STATE.imageManifest?.images?.length) return [];
-    const images = STATE.imageManifest.images.filter(image => image.chapterIndex === index || (image.chapterIndex == null && index === 0));
+    // The cover belongs to the shelf, the dock and the lock screen, not to the chapter text.
+    const coverId = STATE.imageManifest.coverId;
+    const images = STATE.imageManifest.images.filter(image => (
+        image.chapterIndex === index || (image.chapterIndex == null && index === 0 && image.id !== coverId)
+    ));
     const figures = [];
     for (const image of images) {
         const url = await getImageURL(STATE.currentBookId, image);
@@ -5246,15 +5545,11 @@ async function renderChapterImages(index) {
         figure.className = 'reader-figure';
         const img = document.createElement('img');
         img.src = url;
-        img.alt = image.alt || tr('illustration', 'Ảnh minh hoạ');
+        // `alt` holds the uploaded file name, which is no caption; describe the image generically.
+        img.alt = tr('illustration', 'Ảnh minh hoạ');
         img.loading = 'lazy';
         img.decoding = 'async';
         figure.appendChild(img);
-        if (image.alt) {
-            const caption = document.createElement('figcaption');
-            caption.textContent = image.alt;
-            figure.appendChild(caption);
-        }
         figures.push(figure);
     }
     return figures;
@@ -6163,6 +6458,21 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
 
 async function playFromSentence(index, expectedLoadGeneration = STATE.loadGeneration, isSuperseded = null) {
     if (!STATE.currentBook) return;
+    STATE.playIntentAt = Date.now();
+    const loadToken = {};
+    STATE.playLoadToken = loadToken;
+    setPlayLoading();
+    try {
+        await startPlaybackAt(index, expectedLoadGeneration, isSuperseded);
+    } finally {
+        if (STATE.playLoadToken === loadToken && STATE.playLoading) {
+            STATE.playLoading = false;
+            setPlayIcon(!audio.paused);
+        }
+    }
+}
+
+async function startPlaybackAt(index, expectedLoadGeneration, isSuperseded) {
     STATE.socketParked = false;
     const expectedBookId = STATE.currentBookId;
     const isCurrentPlayback = () => (
@@ -6195,6 +6505,8 @@ async function playFromSentence(index, expectedLoadGeneration = STATE.loadGenera
 
     STATE.currentSentenceIndex = index;
     const sentences = STATE.currentBook.chapters[STATE.currentChapterIndex].sentences;
+    // Mark where playback will start while the audio is still loading.
+    highlightSentence(index);
 
     // Use the sessionId incremented by resetAudioEngine
     const currentSessionId = STATE.sessionId;
@@ -6289,6 +6601,16 @@ async function playFromSentence(index, expectedLoadGeneration = STATE.loadGenera
     }
 }
 
+// Opening or resuming a book: put the saved sentence in the middle of the screen
+// and mark it before any audio arrives.
+function revealCurrentSentence() {
+    const index = STATE.currentSentenceIndex;
+    highlightSentence(index);
+    const sentence = document.getElementById(`sentence-${index}`);
+    if (!sentence || index <= 0) return;
+    requestAnimationFrame(() => sentence.scrollIntoView({ block: 'center', behavior: 'instant' }));
+}
+
 function highlightSentence(index) {
     // --- OPTIMIZED: Use targeted removal instead of querySelectorAll ---
     if (STATE.lastHighlightedIndex !== -1 && STATE.lastHighlightedIndex !== index) {
@@ -6359,16 +6681,24 @@ async function togglePlayback() {
     if (!STATE.currentBook) return;
 
     if (audio.paused) {
+        // A second tap while the first is still loading would restart the request.
+        if (STATE.playLoading) return;
         STATE.socketParked = false;
+        STATE.playIntentAt = Date.now();
+        setPlayLoading();
         document.getElementById('status-indicator').innerText = tr('status-connecting', 'Connecting…');
-        if (!(await waitForWebSocket())) {
+        const connected = await waitForWebSocket();
+        STATE.playLoading = false;
+        if (!connected) {
+            setPlayIcon(false);
             document.getElementById('status-indicator').innerText = connectionFailedStatus();
             return;
         }
         if (STATE.chunkTimings.length === 0) {
             await playFromSentence(STATE.currentSentenceIndex);
         } else {
-            resumeAudio();
+            await resumeAudio();
+            setPlayIcon(!audio.paused);
         }
     } else {
         audio.pause();
@@ -6376,6 +6706,10 @@ async function togglePlayback() {
 }
 
 playBtn.onclick = () => togglePlayback();
+document.getElementById('play-here-btn')?.addEventListener('click', event => {
+    event.stopPropagation();
+    void takeOverPlayback();
+});
 
 
 audio.onplay = async () => {

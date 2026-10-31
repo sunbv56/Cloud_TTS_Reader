@@ -12,6 +12,8 @@
             var LEGACY = { 'default': 'slate', 'forest': 'slate', 'rose': 'slate', 'mocha': 'slate', 'warm-night': 'slate-deep', 'ocean': 'slate-deep', 'e-ink': 'slate-deep', 'paper': 'mist' };
             var savedTheme = 'slate';
             try {
+                // First visit from a Vietnamese browser: start the UI in Vietnamese.
+                if (!localStorage.getItem('ui-lang') && /^vi\b/i.test(navigator.language || '')) localStorage.setItem('ui-lang', 'vi');
                 var stored = localStorage.getItem('reader-theme');
                 if (stored) savedTheme = THEMES[stored] ? stored : (LEGACY[stored] || 'slate');
                 if (stored && stored !== savedTheme) localStorage.setItem('reader-theme', savedTheme);
@@ -322,6 +324,10 @@
         <!-- Reader: top bar (title, chapter, Mục lục, ⋮), 66ch text column, position ruler (≥1024px) -->
         <section id="reader-container" class="reader hidden" aria-labelledby="current-title">
             <header id="reader-header" class="reader-top">
+                <button id="reader-back-btn" type="button" class="icon-btn reader-top__back"
+                    aria-label="Về kệ sách" title="Về kệ sách" data-i18n-aria="back-to-shelf">
+                    <svg class="ic" aria-hidden="true"><use href="#i-left"/></svg>
+                </button>
                 <div class="reader-top__titles">
                     <div class="reader-top__line">
                         <h2 id="current-title" class="reader-title"
@@ -620,6 +626,7 @@
                 </div>
 
                 <div id="player-utils-layer" class="console-utils">
+                    <button id="play-here-btn" type="button" class="chip chip--warn" hidden data-i18n="play-here">Phát tại đây</button>
                     <button id="speak-speed-chip" type="button" class="chip" aria-haspopup="dialog" aria-controls="speed-stepper"
                         aria-label="Tốc độ đọc 1.0×. Chạm để đổi, nhấn giữ để chỉnh từng 0.05" title="Tốc độ đọc: chạm để đổi, nhấn giữ để chỉnh">1.0×</button>
                     <button id="sleep-chip" type="button" class="chip" aria-label="Hẹn giờ tắt: tắt. Chạm để đổi" title="Hẹn giờ tắt: chạm để đổi">
@@ -1034,7 +1041,7 @@
                 <svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg>
                 <span class="import-drop__title" data-i18n="import-choose-file">Chọn file truyện</span>
                 <span class="import-drop__hint mono">.txt · .epub · .pdf · ≤ 25 MB</span>
-                <span class="import-drop__hint" data-i18n="import-drop-hint">Hoặc kéo thả file vào khung này</span>
+                <span class="import-drop__hint import-drop__drag" data-i18n="import-drop-hint">Hoặc kéo thả file vào khung này</span>
             </button>
             <button id="upload-txt-images-btn" type="button" data-upload-mode="txt-images" class="import-option">
                 <svg class="ic" aria-hidden="true"><use href="#i-image"/></svg>
@@ -1076,26 +1083,46 @@ Nội dung chương hai...</pre>
             <div class="field-stack">
                 <label class="field-label" for="book-text-path" data-i18n="import-text-label">File truyện (.txt, .epub, .pdf)</label>
                 <div class="file-pick">
-                    <input id="book-text-path" type="text" readonly class="input" placeholder="Chưa chọn file" data-i18n-placeholder="import-none-selected">
+                    <input id="book-text-path" type="text" readonly class="input file-pick__path" placeholder="Chưa chọn file" data-i18n-placeholder="import-none-selected" data-pick="book-text-input">
                     <button id="browse-book-text-btn" type="button" class="btn" data-i18n="browse">Chọn</button>
                 </div>
             </div>
+            <div id="book-title-field" class="field-stack" hidden>
+                <label class="field-label" for="book-title-input" data-i18n="import-title-label">Tên truyện</label>
+                <input id="book-title-input" type="text" class="input" maxlength="120" autocomplete="off" enterkeyhint="done">
+                <p class="field-hint" data-i18n="import-title-hint">Lấy từ dòng đầu của file. Sửa nếu chưa đúng.</p>
+            </div>
             <div class="field-stack">
-                <label class="field-label" for="book-image-path" data-i18n="import-images-label">Ảnh minh hoạ (tuỳ chọn)</label>
+                <label class="field-label" for="book-image-path" data-i18n="import-images-label">Ảnh bìa &amp; minh hoạ (tuỳ chọn)</label>
                 <div class="file-pick">
-                    <input id="book-image-path" type="text" readonly class="input" placeholder="Chưa chọn ảnh" data-i18n-placeholder="import-no-images">
+                    <input id="book-image-path" type="text" readonly class="input file-pick__path" placeholder="Chưa chọn ảnh" data-i18n-placeholder="import-no-images" data-pick="book-image-input">
                     <button id="browse-book-image-btn" type="button" class="btn" data-i18n="browse">Chọn</button>
                 </div>
-                <p class="field-hint mono">.jpg .jpeg .png .webp .gif .bmp .avif</p>
+                <ul id="book-image-thumbs" class="import-thumbs" hidden></ul>
+                <p class="field-hint" data-i18n="import-images-hint">Ảnh JPG, PNG, WebP… Ảnh có nhãn Bìa thành bìa truyện; chạm ảnh khác để đổi.</p>
             </div>
             <input id="book-text-input" type="file" class="hidden" accept=".txt,.epub,.pdf" tabindex="-1">
             <input id="book-image-input" type="file" class="hidden" accept=".jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.image" multiple tabindex="-1">
             <div class="modal-actions">
                 <button id="cancel-upload-files-btn" type="button" class="btn" data-i18n="cancel">Huỷ</button>
-                <button id="confirm-upload-files-btn" type="button" class="btn btn--primary">
+                <button id="confirm-upload-files-btn" type="button" class="btn btn--primary" disabled>
                     <svg class="ic ic--sm" aria-hidden="true"><use href="#i-upload"/></svg>
                     <span data-i18n="import-confirm">Thêm vào thư viện</span>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <div id="confirm-modal" class="modal modal--top hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-body">
+        <div class="modal__scrim" data-confirm-cancel></div>
+        <div class="modal-card modal-card--sm">
+            <div class="modal-head">
+                <h2 id="confirm-title" class="modal-title"></h2>
+            </div>
+            <p id="confirm-body" class="modal-sub"></p>
+            <div class="modal-actions">
+                <button id="confirm-cancel-btn" type="button" class="btn" data-confirm-cancel data-autofocus data-i18n="cancel">Huỷ</button>
+                <button id="confirm-ok-btn" type="button" class="btn btn--destructive"></button>
             </div>
         </div>
     </div>
