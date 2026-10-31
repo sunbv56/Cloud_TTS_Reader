@@ -397,6 +397,20 @@ export const SettingsSheet = {
             });
         });
 
+        // Jump bar marks the section in view. A jump pins its target until the user
+        // scrolls by hand, since short last sections can never reach the top.
+        const body = document.getElementById('settings-body');
+        let frame = 0;
+        body?.addEventListener('scroll', () => {
+            if (frame) return;
+            frame = requestAnimationFrame(() => {
+                frame = 0;
+                if (!this.pinnedJump) this.markJump(this.sectionInView());
+            });
+        }, { passive: true });
+        const release = () => { this.pinnedJump = null; };
+        ['wheel', 'touchstart', 'keydown'].forEach(type => body?.addEventListener(type, release, { passive: true }));
+
         document.querySelectorAll('#settings-lang [data-lang]').forEach(btn => {
             btn.addEventListener('click', () => this.setLanguage(btn.dataset.lang));
         });
@@ -459,10 +473,40 @@ export const SettingsSheet = {
         trapTab(this.sheet, event);
     },
 
+    sectionInView() {
+        const body = document.getElementById('settings-body');
+        const groups = [...(body?.querySelectorAll('.set-group') || [])];
+        if (!groups.length) return null;
+        if (body.scrollTop + body.clientHeight >= body.scrollHeight - 2) return groups[groups.length - 1].id;
+        let current = groups[0];
+        for (const group of groups) {
+            if (group.offsetTop - body.offsetTop <= body.scrollTop + 32) current = group;
+        }
+        return current.id;
+    },
+
+    markJump(id) {
+        this.sheet?.querySelectorAll('.settings__jump a').forEach(link => {
+            if (link.getAttribute('href') !== `#${id}`) {
+                link.removeAttribute('aria-current');
+                return;
+            }
+            link.setAttribute('aria-current', 'true');
+            // At 320px the bar scrolls sideways; keep the marked link in view.
+            const nav = link.parentElement;
+            const box = link.getBoundingClientRect();
+            const bar = nav.getBoundingClientRect();
+            if (box.left < bar.left) nav.scrollLeft -= bar.left - box.left;
+            else if (box.right > bar.right) nav.scrollLeft += box.right - bar.right;
+        });
+    },
+
     scrollTo(id, { instant = false } = {}) {
         const target = document.getElementById(id);
         const body = document.getElementById('settings-body');
         if (!target || !body) return;
+        this.pinnedJump = id;
+        this.markJump(id);
         // The first group sits under the local-settings note; start at the top so the note stays readable.
         const first = body.querySelector('.set-group') === target;
         const top = first ? 0 : target.offsetTop - body.offsetTop - 4;

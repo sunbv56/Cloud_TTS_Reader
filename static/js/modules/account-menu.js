@@ -37,13 +37,19 @@ function i18nText(tag, className, key) {
 
 const LEGACY_FALLBACK_NAME = 'Tài khoản Google';
 
-function profileName(profile) {
-    const name = profile?.name && profile.name !== LEGACY_FALLBACK_NAME ? profile.name : '';
-    return name || profile?.email || t('account-fallback-name');
+function realName(profile) {
+    return profile?.name && profile.name !== LEGACY_FALLBACK_NAME ? profile.name : '';
 }
 
+function profileName(profile) {
+    return realName(profile) || profile?.email || t('account-fallback-name');
+}
+
+// The initial never comes from the translated fallback, so it stays put when the language flips.
 function avatar(profile, className = 'acct-avatar') {
-    const initial = el('span', `${className} acct-avatar--initial`, (profileName(profile) || '?').trim().charAt(0).toUpperCase());
+    const letter = (realName(profile) || profile?.email || '').trim().charAt(0).toUpperCase();
+    const initial = el('span', `${className} acct-avatar--initial`, letter || undefined);
+    if (!letter) initial.append(icon('fa-user'));
     initial.setAttribute('aria-hidden', 'true');
     if (!profile.photo) return initial;
     const img = el('img', className);
@@ -106,6 +112,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
             const text = el('span', 'acct-item__text');
             text.append(el('span', 'acct-item__name', profileName(account)));
             if (account.email) text.append(el('span', 'acct-item__email', account.email));
+            else if (account.uid) text.append(el('span', 'acct-item__email', t('account-no-email').replace('{id}', account.uid.slice(-4))));
 
             const mark = account.uid === pendingUid
                 ? icon('fa-circle-notch fa-spin acct-item__mark')
@@ -123,7 +130,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         add.append(icon('fa-user-plus'), i18nText('span', '', 'account-add'));
         if (full) add.append(i18nText('span', 'acct-action__hint', 'account-limit'));
 
-        const signOutBtn = el('button', 'acct-action acct-action--quiet');
+        const signOutBtn = el('button', 'acct-action acct-action--sign-out');
         signOutBtn.type = 'button';
         signOutBtn.setAttribute('role', 'menuitem');
         signOutBtn.dataset.action = 'sign-out';
@@ -131,7 +138,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         signOutBtn.append(icon('fa-right-from-bracket'), i18nText('span', '', 'account-sign-out'));
 
         menu.setAttribute('aria-busy', String(busy));
-        menu.replaceChildren(i18nText('p', 'acct-menu__label', 'account-menu-title'), list, el('div', 'acct-menu__rule'), add, signOutBtn);
+        menu.replaceChildren(i18nText('p', 'acct-menu__label', 'account-menu-title'), list, el('div', 'acct-menu__rule'), add, el('div', 'acct-menu__rule'), signOutBtn);
     }
 
     function focusables() {

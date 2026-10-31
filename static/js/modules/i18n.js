@@ -10,7 +10,7 @@ export const translations = {
         "clear-cache-confirm": "Delete all audio saved on this device?",
         "clear-cache-done": "Audio cache cleared.",
         "clear-short": "Clear",
-        "color-default": "Theme colour",
+        "color-default": "Match theme",
         "dict-clear": "Clear all",
         "dict-save": "Save dictionary",
         "dict-saved": "Dictionary saved.",
@@ -66,7 +66,7 @@ export const translations = {
         "net-timeout": "The server is taking too long. Please try again.",
         "net-unreachable": "Cannot reach the server. Check your connection and try again.",
         "book-load-failed": "Could not load the book from storage. Check that the file still exists.",
-        "font-sample": "A quick brown fox reads the whole chapter aloud.",
+        "font-sample": "Trăm năm trong cõi người ta, chữ tài chữ mệnh khéo là ghét nhau.",
         "gtts-title": "Google TTS fallback",
         "gtts-desc": "Reads with Google when Edge fails (different voice)",
         "proxy-title": "Edge proxy",
@@ -177,7 +177,7 @@ export const translations = {
         "need-open-book": "Open a book first.",
         "rename-book-long": "Rename book",
         "reader-tools": "Reader tools",
-        "reader-type": "Text appearance",
+        "reader-type": "Reading text",
         "edit-this-chapter": "Edit this chapter",
         "zen-title": "Focus mode",
         "zen-desc": "Dims every other paragraph",
@@ -261,7 +261,7 @@ export const translations = {
         "menu-settings": "Settings",
         "menu-stats": "Reading stats",
         "menu-sync": "Sync library",
-        "menu-language": "Switch language",
+        "menu-language": "Language",
         "menu-fullscreen": "Full screen",
         "menu-fullscreen-exit": "Exit full screen",
         "offline-banner": "You are offline. New changes cannot be saved yet.",
@@ -463,6 +463,19 @@ export const translations = {
         "image-delete-failed": "Couldn't delete the image",
         "crop-open-failed": "Couldn't open the cover crop: {error}",
         "crop-save-failed": "Couldn't save the cover crop: {error}",
+        "nav-open-library": "Open library and contents",
+        "home-link": "Cloud TTS — home",
+        "sidebar-label": "Library and contents",
+        "sidebar-tabs": "Sidebar",
+        "sync-done": "Library synced · {n} books",
+        "sync-done-one": "Library synced · 1 book",
+        "sync-failed": "Couldn't sync the library. Try again.",
+        "sync-at": "at {time}",
+        "streak-days-short": "{n}-day streak",
+        "account-no-email": "No email · ID …{id}",
+        "text-color-custom": "Custom",
+        "font-group-serif": "Serif",
+        "font-group-sans": "Sans-serif",
     },
     vi: {
         "advanced-summary": "luồng · proxy · gTTS · từ điển",
@@ -470,7 +483,7 @@ export const translations = {
         "clear-cache-confirm": "Xoá toàn bộ âm thanh đã lưu trên máy này?",
         "clear-cache-done": "Đã xoá cache âm thanh.",
         "clear-short": "Xoá",
-        "color-default": "Theo theme",
+        "color-default": "Theo giao diện",
         "dict-clear": "Xoá hết",
         "dict-save": "Lưu từ điển",
         "dict-saved": "Đã lưu từ điển.",
@@ -638,7 +651,7 @@ export const translations = {
         "need-open-book": "Mở một truyện trước đã.",
         "rename-book-long": "Đổi tên truyện",
         "reader-tools": "Tiện ích trang đọc",
-        "reader-type": "Giao diện chữ",
+        "reader-type": "Chữ đọc",
         "edit-this-chapter": "Sửa chương này",
         "zen-title": "Chế độ tập trung",
         "zen-desc": "Làm mờ các đoạn khác",
@@ -651,7 +664,7 @@ export const translations = {
         "sleep-title": "Hẹn giờ tắt",
         "sleep-left": "Còn lại",
         "sleep-cancel": "Huỷ hẹn giờ",
-        "type-font": "Font chữ",
+        "type-font": "Phông chữ",
         "type-size": "Cỡ chữ",
         "type-size-dec": "Giảm cỡ chữ",
         "type-size-inc": "Tăng cỡ chữ",
@@ -708,7 +721,7 @@ export const translations = {
         "tab-toc": "Chương",
         "theme-slate-name": "Slate",
         "theme-slate-mood": "Tối mặc định · xám than lạnh",
-        "theme-slate-deep-name": "Slate sâu",
+        "theme-slate-deep-name": "Slate đậm",
         "theme-slate-deep-mood": "Tối hơn · cho phòng tối",
         "theme-mist-name": "Sương",
         "theme-mist-mood": "Sáng · giấy xám lạnh",
@@ -722,7 +735,7 @@ export const translations = {
         "menu-settings": "Cài đặt",
         "menu-stats": "Thống kê đọc",
         "menu-sync": "Đồng bộ thư viện",
-        "menu-language": "Đổi ngôn ngữ",
+        "menu-language": "Ngôn ngữ",
         "menu-fullscreen": "Toàn màn hình",
         "menu-fullscreen-exit": "Thoát toàn màn hình",
         "offline-banner": "Bạn đang ngoại tuyến. Các thay đổi mới chưa thể lưu.",
@@ -923,6 +936,19 @@ export const translations = {
         "image-delete-failed": "Không thể xoá ảnh",
         "crop-open-failed": "Không thể mở crop: {error}",
         "crop-save-failed": "Không thể lưu crop: {error}",
+        "nav-open-library": "Mở thư viện và mục lục",
+        "home-link": "Cloud TTS — về trang chủ",
+        "sidebar-label": "Thư viện và mục lục",
+        "sidebar-tabs": "Thanh bên",
+        "sync-done": "Đã đồng bộ · {n} truyện",
+        "sync-done-one": "Đã đồng bộ · 1 truyện",
+        "sync-failed": "Không đồng bộ được thư viện. Thử lại nhé.",
+        "sync-at": "lúc {time}",
+        "streak-days-short": "{n} ngày liên tiếp",
+        "account-no-email": "Không có email · ID …{id}",
+        "text-color-custom": "Tuỳ chọn",
+        "font-group-serif": "Có chân",
+        "font-group-sans": "Không chân",
     }
 };
 
@@ -940,6 +966,11 @@ export function applyLanguage(lang) {
         if (value) el.setAttribute('placeholder', value);
     });
 
+    document.querySelectorAll('[data-i18n-label]').forEach(el => {
+        const value = translations[lang]?.[el.getAttribute('data-i18n-label')];
+        if (value) el.setAttribute('label', value);
+    });
+
     document.querySelectorAll('[data-i18n-aria]').forEach(el => {
         const value = translations[lang]?.[el.getAttribute('data-i18n-aria')];
         if (value) {
@@ -948,9 +979,9 @@ export function applyLanguage(lang) {
         }
     });
 
-    // The language row shows the language a click switches to.
+    // Like every other menu value, the language row shows the current state.
     const langValue = document.getElementById('lang-btn-value');
-    if (langValue) langValue.textContent = lang === 'en' ? 'Tiếng Việt' : 'English';
+    if (langValue) langValue.textContent = lang === 'en' ? 'English' : 'Tiếng Việt';
 
     let activeThemeId = 'slate';
     try {

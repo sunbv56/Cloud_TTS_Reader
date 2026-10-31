@@ -385,7 +385,7 @@ const STATS_MANAGER = {
     updateUI() {
         const streakEl = document.getElementById('stat-streak');
         const timeEl = document.getElementById('stat-total-time');
-        const streakDot = document.getElementById('streak-dot');
+        const streakValue = document.getElementById('stats-menu-value');
 
         if (streakEl) {
             streakEl.innerText = STATE.stats.streak;
@@ -399,7 +399,11 @@ const STATS_MANAGER = {
             const mins = Math.floor(STATE.stats.totalTime / 60);
             timeEl.innerText = mins > 60 ? `${(mins / 60).toFixed(1)}h` : `${mins}m`;
         }
-        if (streakDot) streakDot.classList.toggle('hidden', !(STATE.user && STATE.stats.streak > 0));
+        if (streakValue) {
+            const showStreak = !!STATE.user && STATE.stats.streak > 0;
+            streakValue.hidden = !showStreak;
+            streakValue.textContent = showStreak ? trCount('streak-days-short', '{n} ngày liên tiếp', STATE.stats.streak) : '';
+        }
     },
 
     scheduleSync() {
@@ -986,7 +990,8 @@ const libraryView = {
     sort: readPref(LIBRARY_SORT_KEY, LIBRARY_SORTS, 'recent'),
     discovery: readPref(DISCOVERY_VIEW_STORAGE_KEY, ['grid', 'list'], window.innerWidth < 768 ? 'list' : 'grid'),
     expanded: { sidebar: null, shelf: null },
-    refreshSeq: 0
+    refreshSeq: 0,
+    manualSync: false
 };
 
 function uiLang() {
@@ -1677,7 +1682,7 @@ function applyLibraryFilters() {
     setLibraryEmpty('discovery-search-empty', 'discovery-search-empty-text', 'discovery-clear-search',
         libraryEmptyState(shelf.query, shelfSearch?.value.trim(), shelf.visible), 'shelf');
     // A re-sync keeps the old list on screen; say so while it runs.
-    const syncing = libraryView.status === 'loading' && discoveryLibrary.length > 0;
+    const syncing = (libraryView.status === 'loading' || libraryView.manualSync) && discoveryLibrary.length > 0;
     const syncHint = document.getElementById('library-sync-hint');
     if (syncHint) syncHint.hidden = !syncing;
     const count = document.getElementById('discovery-result-count');
@@ -6791,6 +6796,7 @@ function applyTypographySettings() {
 
 function syncColorPresets() {
     const current = String(STATE.settings.textColor || '').toLowerCase();
+    document.getElementById('color-reset-btn')?.setAttribute('aria-pressed', String(current === 'default'));
     document.querySelectorAll('.preset-color').forEach(btn => {
         btn.setAttribute('aria-pressed', String(btn.dataset.color.toLowerCase() === current));
     });
@@ -6806,7 +6812,43 @@ document.getElementById('next-btn').onclick = () => playNextChapter();
 document.getElementById('prev-chunk-btn').onclick = () => playPrevChunk();
 document.getElementById('next-chunk-btn').onclick = () => playNextChunk();
 
-document.getElementById('sync-btn').onclick = () => refreshLibrary();
+// Manual sync: the menu closes on click, so the result is reported in a toast and
+// as the row's "lúc HH:mm" value. "Đang đồng bộ…" stays up for at least 600ms.
+const SYNC_MIN_MS = 600;
+async function syncLibraryNow() {
+    if (!STATE.user) return refreshLibrary();
+    if (libraryView.manualSync) return;
+    const button = document.getElementById('sync-btn');
+    const value = document.getElementById('sync-btn-value');
+    const uid = STATE.user.uid;
+    libraryView.manualSync = true;
+    button?.setAttribute('data-state', 'busy');
+    button?.setAttribute('aria-busy', 'true');
+    if (value) value.textContent = tr('library-syncing', 'Đang đồng bộ…');
+    try {
+        await Promise.all([refreshLibrary(), new Promise(resolve => setTimeout(resolve, SYNC_MIN_MS))]);
+    } finally {
+        libraryView.manualSync = false;
+        button?.removeAttribute('aria-busy');
+        applyLibraryFilters();
+    }
+    if (STATE.user?.uid !== uid) {
+        button?.removeAttribute('data-state');
+        if (value) value.textContent = '';
+        return;
+    }
+    const ok = libraryView.status === 'ready';
+    button?.setAttribute('data-state', ok ? 'ok' : 'error');
+    if (value) {
+        value.textContent = ok
+            ? tr('sync-at', 'lúc {time}', { time: new Date().toLocaleTimeString(uiLang() === 'vi' ? 'vi-VN' : 'en-GB', { hour: '2-digit', minute: '2-digit' }) })
+            : '';
+    }
+    APP_STATUS.toast(ok
+        ? trCount('sync-done', 'Đã đồng bộ · {n} truyện', discoveryLibrary.length)
+        : tr('sync-failed', 'Không đồng bộ được thư viện. Thử lại nhé.'), ok ? 'success' : 'error', { key: `library-sync-${ok ? 'ok' : 'error'}` });
+}
+document.getElementById('sync-btn').onclick = () => { void syncLibraryNow(); };
 document.getElementById('edit-title-btn').onclick = () => editTitle();
 document.getElementById('toc-download-txt-btn').onclick = () => {
     if (STATE.currentBookId) downloadTextBook(STATE.currentBookId, STATE.currentBook?.title);
