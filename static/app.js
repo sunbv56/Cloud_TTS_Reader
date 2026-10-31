@@ -107,6 +107,8 @@ let STATE = {
     // Sleep Timer & Stall Detection
     sleepTimer: null,
     sleepTimerEnd: 0,
+    sleepTimerMode: null,
+    sleepTimerTarget: null,
     lastPlaybackTime: 0,
     lastPlaybackTick: 0,
     stallCount: 0,
@@ -612,7 +614,8 @@ async function authFetch(url, options = {}) {
 
 const AudioHapticFX = {
     audioCtx: null,
-    isMuted: false,
+    // Settings → "Rung và tiếng bấm" turns both off ('ui-feedback' = 'off').
+    isMuted: (() => { try { return localStorage.getItem('ui-feedback') === 'off'; } catch (_) { return false; } })(),
     initCtx() {
         if (!this.audioCtx) {
             const AudioCtxClass = window.AudioContext || window.webkitAudioContext;
@@ -625,6 +628,7 @@ const AudioHapticFX = {
         }
     },
     haptic(ms = 12) {
+        if (this.isMuted) return;
         if (typeof navigator !== 'undefined' && navigator.vibrate) {
             try { navigator.vibrate(ms); } catch (e) {}
         }
@@ -653,6 +657,18 @@ const AudioHapticFX = {
         this.clickSound();
     }
 };
+
+window.AudioHapticFX = AudioHapticFX;
+
+// #play-btn holds both icons; data-state picks one. The console panel mirrors it.
+function setPlayIcon(isPlaying) {
+    const btn = document.getElementById('play-btn');
+    if (!btn) return;
+    btn.dataset.state = isPlaying ? 'playing' : 'paused';
+    const label = isPlaying ? tr('pause-key', 'Tạm dừng (Space)') : tr('play-key', 'Phát (Space)');
+    btn.setAttribute('aria-label', label);
+    btn.title = label;
+}
 
 function setAudioWaveState(isPlaying) {
     if (window.MotionLayer?.setAudioWaveState) {
@@ -738,6 +754,7 @@ const APP_STATUS = {
         this.toast(message, 'error');
     }
 };
+window.APP_STATUS = APP_STATUS;
 let imageManagerBookId = null;
 let imageManagerBookTitle = '';
 
@@ -1907,12 +1924,25 @@ document.getElementById('discovery-continue-btn')?.addEventListener('click', han
 document.getElementById('discovery-continue-card')?.addEventListener('click', handleContinueListening);
 window.addEventListener('uilanguagechange', () => {
     if (libraryView.status !== 'idle') renderLibraryViews();
+    // The reader top bar carries data-i18n for its empty state; put the open book back.
+    if (STATE.currentBook) {
+        const titleEl = document.getElementById('current-title');
+        if (titleEl) titleEl.innerText = STATE.currentBook.title;
+        const index = STATE.currentChapterIndex || 0;
+        const chapter = STATE.currentBook.chapters?.[index];
+        const chapterLabel = document.getElementById('current-chapter');
+        if (chapter && chapterLabel) {
+            const chapterTitle = chapter.title || `${tr('chapter-word', 'Chương')} ${index + 1}`;
+            chapterLabel.innerText = `C.${index + 1}/${STATE.currentBook.chapters.length} · ${chapterTitle}`;
+        }
+    }
+    setPlayIcon(!audio.paused);
 });
 
 
-// ── Sidebar Segmented Tabs (library | toc | voice) ──────────────────────────
+// ── Sidebar Segmented Tabs (library | toc); voice settings moved to Settings ─
 const SIDEBAR_TAB_KEY = 'sidebar-active-tab';
-const SIDEBAR_TABS = ['library', 'toc', 'voice'];
+const SIDEBAR_TABS = ['library', 'toc'];
 
 function switchSidebarTab(tab) {
     if (!SIDEBAR_TABS.includes(tab)) tab = 'library';
@@ -2303,8 +2333,7 @@ async function resetAudioEngine() {
 
     // 6. Reset UI indicators
     document.getElementById('status-indicator').innerText = "Ready";
-    const playBtn = document.getElementById('play-btn');
-    if (playBtn) playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
+    setPlayIcon(false);
 
     // 7. Reset stall counters
     STATE.stallCount = 0;
@@ -5480,8 +5509,7 @@ async function downloadSelectedChapters() {
         // Close WebSocket after download (free backend resources)
         closeWebSocketIntentionally();
         document.getElementById('status-indicator').innerText = "Disconnected";
-        const playBtn = document.getElementById('play-btn');
-        if (playBtn) playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
+        setPlayIcon(false);
     }
 }
 
@@ -5971,7 +5999,7 @@ audio.onplay = async () => {
     STATE._stallWaitCount = 0;
     STATE.streamingRetryCount.clear();
 
-    playBtn.innerHTML = '<i class="fas fa-pause"></i>';
+    setPlayIcon(true);
     document.getElementById('status-indicator').innerText = "Streaming";
     updatePipUI();
 
@@ -6003,7 +6031,7 @@ audio.onpause = () => {
     // [Audio Waves] Deactivate wave motion
     setAudioWaveState(false);
 
-    playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
+    setPlayIcon(false);
     document.getElementById('status-indicator').innerText = "Paused";
     updatePipUI();
     if ('mediaSession' in navigator) {
@@ -6107,6 +6135,11 @@ audio.ontimeupdate = async () => {
         if (currentChunk && (currentChunk.index !== STATE.currentSentenceIndex || currentChunk.chapterIndex !== STATE.currentChapterIndex)) {
             // Chapter Change Detection
             if (currentChunk.chapterIndex !== STATE.currentChapterIndex) {
+                // "Hết chương" sleep timer: stop right at the boundary.
+                if (STATE.sleepTimerMode === 'chapter' && STATE.sleepTimer) {
+                    expireSleepTimer();
+                    return;
+                }
                 console.log(`Transitioning to Chapter ${currentChunk.chapterIndex}`);
                 await renderChapter(currentChunk.chapterIndex);
 
@@ -6236,9 +6269,14 @@ document.getElementById('voice-select').onchange = (e) => {
     STATE.settings.voice = e.target.value;
     scheduleBookSettingsSave();
 };
+function formatSpeed(value) {
+    const v = Math.round(Number(value) * 100) / 100;
+    return `${Number.isInteger(v * 10) ? v.toFixed(1) : v.toFixed(2)}×`;
+}
+
 document.getElementById('speed-range').oninput = (e) => {
-    STATE.settings.speed = parseFloat(e.target.value);
-    document.getElementById('speed-val').innerText = `${e.target.value}x`;
+    STATE.settings.speed = Math.round(parseFloat(e.target.value) * 100) / 100;
+    document.getElementById('speed-val').innerText = formatSpeed(STATE.settings.speed);
     scheduleBookSettingsSave();
 };
 document.getElementById('pitch-range').oninput = (e) => {
@@ -6253,7 +6291,7 @@ document.getElementById('prefetch-range').oninput = (e) => {
     const stepIndex = parseInt(e.target.value);
     const count = WORKER_STEPS[stepIndex];
     STATE.settings.numWorkers = count;
-    document.getElementById('prefetch-val').innerText = `${count} Workers`;
+    document.getElementById('prefetch-val').innerText = String(count);
     // Trigger immediate prefetch to fill the new buffer size if needed
     prefetchNext(STATE.currentChapterIndex, STATE.currentSentenceIndex);
     scheduleBookSettingsSave();
@@ -6315,14 +6353,6 @@ function applyFontFamily(fontFamily, syncElements = true) {
     if (syncElements) {
         const sel1 = document.getElementById('font-family-select');
         if (sel1) sel1.value = fontFamily;
-        const sel2 = document.getElementById('quick-font-family-select');
-        if (sel2) sel2.value = fontFamily;
-        const badge = document.getElementById('quick-font-family-badge');
-        if (badge) badge.innerText = fontFamily;
-        const val1 = document.getElementById('font-family-val');
-        if (val1) val1.innerText = fontFamily;
-        const sample = document.getElementById('quick-font-sample-preview');
-        if (sample) sample.style.fontFamily = readerFontStack(fontFamily);
     }
 }
 
@@ -6334,17 +6364,8 @@ if (fontSelect) {
     };
 }
 
-const quickFontSelect = document.getElementById('quick-font-family-select');
-if (quickFontSelect) {
-    quickFontSelect.onchange = (e) => {
-        applyFontFamily(e.target.value);
-    };
-}
-
-// Quick Appearance & Theme Settings Controller Bridge
-const quickSettingsBtn = document.getElementById('quick-settings-btn');
-quickSettingsBtn?.addEventListener('click', () => {
-    window.QuickSettingsController?.open();
+document.getElementById('quick-settings-btn')?.addEventListener('click', () => {
+    window.SettingsSheet?.open('listen');
 });
 
 function applyTypographySettings() {
@@ -6623,11 +6644,6 @@ function applyLiteMode(isLite) {
         mobileToggle.checked = STATE.isLiteMode;
     }
 
-    const quickToggle = document.getElementById('quick-lite-mode-toggle');
-    if (quickToggle && quickToggle.checked !== STATE.isLiteMode) {
-        quickToggle.checked = STATE.isLiteMode;
-    }
-
     const textContainer = document.getElementById('text-container');
     if (textContainer) {
         textContainer.style.scrollBehavior = STATE.isLiteMode ? 'auto' : '';
@@ -6668,48 +6684,8 @@ if (liteModeToggle) {
     });
 }
 
-// Mobile toggle: override the inline onchange with a proper listener for symmetry
 const liteModeToggleMobile = document.getElementById('lite-mode-toggle-mobile');
-if (liteModeToggleMobile) {
-    liteModeToggleMobile.removeAttribute('onchange');
-    liteModeToggleMobile.addEventListener('change', (e) => {
-        applyLiteMode(e.target.checked);
-    });
-}
-
-// Quick Speed Cycle for Player Chip
-const speedChip = document.getElementById('speak-speed-chip');
-if (speedChip) {
-    speedChip.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const speeds = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
-        const currentSpeed = (STATE.settings && STATE.settings.speed) ? Number(STATE.settings.speed) : 1.0;
-        let nextIndex = speeds.findIndex(s => Math.abs(s - currentSpeed) < 0.05);
-        if (nextIndex === -1) {
-            nextIndex = speeds.findIndex(s => s > currentSpeed);
-            if (nextIndex === -1) nextIndex = 0;
-        } else {
-            nextIndex = (nextIndex + 1) % speeds.length;
-        }
-        const nextSpeed = speeds[nextIndex];
-        if (window.QuickSettingsController && typeof window.QuickSettingsController.setSpeed === 'function') {
-            window.QuickSettingsController.setSpeed(nextSpeed);
-        } else {
-            if (STATE.settings) STATE.settings.speed = nextSpeed;
-            speedChip.innerText = `${nextSpeed.toFixed(1)}X`;
-            const sRange = document.getElementById('speed-range');
-            if (sRange) sRange.value = nextSpeed;
-            const sVal = document.getElementById('speed-val');
-            if (sVal) sVal.innerText = `${nextSpeed.toFixed(1)}x`;
-            const qRange = document.getElementById('quick-speed-range');
-            if (qRange) qRange.value = nextSpeed;
-            const qVal = document.getElementById('quick-speed-val');
-            if (qVal) qVal.innerText = `${nextSpeed.toFixed(1)}x`;
-        }
-        if (window.AudioHapticFX) AudioHapticFX.trigger(10);
-        if (window.APP_STATUS) APP_STATUS.toast(`Tốc độ đọc: ${nextSpeed.toFixed(2)}x`, 'info');
-    });
-}
+liteModeToggleMobile?.addEventListener('change', (e) => applyLiteMode(e.target.checked));
 
 function updateUI() {
     if (STATE.currentBook) {
@@ -6766,7 +6742,7 @@ function applySettingsToUI() {
 
     if (document.getElementById('speed-range')) {
         document.getElementById('speed-range').value = s.speed;
-        document.getElementById('speed-val').innerText = `${s.speed}x`;
+        document.getElementById('speed-val').innerText = formatSpeed(s.speed);
     }
 
     if (document.getElementById('pitch-range')) {
@@ -6779,7 +6755,7 @@ function applySettingsToUI() {
         const idx = WORKER_STEPS.indexOf(s.numWorkers);
         if (idx !== -1) {
             document.getElementById('prefetch-range').value = idx;
-            document.getElementById('prefetch-val').innerText = `${s.numWorkers} Workers`;
+            document.getElementById('prefetch-val').innerText = String(s.numWorkers);
         }
     }
 
@@ -6810,6 +6786,8 @@ function applySettingsToUI() {
     }
 
     applyTypographySettings();
+    // Console chips and panel mirrors re-read the canonical controls.
+    document.dispatchEvent(new CustomEvent('playersettingschange'));
 }
 
 // --- Navigation helpers (Next/Prev Chunk) ---
@@ -7058,10 +7036,8 @@ function updateWakeLockUI(isActive) {
     btn.title = isActive ? tr('wake-on-title', 'Giữ màn hình sáng: đang bật') : tr('wake-off-title', 'Giữ màn hình sáng: đang tắt');
     setMenuToggleState(btn, document.getElementById('wake-lock-status-pill'), !!isActive);
 
-    const qWake = document.getElementById('quick-wakelock-toggle') || document.getElementById('quick-wakeLockEnabled');
-    if (qWake && qWake.checked !== !!isActive) {
-        qWake.checked = !!isActive;
-    }
+    const settingsWake = document.getElementById('settings-wake-toggle');
+    if (settingsWake) settingsWake.checked = !!isActive;
 
     updateReaderMoreActiveDot();
 }
@@ -7070,95 +7046,96 @@ window.requestWakeLock = requestWakeLock;
 window.releaseWakeLock = releaseWakeLock;
 
 // --- Sleep Timer & Manual Save Logic ---
-function toggleSleepTimerDropdown() {
-    const dropdown = document.getElementById('sleep-timer-dropdown');
-    if (!dropdown) return;
-    dropdown.classList.toggle('hidden');
-
-    // Close dropdown when clicking outside
-    if (!dropdown.classList.contains('hidden')) {
-        const closeDropdown = (e) => {
-            if (!dropdown.contains(e.target) && !document.getElementById('sleep-timer-btn')?.contains(e.target)) {
-                dropdown.classList.add('hidden');
-                document.removeEventListener('click', closeDropdown);
-            }
-        };
-        setTimeout(() => document.addEventListener('click', closeDropdown), 10);
-    }
-}
-
+// Modes: minutes (countdown), 'chapter' (stop when the current chapter ends).
 function setSleepTimerPreset(minutes) {
-    const seconds = Math.round(minutes * 60);
-    startSleepTimer(seconds);
+    STATE.sleepTimerMode = minutes;
+    startSleepTimer(Math.round(minutes * 60));
 }
 
-function startSleepTimerFromCustom() {
-    const h = parseInt(document.getElementById('sleep-h').value) || 0;
-    const m = parseInt(document.getElementById('sleep-m').value) || 0;
-    const s = parseInt(document.getElementById('sleep-s').value) || 0;
+function startSleepTimerFromCustom(minutes) {
+    const value = Math.round(Number(minutes));
+    if (!Number.isFinite(value) || value <= 0 || value > 600) {
+        APP_STATUS.toast(tr('sleep-invalid', 'Nhập số phút từ 1 đến 600.'), 'warning');
+        return false;
+    }
+    STATE.sleepTimerMode = 'custom';
+    startSleepTimer(value * 60);
+    return true;
+}
 
-    const seconds = h * 3600 + m * 60 + s;
-    if (seconds <= 0) {
-        APP_STATUS.toast("Vui lòng thiết lập thời gian hẹn giờ hợp lệ.", 'warning');
+function setSleepTimerEndOfChapter() {
+    if (!STATE.currentBook) {
+        APP_STATUS.toast(tr('sleep-need-book', 'Mở một truyện trước khi hẹn giờ theo chương.'), 'info');
         return;
     }
-    startSleepTimer(seconds);
+    if (STATE.sleepTimer) clearInterval(STATE.sleepTimer);
+    STATE.sleepTimerMode = 'chapter';
+    STATE.sleepTimerEnd = null;
+    STATE.sleepTimerTarget = { bookId: STATE.currentBookId, chapterIndex: STATE.currentChapterIndex };
+    updateSleepTimerUI(true, 0);
+    // Playback stops at the chapter boundary (see ontimeupdate); this only drops
+    // the timer when the reader opens another book.
+    STATE.sleepTimer = setInterval(() => {
+        if (STATE.currentBookId !== STATE.sleepTimerTarget?.bookId) cancelSleepTimer();
+    }, 1000);
 }
 
 function startSleepTimer(seconds) {
     if (STATE.sleepTimer) clearInterval(STATE.sleepTimer);
 
     STATE.sleepTimerEnd = Date.now() + seconds * 1000;
+    STATE.sleepTimerTarget = null;
     updateSleepTimerUI(true, seconds);
-    const sleepDropdown = document.getElementById('sleep-timer-dropdown');
-    if (sleepDropdown) sleepDropdown.classList.add('hidden');
 
     STATE.sleepTimer = setInterval(() => {
         const remaining = Math.max(0, Math.round((STATE.sleepTimerEnd - Date.now()) / 1000));
         updateSleepTimerUI(true, remaining);
-
-        if (remaining <= 0) {
-            clearInterval(STATE.sleepTimer);
-            STATE.sleepTimer = null;
-            console.log("Sleep Timer Expired: Stopping Playback and Disconnecting");
-
-            // Action: Stop playback
-            audio.pause();
-            STATE.isPlaying = false;
-
-            // Action: Disconnect WebSocket to stop backend workers
-            closeWebSocketIntentionally();
-
-            // Action: Increment Session ID to invalidate any pending work
-            STATE.sessionId++;
-
-            // Action: Clear RAM/ROM
-            STATE.appendQueue = [];
-            STATE.chunkTimings = [];
-            STATE.fetchingSet.clear();
-            STATE.metadataQueue = [];
-
-            if (STATE.sourceBuffer && !STATE.sourceBuffer.updating) {
-                try {
-                    if (STATE.sourceBuffer.buffered.length > 0) {
-                        const end = STATE.sourceBuffer.buffered.end(STATE.sourceBuffer.buffered.length - 1);
-                        STATE.sourceBuffer.remove(0, end + 10);
-                    }
-                } catch (e) { }
-            }
-
-            // Action: Disable Wake Lock
-            if (STATE.wakeLockEnabled) {
-                releaseWakeLock();
-                STATE.wakeLockEnabled = false;
-                localStorage.setItem('wakeLockEnabled', 'false');
-            }
-
-            updateSleepTimerUI(false);
-            updateUI();
-            document.getElementById('status-indicator').innerText = "Sleep Timer - Disconnected";
-        }
+        if (remaining <= 0) expireSleepTimer();
     }, 1000);
+}
+
+function expireSleepTimer() {
+    if (STATE.sleepTimer) clearInterval(STATE.sleepTimer);
+    STATE.sleepTimer = null;
+    STATE.sleepTimerMode = null;
+    STATE.sleepTimerTarget = null;
+    console.log("Sleep Timer Expired: Stopping Playback and Disconnecting");
+
+    // Action: Stop playback
+    audio.pause();
+    STATE.isPlaying = false;
+
+    // Action: Disconnect WebSocket to stop backend workers
+    closeWebSocketIntentionally();
+
+    // Action: Increment Session ID to invalidate any pending work
+    STATE.sessionId++;
+
+    // Action: Clear RAM/ROM
+    STATE.appendQueue = [];
+    STATE.chunkTimings = [];
+    STATE.fetchingSet.clear();
+    STATE.metadataQueue = [];
+
+    if (STATE.sourceBuffer && !STATE.sourceBuffer.updating) {
+        try {
+            if (STATE.sourceBuffer.buffered.length > 0) {
+                const end = STATE.sourceBuffer.buffered.end(STATE.sourceBuffer.buffered.length - 1);
+                STATE.sourceBuffer.remove(0, end + 10);
+            }
+        } catch (e) { }
+    }
+
+    // Action: Disable Wake Lock
+    if (STATE.wakeLockEnabled) {
+        releaseWakeLock();
+        STATE.wakeLockEnabled = false;
+        localStorage.setItem('wakeLockEnabled', 'false');
+    }
+
+    updateSleepTimerUI(false);
+    updateUI();
+    document.getElementById('status-indicator').innerText = "Sleep Timer - Disconnected";
 }
 
 function cancelSleepTimer() {
@@ -7166,9 +7143,9 @@ function cancelSleepTimer() {
         clearInterval(STATE.sleepTimer);
         STATE.sleepTimer = null;
     }
+    STATE.sleepTimerMode = null;
+    STATE.sleepTimerTarget = null;
     updateSleepTimerUI(false);
-    const sleepDropdown = document.getElementById('sleep-timer-dropdown');
-    if (sleepDropdown) sleepDropdown.classList.add('hidden');
 }
 
 function formatTime(seconds) {
@@ -7183,21 +7160,25 @@ function updateSleepTimerUI(isActive, seconds = 0) {
     const badge = document.getElementById('sleep-timer-badge');
     const controls = document.getElementById('sleep-timer-active-controls');
     const remainingText = document.getElementById('sleep-timer-remaining');
+    const byChapter = isActive && STATE.sleepTimerMode === 'chapter';
 
     if (block) block.dataset.on = isActive ? 'true' : 'false';
     if (badge) {
         badge.dataset.on = isActive ? 'true' : 'false';
         if (isActive) {
             delete badge.dataset.i18n;
-            badge.textContent = seconds > 60 ? `${Math.ceil(seconds / 60)}′` : `${seconds}s`;
+            badge.textContent = byChapter ? tr('sleep-chapter-short', 'hết ch.') : (seconds > 60 ? `${Math.ceil(seconds / 60)}′` : `${seconds}s`);
         } else {
             badge.dataset.i18n = 'state-off';
             badge.textContent = tr('state-off', 'Tắt');
         }
     }
     if (controls) controls.classList.toggle('hidden', !isActive);
-    if (isActive && remainingText) remainingText.textContent = formatTime(seconds);
+    if (isActive && remainingText) remainingText.textContent = byChapter ? tr('sleep-end-chapter', 'Hết chương') : formatTime(seconds);
     updateReaderMoreActiveDot();
+    document.dispatchEvent(new CustomEvent('sleeptimerchange', {
+        detail: { active: !!isActive, seconds, mode: isActive ? STATE.sleepTimerMode : null }
+    }));
 }
 
 async function triggerManualSave() {
@@ -7299,8 +7280,7 @@ async function handlePauseTimeout() {
     closeWebSocketIntentionally();
 
     STATE.isPlaying = false;
-    const playBtn = document.getElementById('play-btn');
-    if (playBtn) playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
+    setPlayIcon(false);
 
     const indicator = document.getElementById('status-indicator');
     if (progressSaved) {
@@ -7408,16 +7388,15 @@ async function handlePlaybackStall() {
     STATE.stallCount = 0;
     STATE.pauseCount = 0;
 
-    const playBtn = document.getElementById('play-btn');
-    if (playBtn) playBtn.innerHTML = '<i class="fas fa-play ml-1"></i>';
+    setPlayIcon(false);
 }
 
 // Expose functions to window for HTML onclick attributes
 window.setSleepTimerPreset = setSleepTimerPreset;
 window.startSleepTimerFromCustom = startSleepTimerFromCustom;
 window.cancelSleepTimer = cancelSleepTimer;
+window.setSleepTimerEndOfChapter = setSleepTimerEndOfChapter;
 
-document.getElementById('sleep-timer-btn')?.addEventListener('click', () => toggleSleepTimerDropdown());
 document.getElementById('manual-save-btn')?.addEventListener('click', () => triggerManualSave());
 document.getElementById('wake-lock-btn')?.addEventListener('click', () => toggleWakeLock());
 
@@ -7458,8 +7437,8 @@ console.log("Cloud TTS Reader Pro Initialized.");
 // Space       → Play / Pause
 // →           → Câu tiếp theo (next sentence)
 // ←           → Câu trước (prev sentence)
-// Shift + →   → Chương tiếp theo (next chapter)
-// Shift + ←   → Chương trước (prev chapter)
+// Shift + → / ]  → Chương tiếp theo (next chapter)
+// Shift + ← / [  → Chương trước (prev chapter)
 document.addEventListener('keydown', async (e) => {
     // Bỏ qua nếu đang gõ trong input, textarea, hoặc contenteditable
     const tag = document.activeElement?.tagName;
@@ -7488,6 +7467,12 @@ document.addEventListener('keydown', async (e) => {
         e.preventDefault();
         await playNextChapter();
     } else if (e.code === 'ArrowLeft' && e.shiftKey) {
+        e.preventDefault();
+        await playPrevChapter();
+    } else if (e.key === ']' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault();
+        await playNextChapter();
+    } else if (e.key === '[' && !e.ctrlKey && !e.metaKey && !e.altKey) {
         e.preventDefault();
         await playPrevChapter();
     }
@@ -7663,36 +7648,21 @@ document.getElementById('close-edit-modal')?.addEventListener('click', closeEdit
 document.getElementById('cancel-edit-btn')?.addEventListener('click', closeEditModal);
 document.getElementById('save-edit-btn')?.addEventListener('click', saveChapterEdit);
 
-// --- Stats & Offline UI Event Listeners ---
-const statsModal = document.getElementById('stats-modal');
-const statsToggleBtn = document.getElementById('stats-toggle-btn');
-const closeStatsBtn = document.getElementById('close-stats-modal');
-const statsOverlay = document.getElementById('stats-modal-overlay');
-const clearCacheBtn = document.getElementById('clear-offline-cache');
-
-statsToggleBtn?.addEventListener('click', () => {
-    if (statsModal) {
-        STATS_MANAGER.load(); // Refresh data from Firebase
-        OFFLINE_MANAGER.updateUsageUI();
-        statsModal.classList.remove('hidden');
-        statsModal.classList.add('flex');
-    }
-});
-
-const hideStatsModal = () => {
-    if (statsModal) {
-        statsModal.classList.add('hidden');
-        statsModal.classList.remove('flex');
-    }
+// --- Stats & offline cache: shown in the Settings sheet (Bộ nhớ & cache, Thống kê) ---
+// Reloads streak/time from Firestore and re-measures the audio cache; the sheet calls it on open.
+window.refreshInsights = () => {
+    STATS_MANAGER.load();
+    OFFLINE_MANAGER.updateUsageUI();
 };
 
-closeStatsBtn?.addEventListener('click', hideStatsModal);
-statsOverlay?.addEventListener('click', hideStatsModal);
+document.getElementById('stats-toggle-btn')?.addEventListener('click', () => {
+    window.SettingsSheet?.open('stats');
+});
 
-clearCacheBtn?.addEventListener('click', async () => {
-    if (confirm('Are you sure you want to clear all offline audio cache?')) {
+document.getElementById('clear-offline-cache')?.addEventListener('click', async () => {
+    if (confirm(tr('clear-cache-confirm', 'Xoá toàn bộ âm thanh đã lưu trên máy này?'))) {
         await OFFLINE_MANAGER.clearCache();
-        APP_STATUS.toast('Đã dọn sạch bộ nhớ cache ngoại tuyến!', 'success');
+        APP_STATUS.toast(tr('clear-cache-done', 'Đã xoá cache âm thanh.'), 'success');
     }
 });
 
@@ -7797,6 +7767,8 @@ window.MPW_BRIDGE = {
     playNextChapter,
     playPrevChapter,
     switchChapter,
+    playFromSentence,
+    applyLiteMode,
     renderTOC,
     scrollTOCCurrentChapter,
 };
@@ -7814,10 +7786,8 @@ function setZenMode(enabled, persist = true) {
     STATE.zenModeEnabled = !!enabled;
     document.body.classList.toggle('zen-focus-mode', STATE.zenModeEnabled);
     setMenuToggleState(document.getElementById('zen-mode-toggle-btn'), document.getElementById('zen-mode-status-pill'), STATE.zenModeEnabled);
-    const qZenToggle = document.getElementById('quick-zen-mode-toggle');
-    if (qZenToggle && qZenToggle.checked !== STATE.zenModeEnabled) {
-        qZenToggle.checked = STATE.zenModeEnabled;
-    }
+    const settingsZen = document.getElementById('settings-zen-toggle');
+    if (settingsZen) settingsZen.checked = STATE.zenModeEnabled;
     updateReaderMoreActiveDot();
     if (persist) {
         try {
@@ -7973,8 +7943,7 @@ document.querySelectorAll('[data-type-group] > button').forEach(btn => {
 });
 document.getElementById('reader-type-more')?.addEventListener('click', () => {
     closeReaderTypePanel();
-    window.QuickSettingsController?.open();
-    window.QuickSettingsController?.switchTab?.('appearance');
+    window.SettingsSheet?.open('display');
 });
 syncReaderTypePanel();
 

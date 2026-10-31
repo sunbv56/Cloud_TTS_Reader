@@ -53,7 +53,7 @@
     <!-- Mini player widget (Document PiP); colours come from the console tokens -->
     <link rel="stylesheet" href="/static/css/mini-player.css?v=15">
     <!-- Console design system: tokens, components, app shell -->
-    <link rel="stylesheet" href="/static/css/console.css?v=3">
+    <link rel="stylesheet" href="/static/css/console.css?v=4">
     <style type="text/tailwindcss">
         @theme {
             --font-reading: var(--font-read);
@@ -123,6 +123,11 @@
         <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="9.5" rx="2"/><path d="M8 10.5V8a4 4 0 0 1 7.6-1.7"/></symbol>
         <symbol id="i-stop" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5" fill="currentColor" stroke="none"/></symbol>
         <symbol id="i-checks" viewBox="0 0 24 24"><path d="M3 12.5l4 4L15.5 8M11 16.5l1 1L21 8"/></symbol>
+        <symbol id="i-up" viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></symbol>
+        <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 12H5M11 6l-6 6 6 6"/></symbol>
+        <symbol id="i-pip" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><rect x="12" y="11" width="7" height="6" rx="1"/></symbol>
+        <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+        <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></symbol>
         <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3.5H7a1.5 1.5 0 0 0-1.5 1.5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8L14 3.5zM14 3.5V8h4.5M9 13h6M9 16.5h4"/></symbol>
     </svg>
 
@@ -138,7 +143,7 @@
         <span class="hdr-keys" aria-hidden="true">
             <kbd>Space</kbd><span data-i18n="keys-play">phát</span>
             <kbd>←</kbd><kbd>→</kbd><span data-i18n="keys-sentence">câu</span>
-            <kbd>Shift</kbd><kbd>←→</kbd><span data-i18n="keys-chapter">chương</span>
+            <kbd>[</kbd><kbd>]</kbd><span data-i18n="keys-chapter">chương</span>
         </span>
 
         <button id="header-search-btn" type="button" class="icon-btn" aria-label="Tìm truyện" title="Tìm truyện" data-i18n-aria="search-books">
@@ -208,10 +213,6 @@
                     <button type="button" id="tab-toc" role="tab" data-tab="toc" aria-selected="false"
                         aria-controls="panel-toc" class="sidebar-tab">
                         <span data-i18n="tab-toc">Chương</span>
-                    </button>
-                    <button type="button" id="tab-voice" role="tab" data-tab="voice" aria-selected="false"
-                        aria-controls="panel-voice" class="sidebar-tab">
-                        <span data-i18n="tab-voice">Giọng</span>
                     </button>
                 </div>
 
@@ -310,260 +311,6 @@
                 </div>
             </div>
 
-            <!-- Panel: Voice & Display Settings (local-only, không đồng bộ theo truyện) -->
-            <div id="panel-voice" role="tabpanel" aria-labelledby="tab-voice" hidden
-                class="flex-1 min-h-0 overflow-y-auto flex flex-col gap-4 hide-scrollbar">
-                <div class="flex items-center gap-2 px-1 text-[10px] text-slate-500">
-                    <i class="fas fa-circle-info"></i>
-                    <span>Cài đặt lưu trên máy này, áp dụng cho mọi truyện.</span>
-                </div>
-                <!-- Voice Card -->
-                <div class="glass p-5 flex flex-col rounded-3xl bg-surface-low/40 shrink-0">
-                    <h3 class="font-bold text-xs text-slate-400 uppercase tracking-widest flex items-center gap-2 w-full">
-                        <svg class="w-4 h-4 text-primary shrink-0" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <line x1="5" y1="4" x2="5" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-opacity="0.4" />
-                            <circle cx="5" cy="14" r="2.5" fill="currentColor" />
-                            <line x1="12" y1="4" x2="12" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-opacity="0.4" />
-                            <circle cx="12" cy="8" r="2.5" fill="currentColor" />
-                            <line x1="19" y1="4" x2="19" y2="20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-opacity="0.4" />
-                            <circle cx="19" cy="13" r="2.5" fill="currentColor" />
-                        </svg>
-                        <span data-i18n="voice-intelligence">Voice Intelligence</span>
-                    </h3>
-                    <div id="voice-settings-body" class="space-y-4">
-                        <div class="relative" style="margin-top: 1rem;">
-                            <select id="voice-select"
-                                class="w-full bg-[#060e20] border border-white/10 rounded-xl p-3 text-sm appearance-none focus:border-primary/50 transition-colors"
-                                style="background-color: var(--theme-surface); color: var(--theme-text);">
-                                <option value="vi-VN-HoaiMyNeural">Hoài My (Việt Nam)</option>
-                                <option value="vi-VN-NamMinhNeural">Nam Minh (Việt Nam)</option>
-                                <option value="en-US-AriaNeural">Aria (USA)</option>
-                                <option value="en-US-GuyNeural">Guy (USA)</option>
-                            </select>
-                            <i
-                                class="fas fa-chevron-down absolute right-4 top-1/2 -translate-y-1/2 text-slate-500 pointer-events-none text-xs"></i>
-                        </div>
-                        <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                            <div class="flex items-center justify-between text-xs font-bold px-1 mb-3">
-                                <span class="text-slate-400">PLAYBACK SPEED</span>
-                                <span id="speed-val" class="text-primary font-mono text-sm">1.0x</span>
-                            </div>
-                            <input type="range" id="speed-range" min="0.5" max="3.0" step="0.1" value="1.0"
-                                class="w-full accent-primary h-1.5 cursor-pointer">
-                        </div>
-                        <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                            <div class="flex items-center justify-between text-xs font-bold px-1 mb-3">
-                                <span class="text-slate-400">VOCAL PITCH</span>
-                                <span id="pitch-val" class="text-primary font-mono text-sm">+0Hz</span>
-                            </div>
-                            <input type="range" id="pitch-range" min="-20" max="20" step="1" value="0"
-                                class="w-full accent-primary h-1.5 cursor-pointer">
-                        </div>
-                        <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                            <div class="flex items-center justify-between text-xs font-bold px-1 mb-3">
-                                <span class="text-slate-400">AI PARALLEL WORKERS</span>
-                                <span id="prefetch-val" class="text-primary font-mono text-sm">2 Workers</span>
-                            </div>
-                            <input type="range" id="prefetch-range" min="0" max="2" step="1" value="1"
-                                class="w-full accent-primary h-1.5 cursor-pointer">
-                        </div>
-                        <label class="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center justify-between gap-3 cursor-pointer">
-                            <span class="flex flex-col">
-                                <span class="text-xs font-bold text-slate-400">EDGE PROXY</span>
-                                <span class="text-[11px] text-slate-500">Thử thêm qua proxy khi kết nối thẳng chậm hoặc bị chặn</span>
-                            </span>
-                            <span class="relative shrink-0">
-                                <input type="checkbox" id="proxy-toggle" class="sr-only peer">
-                                <span class="block w-9 h-5 bg-white/10 rounded-full peer-checked:bg-primary/80 transition-colors border border-white/5"></span>
-                                <span class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4 shadow-sm"></span>
-                            </span>
-                        </label>
-                        <label class="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center justify-between gap-3 cursor-pointer">
-                            <span class="flex flex-col">
-                                <span class="text-xs font-bold text-slate-400">GOOGLE TTS DỰ PHÒNG</span>
-                                <span class="text-[11px] text-slate-500">Đọc bằng Google khi Edge lỗi (giọng khác)</span>
-                            </span>
-                            <span class="relative shrink-0">
-                                <input type="checkbox" id="gtts-toggle" class="sr-only peer">
-                                <span class="block w-9 h-5 bg-white/10 rounded-full peer-checked:bg-primary/80 transition-colors border border-white/5"></span>
-                                <span class="absolute left-0.5 top-0.5 w-4 h-4 bg-white rounded-full transition-transform peer-checked:translate-x-4 shadow-sm"></span>
-                            </span>
-                        </label>
-                    </div>
-                </div>
-
-                <!-- Typography Card -->
-                <div class="glass p-5 flex flex-col rounded-3xl bg-surface-low/40 shrink-0">
-                    <h3 class="font-bold text-xs text-slate-400 uppercase tracking-widest flex items-center gap-2 w-full">
-                        <i class="fas fa-eye text-primary"></i> <span data-i18n="typography-style">Typography &
-                            Style</span>
-                    </h3>
-                    <div id="visual-settings-body" class="space-y-4">
-
-                        <!-- Font Family Selection (8 Luxury Vietnamese Fonts) -->
-                        <div class="bg-white/5 p-4 rounded-2xl border border-white/5 mt-4">
-                            <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
-                                <span class="text-slate-400 uppercase tracking-tighter">Font Chữ (Tiếng Việt)</span>
-                                <span id="font-family-val" class="text-primary text-[11px] font-bold">Be Vietnam Pro</span>
-                            </div>
-                            <div class="relative">
-                                <select id="font-family-select"
-                                    class="w-full bg-[#17130F] border border-primary/20 rounded-xl p-2.5 text-xs text-[#F5EFEB] appearance-none focus:border-primary/60 transition-colors cursor-pointer font-medium">
-                                    <option value="Source Serif 4" selected>Source Serif 4 (mặc định)</option>
-                                <option value="Be Vietnam Pro">1. Be Vietnam Pro (Chuẩn Quốc Tế)</option>
-                                    <option value="Playfair Display">2. Playfair Display (Serif Hoàng Gia)</option>
-                                    <option value="Plus Jakarta Sans">3. Plus Jakarta Sans (Thanh Lịch Châu Âu)</option>
-                                    <option value="Literata">4. Literata (Sách Chuẩn Google Books)</option>
-                                    <option value="Lora">5. Lora (Văn Học Cổ Điển)</option>
-                                    <option value="Merriweather">6. Merriweather (Serif Đậm Nét)</option>
-                                    <option value="Montserrat">7. Montserrat (Hiện Đại Sang Trọng)</option>
-                                    <option value="Inter">8. Inter (Tối Giản Tinh Tế)</option>
-                                </select>
-                                <i class="fas fa-chevron-down absolute right-3 top-1/2 -translate-y-1/2 text-primary/70 pointer-events-none text-xs"></i>
-                            </div>
-                        </div>
-
-                        <!-- Font Size Control -->
-                        <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                            <div class="flex items-center justify-between text-xs font-bold px-1 mb-3">
-                                <span class="text-slate-400 uppercase tracking-tighter">Font Size</span>
-                                <span id="font-size-val" class="text-primary font-mono text-sm">20px</span>
-                            </div>
-                            <input type="range" id="font-size-range" min="10" max="48" step="1" value="20"
-                                class="w-full accent-primary h-1.5 cursor-pointer">
-                        </div>
-
-                        <!-- Text Color Control -->
-                        <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                            <div class="flex items-center justify-between text-xs font-bold px-1 mb-4">
-                                <span class="text-slate-400 uppercase tracking-tighter">Text Color</span>
-                                <div class="flex items-center gap-2">
-                                    <button id="color-reset-btn"
-                                        class="text-[10px] bg-primary/10 text-primary px-2 py-1 rounded hover:bg-primary hover:text-black transition-all"
-                                        title="Reset to Theme Default">
-                                        DEFAULT
-                                    </button>
-                                    <div
-                                        class="relative w-7 h-7 rounded-lg overflow-hidden border border-white/20 shadow-lg">
-                                        <input type="color" id="font-color-picker" value="#bac9cc"
-                                            class="absolute inset-[-5px] w-[150%] h-[150%] cursor-pointer bg-transparent border-none">
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="flex gap-2.5 flex-wrap justify-between" id="font-color-presets">
-                                <!-- Premium Presets for Quick Selection -->
-                                <button
-                                    class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95"
-                                    style="background: #F8F9FA;" data-color="#F8F9FA" title="Pure White"></button>
-                                <button
-                                    class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95"
-                                    style="background: #FFE4B5;" data-color="#FFE4B5" title="Warm Amber"></button>
-                                <button
-                                    class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95"
-                                    style="background: #E8DDD0;" data-color="#E8DDD0" title="Vintage Paper"></button>
-                                <button
-                                    class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95"
-                                    style="background: #C8E0D0;" data-color="#C8E0D0" title="Mint Green"></button>
-                                <button
-                                    class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95"
-                                    style="background: #E8D0DE;" data-color="#E8D0DE" title="Soft Rose"></button>
-                                <button
-                                    class="preset-color w-6 h-6 rounded-full border border-white/10 hover:scale-110 transition-transform active:scale-95"
-                                    style="background: #D4AF37;" data-color="#D4AF37" title="Imperial Gold"></button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Dictionary Card -->
-                <div class="glass p-5 flex flex-col rounded-3xl bg-surface-low/40 shrink-0">
-                    <h3 class="font-bold text-xs text-slate-400 uppercase tracking-widest flex items-center gap-2 w-full">
-                        <i class="fas fa-book-open text-primary"></i> <span
-                            data-i18n="skip-dictionary">Dictionary</span>
-                    </h3>
-                    <div id="dict-settings-body" class="mt-4 space-y-3">
-                        <!-- Legend -->
-                        <div
-                            class="text-[10px] text-slate-500 leading-relaxed space-y-1.5 bg-white/[0.03] rounded-xl p-3 border border-white/5">
-                            <p class="font-bold text-slate-400 mb-1">Syntax (separated by <strong
-                                    class="text-primary">,</strong>):</p>
-                            <p><code class="text-primary/80">word</code> &nbsp;→ skip plain word/symbol</p>
-                            <p><code class="text-primary/80">"phrase, with comma"</code> → skip exact phrase (commas
-                                OK inside quotes)</p>
-                            <p><code class="text-primary/80">"A"="B"</code> &nbsp;→ replace <em>A</em> with
-                                <em>B</em> (quotes optional)
-                            </p>
-                        </div>
-                        <textarea id="dict-input" rows="5"
-                            placeholder='"chào bạn nhé, tôi tên là","chào, tạm biệt"="hi, bye",one,...'
-                            class="w-full border border-white/10 rounded-xl p-3 text-sm resize-none focus:outline-none focus:border-primary/50 transition-colors leading-relaxed font-mono"
-                            style="background-color: var(--theme-surface); color: var(--theme-text);"></textarea>
-                        <div class="flex items-center gap-2">
-                            <button id="dict-save-btn"
-                                class="flex-1 btn-primary py-2 text-xs rounded-xl flex items-center justify-center gap-1.5">
-                                <i class="fas fa-save"></i> Save
-                            </button>
-                            <button id="dict-clear-btn"
-                                class="px-3 py-2 text-xs rounded-xl bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 transition-all">
-                                Clear All
-                            </button>
-                        </div>
-                        <p id="dict-status" class="text-[10px] text-primary text-center"
-                            style="opacity: 0; transition: opacity 0.3s ease;"></p>
-                    </div>
-                </div>
-
-
-                <!-- Reading theme: 4 console themes -->
-                <div class="flex flex-col gap-2">
-                    <button id="theme-toggle-btn" type="button" class="glass flex items-center gap-3 p-3 rounded-md w-full text-left" aria-controls="theme-picker-panel" title="Change Theme">
-                        <span class="flex flex-col items-start min-w-0 flex-1">
-                            <span class="text-xs font-semibold text-muted" data-i18n="reading-theme">Reading Theme</span>
-                            <span class="flex items-center gap-1.5 w-full min-w-0">
-                                <span id="current-theme-name" class="text-sm font-semibold truncate">Slate</span>
-                                <span id="current-theme-mood" class="text-xs text-muted truncate hidden sm:inline">Tối mặc định · xám than lạnh</span>
-                            </span>
-                        </span>
-                        <i id="theme-chevron" class="fas fa-chevron-down text-xs text-muted"></i>
-                    </button>
-                    <div id="theme-picker-panel">
-                        <div id="theme-card-grid">
-                            <button type="button" class="theme-card active" data-theme="slate" title="Slate">
-                                <span class="theme-card__swatch" data-swatch="slate" aria-hidden="true"><span></span></span>
-                                <span class="min-w-0">
-                                    <span class="theme-card__name" data-i18n="theme-slate-name">Slate</span>
-                                    <span class="theme-card__mood" data-i18n="theme-slate-mood">Tối mặc định · xám than lạnh</span>
-                                </span>
-                                <svg class="ic ic--sm theme-card__check" aria-hidden="true"><use href="#i-check"/></svg>
-                            </button>
-                            <button type="button" class="theme-card" data-theme="slate-deep" title="Slate sâu">
-                                <span class="theme-card__swatch" data-swatch="slate-deep" aria-hidden="true"><span></span></span>
-                                <span class="min-w-0">
-                                    <span class="theme-card__name" data-i18n="theme-slate-deep-name">Slate sâu</span>
-                                    <span class="theme-card__mood" data-i18n="theme-slate-deep-mood">Tối hơn · cho phòng tối</span>
-                                </span>
-                                <svg class="ic ic--sm theme-card__check" aria-hidden="true"><use href="#i-check"/></svg>
-                            </button>
-                            <button type="button" class="theme-card" data-theme="mist" title="Sương">
-                                <span class="theme-card__swatch" data-swatch="mist" aria-hidden="true"><span></span></span>
-                                <span class="min-w-0">
-                                    <span class="theme-card__name" data-i18n="theme-mist-name">Sương</span>
-                                    <span class="theme-card__mood" data-i18n="theme-mist-mood">Sáng · giấy xám lạnh</span>
-                                </span>
-                                <svg class="ic ic--sm theme-card__check" aria-hidden="true"><use href="#i-check"/></svg>
-                            </button>
-                            <button type="button" class="theme-card" data-theme="sepia" title="Sepia">
-                                <span class="theme-card__swatch" data-swatch="sepia" aria-hidden="true"><span></span></span>
-                                <span class="min-w-0">
-                                    <span class="theme-card__name" data-i18n="theme-sepia-name">Sepia</span>
-                                    <span class="theme-card__mood" data-i18n="theme-sepia-mood">Sáng · giấy ấm</span>
-                                </span>
-                                <svg class="ic ic--sm theme-card__check" aria-hidden="true"><use href="#i-check"/></svg>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </aside>
 
         <!-- Reader: top bar (title, chapter, Mục lục, ⋮), 66ch text column, position ruler (≥1024px) -->
@@ -818,11 +565,27 @@
             </div>
             <div class="drop-veil" aria-hidden="true"><span data-i18n="drop-release">Thả file để thêm truyện</span></div>
         </section>
-        <!-- Console row: sticks to the bottom on every screen. In Discovery it is the return dock. -->
+        <!-- Console row: docked at the bottom whenever a book is loaded. In Discovery it is the return dock.
+             Phone 56px: play · title · speed · timer · ⌃.  Desktop 64px: full transport, scrub, voice, tools. -->
         <div id="media-player-shell" class="console-shell">
-            <footer id="media-player" class="console" aria-label="Trình phát" data-i18n-aria="player-label">
-                <div id="progress-container" class="console-progress" aria-hidden="true">
-                    <div id="progress-bar" class="console-progress__bar"></div>
+            <footer id="media-player" class="console" aria-label="Trình phát" data-i18n-aria="player-label" data-status-tone="quiet">
+                <div id="player-controls-layer" class="console-transport">
+                    <button id="prev-chunk-btn" type="button" class="icon-btn console-wide" aria-label="Câu trước (←)" title="Câu trước (←)" data-i18n-aria="prev-sentence-key">
+                        <svg class="ic" aria-hidden="true"><use href="#i-rw"/></svg>
+                    </button>
+                    <button id="play-btn" type="button" class="console-play" data-state="paused" aria-label="Phát (Space)" title="Phát (Space)">
+                        <svg class="ic console-play__play" aria-hidden="true"><use href="#i-play"/></svg>
+                        <svg class="ic console-play__pause" aria-hidden="true"><use href="#i-pause"/></svg>
+                    </button>
+                    <button id="next-chunk-btn" type="button" class="icon-btn console-wide" aria-label="Câu kế (→)" title="Câu kế (→)" data-i18n-aria="next-sentence-key">
+                        <svg class="ic" aria-hidden="true"><use href="#i-ff"/></svg>
+                    </button>
+                    <button id="prev-btn" type="button" class="icon-btn console-wide" aria-label="Chương trước ([)" title="Chương trước ([)" data-i18n-aria="prev-chapter-key">
+                        <svg class="ic" aria-hidden="true"><use href="#i-chleft"/></svg>
+                    </button>
+                    <button id="next-btn" type="button" class="icon-btn console-wide" aria-label="Chương kế (])" title="Chương kế (])" data-i18n-aria="next-chapter-key">
+                        <svg class="ic" aria-hidden="true"><use href="#i-chright"/></svg>
+                    </button>
                 </div>
 
                 <div id="player-info-layer" class="console-info">
@@ -830,63 +593,63 @@
                         <svg class="ic" aria-hidden="true"><use href="#i-headphones"/></svg>
                     </div>
                     <div class="console-meta">
-                        <span id="player-title" class="console-title">System Ready</span>
-                        <span id="player-author" class="console-sub">Cloud TTS</span>
-                        <span id="player-sentence" class="console-sentence" title="">Chưa có câu đang đọc</span>
+                        <span id="player-author" class="console-title">Cloud TTS</span>
+                        <span class="console-sub">
+                            <span id="console-chapter" class="console-chapter"></span>
+                            <span id="player-title" class="console-chapter-title">System Ready</span>
+                        </span>
+                        <span id="status-indicator" class="console-status" role="status">Ready</span>
                     </div>
                 </div>
 
-                <div id="player-controls-layer" class="console-transport">
-                    <div class="console-readout console-readout--start">
-                        <span id="current-time-mock">0 / 0</span>
+                <!-- Phone: the 3px line on top of the console. Desktop: the scrub track (role=slider is set there). -->
+                <div class="console-scrub">
+                    <div id="progress-container" class="console-progress" aria-hidden="true">
+                        <div id="progress-bar" class="console-progress__bar"></div>
                     </div>
-                    <div class="console-buttons">
-                        <button id="prev-btn" type="button" class="icon-btn" aria-label="Chương trước" title="Chương trước (Shift+←)">
-                            <svg class="ic" aria-hidden="true"><use href="#i-chleft"/></svg>
-                        </button>
-                        <button id="prev-chunk-btn" type="button" class="icon-btn" aria-label="Câu trước" title="Câu trước (←)">
-                            <svg class="ic" aria-hidden="true"><use href="#i-rw"/></svg>
-                        </button>
-                        <button id="play-btn" type="button" class="console-play" aria-label="Phát hoặc tạm dừng" title="Phát hoặc tạm dừng (Space)">
-                            <i class="fas fa-play ml-1"></i>
-                        </button>
-                        <button id="next-chunk-btn" type="button" class="icon-btn" aria-label="Câu kế" title="Câu kế (→)">
-                            <svg class="ic" aria-hidden="true"><use href="#i-ff"/></svg>
-                        </button>
-                        <button id="next-btn" type="button" class="icon-btn" aria-label="Chương kế" title="Chương kế (Shift+→)">
-                            <svg class="ic" aria-hidden="true"><use href="#i-chright"/></svg>
-                        </button>
-                    </div>
-                    <div class="console-readout console-readout--end">
-                        <span id="time-display">0:00</span>
-                        <span id="status-indicator" class="console-status" role="status">Ready</span>
-                        <span id="prefetch-status" class="hidden" title="Câu đã tổng hợp sẵn phía trước">
-                            <i class="fas fa-microchip text-[10px]"></i>
-                            <span id="prefetch-progress">0</span>
-                        </span>
-                    </div>
+                    <span class="audio-wave-bars console-wide" aria-hidden="true">
+                        <span class="audio-wave-bar"></span><span class="audio-wave-bar"></span><span class="audio-wave-bar"></span><span class="audio-wave-bar"></span>
+                    </span>
+                    <span id="current-time-mock" class="console-count mono">0 / 0</span>
                 </div>
 
                 <div id="player-utils-layer" class="console-utils">
-                    <div class="audio-wave-bars" aria-hidden="true">
-                        <span class="audio-wave-bar"></span>
-                        <span class="audio-wave-bar"></span>
-                        <span class="audio-wave-bar"></span>
-                        <span class="audio-wave-bar"></span>
-                    </div>
-                    <button id="player-toc-btn" type="button" class="icon-btn" title="Mục lục chương" aria-label="Mục lục chương">
-                        <svg class="ic" aria-hidden="true"><use href="#i-list"/></svg>
+                    <button id="speak-speed-chip" type="button" class="chip" aria-haspopup="dialog" aria-controls="speed-stepper"
+                        aria-label="Tốc độ đọc 1.0×. Chạm để đổi, nhấn giữ để chỉnh từng 0.05" title="Tốc độ đọc: chạm để đổi, nhấn giữ để chỉnh">1.0×</button>
+                    <button id="sleep-chip" type="button" class="chip" aria-label="Hẹn giờ tắt: tắt. Chạm để đổi" title="Hẹn giờ tắt: chạm để đổi">
+                        <svg class="ic ic--sm" aria-hidden="true"><use href="#i-moon"/></svg><span id="sleep-chip-label" data-i18n="state-off">Tắt</span>
                     </button>
-                    <button id="speak-speed-chip" type="button" class="chip" aria-label="Tốc độ đọc — chạm để đổi" title="Tốc độ đọc">1.0X</button>
-                    <label class="lite-switch" title="Nghe tắt màn hình (Pocket) — tối màn hình, chống chạm nhầm">
-                        <input type="checkbox" id="lite-mode-toggle" aria-label="Nghe tắt màn hình">
-                        <svg class="ic" aria-hidden="true"><use href="#i-bolt"/></svg>
+                    <label class="console-wide console-voice" title="Giọng đọc">
+                        <span class="sr-only-text" data-i18n="voice-label">Giọng đọc</span>
+                        <select id="voice-select" class="select select--sm">
+                            <option value="vi-VN-HoaiMyNeural">Hoài My · Nữ</option>
+                            <option value="vi-VN-NamMinhNeural">Nam Minh · Nam</option>
+                            <option value="en-US-AriaNeural">Aria · EN</option>
+                            <option value="en-US-GuyNeural">Guy · EN</option>
+                        </select>
                     </label>
-                    <!-- Kept for app.js sync; the visible switch above serves every breakpoint now. -->
-                    <input type="checkbox" id="lite-mode-toggle-mobile" hidden
-                        onchange="document.getElementById('lite-mode-toggle').click();">
-                    <button id="minimize-btn" type="button" class="icon-btn" title="Thu gọn trình phát" aria-label="Thu gọn trình phát" aria-expanded="true">
-                        <i class="fas fa-chevron-down text-[10px]"></i>
+                    <label class="btn btn--sm console-wide console-pocket" title="Nghe tắt màn hình: màn đen, chạm 2 lần để mở">
+                        <input type="checkbox" id="lite-mode-toggle">
+                        <svg class="ic ic--sm" aria-hidden="true"><use href="#i-screen-off"/></svg>
+                        <span data-i18n="pocket-short">Tắt màn hình</span>
+                    </label>
+                    <!-- app.js keeps these two in sync; neither is shown. -->
+                    <input type="checkbox" id="lite-mode-toggle-mobile" hidden>
+                    <button id="minimize-btn" type="button" hidden aria-hidden="true" tabindex="-1"></button>
+                    <button id="console-panel-btn" type="button" class="icon-btn" aria-haspopup="dialog" aria-expanded="false" aria-controls="console-panel"
+                        aria-label="Mở bảng điều khiển nghe" title="Bảng điều khiển nghe" data-i18n-aria="panel-open">
+                        <svg class="ic" aria-hidden="true"><use href="#i-up"/></svg>
+                    </button>
+                </div>
+
+                <!-- Long-press on the speed chip: fine steps of 0.05× -->
+                <div id="speed-stepper" class="speed-stepper" role="dialog" aria-label="Chỉnh tốc độ" data-i18n-aria="speed-adjust" hidden>
+                    <button type="button" class="icon-btn" data-speed-step="-0.05" aria-label="Chậm hơn 0.05" data-i18n-aria="speed-slower">
+                        <svg class="ic" aria-hidden="true"><use href="#i-minus"/></svg>
+                    </button>
+                    <output id="speed-stepper-val" class="mono">1.00×</output>
+                    <button type="button" class="icon-btn" data-speed-step="0.05" aria-label="Nhanh hơn 0.05" data-i18n-aria="speed-faster">
+                        <svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg>
                     </button>
                 </div>
             </footer>
@@ -900,6 +663,348 @@
     </section>
 
 
+
+    <!-- Console panel: bottom sheet (~70%) on phones, popover above the console from 1024px -->
+    <div id="console-panel-scrim" class="sheet-scrim" hidden></div>
+    <section id="console-panel" class="cpanel" role="dialog" aria-modal="true" aria-labelledby="cpanel-book" hidden>
+        <div class="sheet__grab" aria-hidden="true"></div>
+        <header class="cpanel__head">
+            <div class="cpanel__titles">
+                <p id="cpanel-book" class="cpanel__book">Cloud TTS</p>
+                <p id="cpanel-chapter" class="cpanel__chapter mono"></p>
+            </div>
+            <button id="cpanel-close" type="button" class="icon-btn" aria-label="Đóng" data-i18n-aria="close">
+                <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+            </button>
+        </header>
+        <div class="cpanel__body">
+            <p id="player-sentence" class="cpanel__sentence" title="">Chưa có câu đang đọc</p>
+
+            <div class="cpanel__scrub">
+                <div id="cpanel-track" class="track" role="slider" tabindex="0" aria-label="Tua trong chương" data-i18n-aria="scrub-label"
+                    aria-valuemin="1" aria-valuemax="1" aria-valuenow="1">
+                    <span class="track__fill"></span>
+                </div>
+                <div class="cpanel__readout mono">
+                    <span id="cpanel-count">0 / 0</span>
+                    <span id="time-display" title="Thời gian đã phát">0:00</span>
+                    <span id="prefetch-status" class="hidden" title="Câu đã tổng hợp sẵn phía trước">
+                        <span data-i18n="buffer-short">đệm</span> <span id="prefetch-progress">0</span>
+                    </span>
+                    <span id="cpanel-status" class="cpanel__status"></span>
+                </div>
+            </div>
+
+            <div class="cpanel__transport">
+                <button type="button" class="cpanel__skip" data-cpanel-click="prev-chunk-btn" aria-label="Lùi một câu" data-i18n-aria="prev-sentence">
+                    <svg class="ic" aria-hidden="true"><use href="#i-rw"/></svg><span data-i18n="unit-sentence">câu</span>
+                </button>
+                <button id="cpanel-play" type="button" class="console-play console-play--lg" data-cpanel-click="play-btn" data-state="paused" aria-label="Phát hoặc tạm dừng" data-i18n-aria="play-pause">
+                    <svg class="ic console-play__play" aria-hidden="true"><use href="#i-play"/></svg>
+                    <svg class="ic console-play__pause" aria-hidden="true"><use href="#i-pause"/></svg>
+                </button>
+                <button type="button" class="cpanel__skip" data-cpanel-click="next-chunk-btn" aria-label="Tiến một câu" data-i18n-aria="next-sentence">
+                    <svg class="ic" aria-hidden="true"><use href="#i-ff"/></svg><span data-i18n="unit-sentence">câu</span>
+                </button>
+            </div>
+
+            <div class="cpanel__chnav">
+                <button type="button" class="btn btn--quiet" data-cpanel-click="prev-btn" aria-label="Chương trước" data-i18n-aria="prev-chapter">
+                    <svg class="ic ic--sm" aria-hidden="true"><use href="#i-left"/></svg><span id="cpanel-prev-ch" class="mono">—</span>
+                </button>
+                <span id="cpanel-chpos" class="mono">—</span>
+                <button type="button" class="btn btn--quiet" data-cpanel-click="next-btn" aria-label="Chương kế" data-i18n-aria="next-chapter">
+                    <span id="cpanel-next-ch" class="mono">—</span><svg class="ic ic--sm" aria-hidden="true"><use href="#i-right"/></svg>
+                </button>
+            </div>
+
+            <div class="cpanel__fields">
+                <div class="field-row">
+                    <label for="cpanel-voice" class="field-row__label" data-i18n="voice-label">Giọng đọc</label>
+                    <select id="cpanel-voice" class="select select--sm" data-mirror="voice-select"></select>
+                </div>
+                <div class="field-row">
+                    <span class="field-row__label" data-i18n="speed-label">Tốc độ</span>
+                    <span class="stepper">
+                        <button type="button" class="icon-btn" data-speed-step="-0.05" aria-label="Chậm hơn 0.05" data-i18n-aria="speed-slower"><svg class="ic" aria-hidden="true"><use href="#i-minus"/></svg></button>
+                        <output id="cpanel-speed" class="mono">1.0×</output>
+                        <button type="button" class="icon-btn" data-speed-step="0.05" aria-label="Nhanh hơn 0.05" data-i18n-aria="speed-faster"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button>
+                    </span>
+                </div>
+                <div class="field-row">
+                    <span class="field-row__label" data-i18n="pitch-label">Cao độ</span>
+                    <span class="stepper">
+                        <button type="button" class="icon-btn" data-pitch-step="-1" aria-label="Giảm cao độ" data-i18n-aria="pitch-down"><svg class="ic" aria-hidden="true"><use href="#i-minus"/></svg></button>
+                        <output id="cpanel-pitch" class="mono">+0 Hz</output>
+                        <button type="button" class="icon-btn" data-pitch-step="1" aria-label="Tăng cao độ" data-i18n-aria="pitch-up"><svg class="ic" aria-hidden="true"><use href="#i-plus"/></svg></button>
+                    </span>
+                </div>
+                <div class="field-row">
+                    <label for="cpanel-volume" class="field-row__label" data-i18n="volume-label">Âm lượng</label>
+                    <span class="field-row__range">
+                        <input id="cpanel-volume" type="range" class="range" min="0" max="100" step="5" value="100" data-mirror="volume-range">
+                        <output id="cpanel-volume-val" class="mono">100%</output>
+                    </span>
+                </div>
+                <p class="field-note" data-i18n="voice-applies-next">Giọng, tốc độ và cao độ áp dụng cho các câu được đọc tiếp theo.</p>
+            </div>
+
+            <div class="cpanel__sleep" role="group" aria-labelledby="cpanel-sleep-label">
+                <div class="cpanel__sleep-head">
+                    <svg class="ic ic--sm" aria-hidden="true"><use href="#i-moon"/></svg>
+                    <span id="cpanel-sleep-label" data-i18n="sleep-title">Hẹn giờ tắt</span>
+                    <span id="cpanel-sleep-state" class="menu-item__state" data-i18n="state-off">Tắt</span>
+                </div>
+                <div class="seg cpanel__sleep-presets">
+                    <button type="button" data-sleep="15" aria-pressed="false">15′</button>
+                    <button type="button" data-sleep="30" aria-pressed="false">30′</button>
+                    <button type="button" data-sleep="60" aria-pressed="false">60′</button>
+                    <button type="button" data-sleep="chapter" aria-pressed="false" aria-label="Hết chương" data-i18n-aria="sleep-end-chapter"><span data-i18n="sleep-chapter-short">hết ch.</span></button>
+                </div>
+                <form id="cpanel-sleep-custom" class="cpanel__sleep-custom">
+                    <label for="cpanel-sleep-min" data-i18n="sleep-custom">Tuỳ chỉnh (phút)</label>
+                    <input id="cpanel-sleep-min" type="number" class="input input--sm mono" min="1" max="600" step="1" inputmode="numeric" placeholder="45">
+                    <button type="submit" class="btn btn--sm" data-i18n="sleep-set">Đặt</button>
+                </form>
+                <div id="cpanel-sleep-active" class="cpanel__sleep-active" hidden>
+                    <span class="muted" data-i18n="sleep-left">Còn lại</span>
+                    <span id="cpanel-sleep-remaining" class="mono">—</span>
+                    <button type="button" class="btn btn--sm btn--danger" data-sleep="off" data-i18n="sleep-cancel">Huỷ hẹn giờ</button>
+                </div>
+            </div>
+
+            <div id="cpanel-download" class="cpanel__download" hidden>
+                <div class="cpanel__download-head">
+                    <svg class="ic ic--sm" aria-hidden="true"><use href="#i-download"/></svg>
+                    <span data-i18n="mp3-downloading">Đang tải MP3</span>
+                    <span id="cpanel-download-info" class="mono muted"></span>
+                    <span id="cpanel-download-pct" class="mono">0%</span>
+                </div>
+                <div class="bar"><div id="cpanel-download-bar" class="bar__fill" style="width: 0%"></div></div>
+                <button type="button" class="btn btn--sm btn--danger" data-cpanel-click="toc-download-btn" data-i18n="toc-stop-download">Dừng tải</button>
+            </div>
+
+            <div class="cpanel__actions">
+                <button id="cpanel-pocket" type="button" class="btn btn--block cpanel__big">
+                    <svg class="ic" aria-hidden="true"><use href="#i-screen-off"/></svg>
+                    <span data-i18n="pocket-title">Nghe tắt màn hình</span>
+                </button>
+                <button id="player-toc-btn" type="button" class="btn">
+                    <svg class="ic ic--sm" aria-hidden="true"><use href="#i-list"/></svg>
+                    <span data-i18n="toc-title">Mục lục</span>
+                </button>
+                <button id="cpanel-pip" type="button" class="btn" hidden>
+                    <svg class="ic ic--sm" aria-hidden="true"><use href="#i-pip"/></svg>
+                    <span data-i18n="pip-short">Cửa sổ nổi</span>
+                </button>
+            </div>
+
+            <button id="cpanel-advanced" type="button" class="cpanel__adv">
+                <svg class="ic muted" aria-hidden="true"><use href="#i-gear"/></svg>
+                <span class="cpanel__adv-text">
+                    <span data-i18n="settings-advanced">Nâng cao</span>
+                    <small class="mono" data-i18n="advanced-summary">luồng · proxy · gTTS · từ điển</small>
+                </span>
+                <svg class="ic muted" aria-hidden="true"><use href="#i-right"/></svg>
+            </button>
+        </div>
+    </section>
+
+    <!-- Settings: one scrolling page of label/value rows (sheet on phones, side sheet on desktop) -->
+    <div id="settings-scrim" class="sheet-scrim" hidden></div>
+    <section id="settings-sheet" class="settings" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
+        <header class="settings__head">
+            <button id="settings-close" type="button" class="icon-btn" aria-label="Đóng cài đặt" data-i18n-aria="settings-close">
+                <svg class="ic" aria-hidden="true"><use href="#i-back"/></svg>
+            </button>
+            <h2 id="settings-title" class="settings__title" data-i18n="settings-title">Cài đặt</h2>
+        </header>
+        <nav class="settings__jump" aria-label="Mục cài đặt" data-i18n-aria="settings-sections">
+            <a href="#settings-listen" data-i18n="settings-listen">Nghe</a>
+            <a href="#settings-display" data-i18n="settings-display">Giao diện</a>
+            <a href="#settings-advanced" data-i18n="settings-advanced">Nâng cao</a>
+            <a href="#settings-storage" data-i18n="settings-storage-short">Bộ nhớ</a>
+            <a href="#settings-stats" data-i18n="settings-stats">Thống kê</a>
+        </nav>
+        <div id="settings-body" class="settings__body">
+            <p class="field-note settings__note" data-i18n="settings-local-note">Cài đặt lưu trên máy này, áp dụng cho mọi truyện.</p>
+
+            <section id="settings-listen" class="set-group" aria-labelledby="settings-listen-h">
+                <h3 id="settings-listen-h" class="set-group__title" data-i18n="settings-listen">Nghe</h3>
+                <div class="set-row">
+                    <label for="settings-voice" class="set-row__label" data-i18n="voice-label">Giọng đọc</label>
+                    <select id="settings-voice" class="select select--sm" data-mirror="voice-select"></select>
+                </div>
+                <div class="set-row set-row--range">
+                    <label for="speed-range" class="set-row__label" data-i18n="speed-label">Tốc độ</label>
+                    <output id="speed-val" class="set-row__value mono" for="speed-range">1.0×</output>
+                    <input type="range" id="speed-range" class="range" min="0.5" max="3" step="0.05" value="1">
+                </div>
+                <div class="set-row set-row--range">
+                    <label for="pitch-range" class="set-row__label" data-i18n="pitch-label">Cao độ</label>
+                    <output id="pitch-val" class="set-row__value mono" for="pitch-range">+0Hz</output>
+                    <input type="range" id="pitch-range" class="range" min="-20" max="20" step="1" value="0">
+                </div>
+                <div class="set-row set-row--range">
+                    <label for="volume-range" class="set-row__label" data-i18n="volume-label">Âm lượng</label>
+                    <output id="volume-val" class="set-row__value mono" for="volume-range">100%</output>
+                    <input type="range" id="volume-range" class="range" min="0" max="100" step="5" value="100">
+                </div>
+                <p class="field-note" data-i18n="volume-note">Âm lượng trong app, nhân với âm lượng máy. iPhone bỏ qua mục này.</p>
+            </section>
+
+            <section id="settings-display" class="set-group" aria-labelledby="settings-display-h">
+                <h3 id="settings-display-h" class="set-group__title" data-i18n="settings-display">Giao diện</h3>
+                <div class="set-row set-row--stack">
+                    <span class="set-row__label" data-i18n="reading-theme">Màu giao diện</span>
+                    <div id="theme-card-grid" class="theme-grid">
+                        <button type="button" class="theme-card active" data-theme="slate" aria-pressed="true">
+                            <span class="theme-card__swatch" data-swatch="slate" aria-hidden="true"><span></span></span>
+                            <span class="min-w-0">
+                                <span class="theme-card__name" data-i18n="theme-slate-name">Slate</span>
+                                <span class="theme-card__mood" data-i18n="theme-slate-mood">Tối mặc định · xám than lạnh</span>
+                            </span>
+                        </button>
+                        <button type="button" class="theme-card" data-theme="slate-deep" aria-pressed="false">
+                            <span class="theme-card__swatch" data-swatch="slate-deep" aria-hidden="true"><span></span></span>
+                            <span class="min-w-0">
+                                <span class="theme-card__name" data-i18n="theme-slate-deep-name">Slate sâu</span>
+                                <span class="theme-card__mood" data-i18n="theme-slate-deep-mood">Tối hơn · cho phòng tối</span>
+                            </span>
+                        </button>
+                        <button type="button" class="theme-card" data-theme="mist" aria-pressed="false">
+                            <span class="theme-card__swatch" data-swatch="mist" aria-hidden="true"><span></span></span>
+                            <span class="min-w-0">
+                                <span class="theme-card__name" data-i18n="theme-mist-name">Sương</span>
+                                <span class="theme-card__mood" data-i18n="theme-mist-mood">Sáng · giấy xám lạnh</span>
+                            </span>
+                        </button>
+                        <button type="button" class="theme-card" data-theme="sepia" aria-pressed="false">
+                            <span class="theme-card__swatch" data-swatch="sepia" aria-hidden="true"><span></span></span>
+                            <span class="min-w-0">
+                                <span class="theme-card__name" data-i18n="theme-sepia-name">Sepia</span>
+                                <span class="theme-card__mood" data-i18n="theme-sepia-mood">Sáng · giấy ấm</span>
+                            </span>
+                        </button>
+                    </div>
+                </div>
+                <div class="set-row">
+                    <label for="font-family-select" class="set-row__label" data-i18n="type-font">Font chữ</label>
+                    <select id="font-family-select" class="select select--sm">
+                        <option value="Source Serif 4" selected>Source Serif 4</option>
+                        <option value="Be Vietnam Pro">Be Vietnam Pro</option>
+                        <option value="Playfair Display">Playfair Display</option>
+                        <option value="Plus Jakarta Sans">Plus Jakarta Sans</option>
+                        <option value="Literata">Literata</option>
+                        <option value="Lora">Lora</option>
+                        <option value="Merriweather">Merriweather</option>
+                        <option value="Montserrat">Montserrat</option>
+                        <option value="Inter">Inter</option>
+                    </select>
+                </div>
+                <p class="font-sample" data-i18n="font-sample">Trăm năm trong cõi người ta, chữ tài chữ mệnh khéo là ghét nhau.</p>
+                <div class="set-row set-row--range">
+                    <label for="font-size-range" class="set-row__label" data-i18n="type-size">Cỡ chữ</label>
+                    <output id="font-size-val" class="set-row__value mono" for="font-size-range">20px</output>
+                    <input type="range" id="font-size-range" class="range" min="10" max="48" step="1" value="20">
+                </div>
+                <div class="set-row set-row--stack">
+                    <span class="set-row__label" data-i18n="text-color">Màu chữ</span>
+                    <div class="color-row">
+                        <label class="color-pick" title="Chọn màu">
+                            <span class="sr-only-text" data-i18n="text-color-pick">Chọn màu chữ</span>
+                            <input type="color" id="font-color-picker" value="#d9dee5">
+                        </label>
+                        <div id="font-color-presets" class="color-presets">
+                            <button type="button" class="preset-color" style="--swatch: #F8F9FA" data-color="#F8F9FA" title="Trắng" aria-label="Trắng"></button>
+                            <button type="button" class="preset-color" style="--swatch: #FFE4B5" data-color="#FFE4B5" title="Hổ phách" aria-label="Hổ phách"></button>
+                            <button type="button" class="preset-color" style="--swatch: #E8DDD0" data-color="#E8DDD0" title="Giấy cũ" aria-label="Giấy cũ"></button>
+                            <button type="button" class="preset-color" style="--swatch: #C8E0D0" data-color="#C8E0D0" title="Bạc hà" aria-label="Bạc hà"></button>
+                            <button type="button" class="preset-color" style="--swatch: #3A3A3A" data-color="#3A3A3A" title="Than" aria-label="Than"></button>
+                            <button type="button" class="preset-color" style="--swatch: #5B4636" data-color="#5B4636" title="Nâu mực" aria-label="Nâu mực"></button>
+                        </div>
+                        <button id="color-reset-btn" type="button" class="btn btn--sm" data-i18n="color-default">Theo theme</button>
+                    </div>
+                </div>
+                <div class="set-row">
+                    <span class="set-row__label" data-i18n="ui-language">Ngôn ngữ</span>
+                    <div id="settings-lang" class="seg seg--fit" role="group" aria-label="Ngôn ngữ" data-i18n-aria="ui-language">
+                        <button type="button" data-lang="vi" aria-pressed="false">VI</button>
+                        <button type="button" data-lang="en" aria-pressed="false">EN</button>
+                    </div>
+                </div>
+                <label class="set-row set-row--switch">
+                    <span class="set-row__label"><span data-i18n="zen-title">Chế độ tập trung</span><small data-i18n="zen-desc">Làm mờ các đoạn khác</small></span>
+                    <input type="checkbox" id="settings-zen-toggle" class="switch-input">
+                    <span class="switch" aria-hidden="true"></span>
+                </label>
+                <label class="set-row set-row--switch">
+                    <span class="set-row__label"><span data-i18n="wake-title">Giữ màn hình sáng</span><small data-i18n="wake-desc">Không tự khoá khi đang đọc</small></span>
+                    <input type="checkbox" id="settings-wake-toggle" class="switch-input">
+                    <span class="switch" aria-hidden="true"></span>
+                </label>
+                <label class="set-row set-row--switch">
+                    <span class="set-row__label"><span data-i18n="feedback-title">Rung và tiếng bấm</span><small data-i18n="feedback-desc">Khi bấm phát, đổi tốc độ, khoá màn hình</small></span>
+                    <input type="checkbox" id="settings-feedback-toggle" class="switch-input" checked>
+                    <span class="switch" aria-hidden="true"></span>
+                </label>
+            </section>
+
+            <section id="settings-advanced" class="set-group" aria-labelledby="settings-advanced-h">
+                <h3 id="settings-advanced-h" class="set-group__title" data-i18n="settings-advanced">Nâng cao</h3>
+                <div class="set-row set-row--range">
+                    <label for="prefetch-range" class="set-row__label"><span data-i18n="workers-title">Luồng đọc song song</span><small data-i18n="workers-desc">Nhiều luồng thì tải trước nhanh hơn</small></label>
+                    <output id="prefetch-val" class="set-row__value mono" for="prefetch-range">2</output>
+                    <input type="range" id="prefetch-range" class="range" min="0" max="2" step="1" value="1">
+                </div>
+                <label class="set-row set-row--switch">
+                    <span class="set-row__label"><span data-i18n="proxy-title">Edge proxy</span><small data-i18n="proxy-desc">Thử thêm qua proxy khi kết nối thẳng chậm hoặc bị chặn</small></span>
+                    <input type="checkbox" id="proxy-toggle" class="switch-input">
+                    <span class="switch" aria-hidden="true"></span>
+                </label>
+                <label class="set-row set-row--switch">
+                    <span class="set-row__label"><span data-i18n="gtts-title">Google TTS dự phòng</span><small data-i18n="gtts-desc">Đọc bằng Google khi Edge lỗi (giọng khác)</small></span>
+                    <input type="checkbox" id="gtts-toggle" class="switch-input">
+                    <span class="switch" aria-hidden="true"></span>
+                </label>
+                <div class="set-row set-row--stack">
+                    <label for="dict-input" class="set-row__label"><span data-i18n="skip-dictionary">Từ điển bỏ và thay chữ</span><small data-i18n="dict-desc">Chỉ đổi âm thanh, không đổi chữ hiển thị. Có hiệu lực khi bấm Lưu.</small></label>
+                    <div class="dict-help mono">
+                        <p><code>từ</code> <span data-i18n="dict-rule-word">bỏ từ hoặc ký hiệu</span></p>
+                        <p><code>"cụm, có phẩy"</code> <span data-i18n="dict-rule-phrase">bỏ đúng cụm</span></p>
+                        <p><code>"A"="B"</code> <span data-i18n="dict-rule-replace">đọc A thành B</span></p>
+                    </div>
+                    <textarea id="dict-input" class="input dict-input mono" rows="4" placeholder='"chào bạn nhé","chào"="hi",one'></textarea>
+                    <div class="dict-actions">
+                        <button id="dict-clear-btn" type="button" class="btn btn--sm btn--danger" data-i18n="dict-clear">Xoá hết</button>
+                        <p id="dict-status" class="dict-status" role="status"></p>
+                        <button id="dict-save-btn" type="button" class="btn btn--sm btn--primary" data-i18n="dict-save">Lưu từ điển</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="settings-storage" class="set-group" aria-labelledby="settings-storage-h">
+                <h3 id="settings-storage-h" class="set-group__title" data-i18n="settings-storage">Bộ nhớ &amp; cache</h3>
+                <div class="set-row">
+                    <span class="set-row__label"><span data-i18n="offline-audio">Âm thanh đã lưu</span><small data-i18n="offline-audio-desc">Chỉ giữ trong lúc nghe liên tục; mở truyện hay nhảy câu sẽ xoá</small></span>
+                    <span id="offline-usage-text" class="set-row__value mono">— MB</span>
+                </div>
+                <div class="set-row">
+                    <span class="set-row__label" data-i18n="clear-cache">Xoá cache âm thanh</span>
+                    <button id="clear-offline-cache" type="button" class="btn btn--sm btn--danger" data-i18n="clear-short">Xoá</button>
+                </div>
+            </section>
+
+            <section id="settings-stats" class="set-group" aria-labelledby="settings-stats-h">
+                <h3 id="settings-stats-h" class="set-group__title" data-i18n="settings-stats">Thống kê</h3>
+                <div class="kv">
+                    <div><b id="stat-streak" class="mono">0</b><span data-i18n="day-streak">ngày nghe liên tiếp</span></div>
+                    <div><b id="stat-total-time" class="mono">0m</b><span data-i18n="total-time">tổng thời gian nghe</span></div>
+                </div>
+                <p class="field-note" data-i18n="stats-note">Chỉ tính lúc đang phát và đã đăng nhập. Bỏ một ngày thì chuỗi tính lại từ 1.</p>
+            </section>
+        </div>
+    </section>
 
     <!-- Hidden Native Audio -->
     <audio id="main-audio" class="hidden"></audio>
@@ -1041,67 +1146,6 @@ Nội dung chương hai...</pre>
         </button>
     </div>
 
-    <!-- Reading Stats Modal -->
-    <div id="stats-modal" class="fixed inset-0 z-[150] hidden items-center justify-center p-4">
-        <div class="absolute inset-0 bg-black/60 backdrop-blur-md" id="stats-modal-overlay"></div>
-        <div
-            class="glass w-full max-w-md rounded-[2.5rem] overflow-hidden relative animate-in fade-in zoom-in duration-300">
-            <div class="p-8 border-b border-glass-border bg-white/5 relative">
-                <h3 class="text-2xl font-black flex items-center gap-4">
-                    <i class="fas fa-fire streak-fire" id="streak-icon-big"></i>
-                    <span data-i18n="reading-insights">Reading Insights</span>
-                </h3>
-                <button id="close-stats-modal"
-                    class="absolute top-8 right-8 text-slate-500 hover:text-white transition-colors">
-                    <i class="fas fa-times text-xl"></i>
-                </button>
-            </div>
-            <div class="p-8 space-y-8">
-                <div class="stats-grid">
-                    <div class="stats-card">
-                        <span class="stats-value" id="stat-streak">0</span>
-                        <span class="stats-label" data-i18n="day-streak">Day Streak</span>
-                    </div>
-                    <div class="stats-card">
-                        <span class="stats-value" id="stat-total-time">0m</span>
-                        <span class="stats-label" data-i18n="total-time">Total Time</span>
-                    </div>
-                    <div class="stats-card">
-                        <span class="stats-value" id="stat-books-count">0</span>
-                        <span class="stats-label" data-i18n="books-completed">Books</span>
-                    </div>
-                    <div class="stats-card">
-                        <span class="stats-value" id="stat-avg-speed">1.0x</span>
-                        <span class="stats-label" data-i18n="avg-speed">Avg Speed</span>
-                    </div>
-                </div>
-
-                <div class="p-6 rounded-3xl bg-primary/5 border border-primary/10">
-                    <div class="flex items-center justify-between mb-4">
-                        <span class="text-xs font-bold uppercase tracking-widest text-slate-400"
-                            data-i18n="offline-storage">Offline Storage</span>
-                        <button id="clear-offline-cache"
-                            class="text-[10px] font-bold text-red-400 hover:text-red-300 transition-colors uppercase tracking-widest">
-                            <i class="fas fa-trash-alt mr-1"></i> <span data-i18n="clear-cache">Clear Cache</span>
-                        </button>
-                    </div>
-                    <div class="flex items-center justify-between">
-                        <div class="flex items-center gap-3">
-                            <div class="w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center">
-                                <i class="fas fa-hdd text-slate-400"></i>
-                            </div>
-                            <div>
-                                <div class="text-sm font-bold text-slate-200" id="offline-usage-text">0 MB</div>
-                                <div class="text-[10px] text-slate-500" data-i18n="locally-cached">Locally Cached</div>
-                            </div>
-                        </div>
-                        <i class="fas fa-check-circle text-green-500 opacity-50"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <script type="module" src="/static/js/main.js"></script>
     <script type="module" src="/static/app.js"></script>
     <!-- Reader-only Picture-in-Picture controls -->
@@ -1209,250 +1253,6 @@ Nội dung chương hai...</pre>
                     <span id="loading-progress-status">Tiến trình</span>
                     <span id="loading-percentage">0%</span>
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Quick Settings Master Hub Modal (Full LocalStorage Control Hub) -->
-    <div id="quick-settings-modal" class="fixed inset-0 z-[250] hidden items-center justify-center p-3 sm:p-5" role="dialog" aria-modal="true" aria-labelledby="quick-settings-title">
-        <div class="absolute inset-0 bg-black/80 backdrop-blur-xl cursor-pointer" id="quick-settings-overlay" onclick="window.QuickSettingsController?.close();"></div>
-        <div class="glass relative flex w-full max-w-xl flex-col rounded-[2.25rem] p-5 sm:p-7 border border-[#D4AF37]/40 shadow-[0_25px_60px_rgba(0,0,0,0.9)] max-h-[92vh] overflow-hidden animate-in fade-in zoom-in duration-200">
-            
-            <!-- Modal Header -->
-            <div class="flex items-center justify-between pb-4 mb-3 border-b border-white/10 shrink-0">
-                <div class="flex items-center gap-3">
-                    <div class="w-10 h-10 rounded-2xl bg-surface-high border border-glass-border flex items-center justify-center text-primary shadow-sm">
-                        <i class="fas fa-sliders text-base text-primary"></i>
-                    </div>
-                    <div>
-                        <h2 id="quick-settings-title" class="text-base sm:text-lg font-black text-main font-serif-royal" data-i18n="quick-settings-title">Trung Tâm Cài Đặt Nhanh</h2>
-                        <span class="text-[10px] text-primary/80 uppercase tracking-widest font-bold" data-i18n="quick-settings-subtitle">Quick Settings Master Hub</span>
-                    </div>
-                </div>
-                <button id="close-quick-settings-btn" type="button" onclick="window.QuickSettingsController?.close();" class="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer" aria-label="Đóng cài đặt">
-                    <i class="fas fa-times text-base"></i>
-                </button>
-            </div>
-
-            <!-- Segmented Navigation Tabs -->
-            <div class="flex items-center gap-1.5 p-1 bg-surface-high rounded-2xl border border-glass-border shrink-0 mb-4">
-                <button type="button" class="quick-tab-btn flex-1 py-2 px-3 rounded-xl text-xs font-bold text-slate-300 hover:text-white transition-all flex items-center justify-center gap-1.5 active" data-tab="appearance">
-                    <i class="fas fa-palette text-xs"></i> <span data-i18n="quick-tab-appearance">Giao diện</span>
-                </button>
-                <button type="button" class="quick-tab-btn flex-1 py-2 px-3 rounded-xl text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center justify-center gap-1.5" data-tab="voice">
-                    <i class="fas fa-microphone-lines text-xs"></i> <span data-i18n="quick-tab-voice">Giọng đọc</span>
-                </button>
-                <button type="button" class="quick-tab-btn flex-1 py-2 px-3 rounded-xl text-xs font-bold text-slate-400 hover:text-white transition-all flex items-center justify-center gap-1.5" data-tab="experience">
-                    <i class="fas fa-bolt text-xs"></i> <span data-i18n="quick-tab-experience">Tiện ích</span>
-                </button>
-            </div>
-
-            <!-- Tab Content Scrollable Area -->
-            <div class="flex-1 overflow-y-auto space-y-4 pr-1 hide-scrollbar" id="quick-tab-content">
-                
-                <!-- TAB 1: GIAO DIỆN & TYPOGRAPHY -->
-                <div id="quick-panel-appearance" class="quick-tab-panel space-y-4">
-                    <!-- Font chữ tiếng Việt -->
-                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                        <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
-                            <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-font text-primary"></i> <span data-i18n="quick-font-family">Font chữ Tiếng Việt</span></span>
-                            <span id="quick-font-family-badge" class="text-primary text-[11px] font-bold">Source Serif 4</span>
-                        </div>
-                        <div class="relative">
-                            <select id="quick-font-family-select"
-                                class="w-full bg-surface border border-glass-border rounded-xl p-3 text-xs sm:text-sm text-main appearance-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-all cursor-pointer font-medium shadow-sm">
-                                <option value="Source Serif 4">Source Serif 4 (mặc định)</option>
-                                <option value="Be Vietnam Pro">1. Be Vietnam Pro (Chuẩn Quốc Tế)</option>
-                                <option value="Playfair Display">2. Playfair Display (Serif Hoàng Gia)</option>
-                                <option value="Plus Jakarta Sans">3. Plus Jakarta Sans (Thanh Lịch Châu Âu)</option>
-                                <option value="Literata">4. Literata (Sách Chuẩn Google Books)</option>
-                                <option value="Lora">5. Lora (Văn Học Cổ Điển)</option>
-                                <option value="Merriweather">6. Merriweather (Serif Đậm Nét)</option>
-                                <option value="Montserrat">7. Montserrat (Hiện Đại Sang Trọng)</option>
-                                <option value="Inter">8. Inter (Tối Giản Tinh Tế)</option>
-                            </select>
-                            <i class="fas fa-chevron-down absolute right-3.5 top-1/2 -translate-y-1/2 text-primary/70 pointer-events-none text-xs"></i>
-                        </div>
-                        <p class="mt-2 text-[11px] text-slate-400 italic px-1" id="quick-font-sample-preview" style="font-family: 'Be Vietnam Pro', sans-serif;">
-                            "Trăm năm trong cõi người ta, chữ tài chữ mệnh khéo là ghét nhau."
-                        </p>
-                    </div>
-
-                    <!-- Kích thước chữ -->
-                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                        <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
-                            <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-text-height text-primary"></i> <span data-i18n="quick-font-size">Kích thước chữ</span></span>
-                            <span id="quick-font-size-val" class="text-primary font-mono text-sm">20px</span>
-                        </div>
-                        <input type="range" id="quick-font-size-range" min="12" max="42" step="1" value="20"
-                            class="w-full accent-primary h-1.5 cursor-pointer">
-                    </div>
-
-                    <!-- Màu chữ & Presets -->
-                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                        <div class="flex items-center justify-between text-xs font-bold px-1 mb-3">
-                            <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-palette text-primary"></i> <span data-i18n="quick-font-color">Màu sắc chữ đọc</span></span>
-                            <button id="quick-color-reset-btn" type="button" class="text-[10px] text-primary/80 hover:text-primary underline" data-i18n="quick-color-default">Mặc định Theme</button>
-                        </div>
-                        <div class="flex items-center gap-3">
-                            <input type="color" id="quick-font-color-picker" value="#CBD5E1" class="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0">
-                            <div class="flex items-center gap-2 flex-1 justify-end">
-                                <button type="button" class="quick-preset-color w-6 h-6 rounded-full border border-white/20 hover:scale-110 active:scale-95 transition-transform" style="background: #CBD5E1;" data-color="#CBD5E1" title="Slate Gray"></button>
-                                <button type="button" class="quick-preset-color w-6 h-6 rounded-full border border-white/20 hover:scale-110 active:scale-95 transition-transform" style="background: #FFE4B5;" data-color="#FFE4B5" title="Warm Amber"></button>
-                                <button type="button" class="quick-preset-color w-6 h-6 rounded-full border border-white/20 hover:scale-110 active:scale-95 transition-transform" style="background: #E8DDD0;" data-color="#E8DDD0" title="Vintage Paper"></button>
-                                <button type="button" class="quick-preset-color w-6 h-6 rounded-full border border-white/20 hover:scale-110 active:scale-95 transition-transform" style="background: #C8E0D0;" data-color="#C8E0D0" title="Mint Green"></button>
-                                <button type="button" class="quick-preset-color w-6 h-6 rounded-full border border-white/20 hover:scale-110 active:scale-95 transition-transform" style="background: #D4AF37;" data-color="#D4AF37" title="Imperial Gold"></button>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Theme -->
-                    <div class="p-4 rounded-md border border-glass-border">
-                        <div class="flex items-center justify-between text-xs font-semibold px-1 mb-3">
-                            <span class="text-muted" data-i18n="quick-theme-header">Màu giao diện</span>
-                            <span id="quick-theme-current-name" class="text-xs font-semibold">Slate</span>
-                        </div>
-                        <div class="grid grid-cols-2 gap-2" id="quick-theme-grid">
-                            <button type="button" class="quick-theme-btn p-2 rounded-md border border-glass-border flex items-center gap-2 text-left" data-theme="slate" aria-pressed="true">
-                                <span class="theme-dot" data-swatch="slate" aria-hidden="true"><span></span></span>
-                                <span class="quick-theme-label text-xs font-semibold truncate" data-i18n="theme-slate-name">Slate</span>
-                            </button>
-                            <button type="button" class="quick-theme-btn p-2 rounded-md border border-glass-border flex items-center gap-2 text-left" data-theme="slate-deep" aria-pressed="false">
-                                <span class="theme-dot" data-swatch="slate-deep" aria-hidden="true"><span></span></span>
-                                <span class="quick-theme-label text-xs font-semibold truncate" data-i18n="theme-slate-deep-name">Slate sâu</span>
-                            </button>
-                            <button type="button" class="quick-theme-btn p-2 rounded-md border border-glass-border flex items-center gap-2 text-left" data-theme="mist" aria-pressed="false">
-                                <span class="theme-dot" data-swatch="mist" aria-hidden="true"><span></span></span>
-                                <span class="quick-theme-label text-xs font-semibold truncate" data-i18n="theme-mist-name">Sương</span>
-                            </button>
-                            <button type="button" class="quick-theme-btn p-2 rounded-md border border-glass-border flex items-center gap-2 text-left" data-theme="sepia" aria-pressed="false">
-                                <span class="theme-dot" data-swatch="sepia" aria-hidden="true"><span></span></span>
-                                <span class="quick-theme-label text-xs font-semibold truncate" data-i18n="theme-sepia-name">Sepia</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- TAB 2: GIỌNG ĐỌC & ÂM THANH (TTS) -->
-                <div id="quick-panel-voice" class="quick-tab-panel space-y-4 hidden">
-                    <!-- Voice Select -->
-                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                        <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
-                            <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-microphone-lines text-primary"></i> <span data-i18n="quick-voice-header">Giọng đọc AI</span></span>
-                            <span id="quick-voice-badge" class="text-primary text-[11px] font-bold">Hoài My</span>
-                        </div>
-                        <div class="relative">
-                            <select id="quick-voice-select"
-                                class="w-full bg-surface border border-glass-border rounded-xl p-3 text-xs sm:text-sm text-main appearance-none focus:border-primary focus:ring-1 focus:ring-primary/40 transition-all cursor-pointer font-medium shadow-sm">
-                                <option value="vi-VN-HoaiMyNeural">Hoài My (Việt Nam - Nữ Truyền Cảm)</option>
-                                <option value="vi-VN-NamMinhNeural">Nam Minh (Việt Nam - Nam Trầm Ấm)</option>
-                                <option value="en-US-AriaNeural">Aria (USA - English Female)</option>
-                                <option value="en-US-GuyNeural">Guy (USA - English Male)</option>
-                            </select>
-                            <i class="fas fa-chevron-down absolute right-3.5 top-1/2 -translate-y-1/2 text-primary/70 pointer-events-none text-xs"></i>
-                        </div>
-                    </div>
-
-                    <!-- Tốc độ đọc (Speed) -->
-                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                        <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
-                            <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-gauge-high text-primary"></i> <span data-i18n="quick-speed-header">Tốc độ đọc (Playback Speed)</span></span>
-                            <span id="quick-speed-val" class="text-primary font-mono text-sm">1.0x</span>
-                        </div>
-                        <input type="range" id="quick-speed-range" min="0.5" max="2.5" step="0.1" value="1.0"
-                            class="w-full accent-primary h-1.5 cursor-pointer">
-                    </div>
-
-                    <!-- Cao độ Pitch -->
-                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                        <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
-                            <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-music text-primary"></i> <span data-i18n="quick-pitch-header">Cao độ giọng (Vocal Pitch)</span></span>
-                            <span id="quick-pitch-val" class="text-primary font-mono text-sm">+0Hz</span>
-                        </div>
-                        <input type="range" id="quick-pitch-range" min="-15" max="15" step="1" value="0"
-                            class="w-full accent-primary h-1.5 cursor-pointer">
-                    </div>
-
-                    <!-- Số luồng xử lý AI (Workers) -->
-                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5">
-                        <div class="flex items-center justify-between text-xs font-bold px-1 mb-2">
-                            <span class="text-slate-300 uppercase tracking-wider flex items-center gap-1.5"><i class="fas fa-microchip text-primary"></i> <span data-i18n="quick-workers-header">Luồng xử lý song song</span></span>
-                            <span id="quick-workers-val" class="text-primary font-mono text-sm">2 Luồng</span>
-                        </div>
-                        <input type="range" id="quick-workers-range" min="1" max="4" step="1" value="2"
-                            class="w-full accent-primary h-1.5 cursor-pointer">
-                    </div>
-                </div>
-
-                <!-- TAB 3: TIỆN ÍCH & TRẢI NGHIỆM (EXPERIENCE & UTILITIES) -->
-                <div id="quick-panel-experience" class="quick-tab-panel space-y-3 hidden">
-                    <!-- Lite Mode Switch -->
-                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
-                        <div class="pr-3">
-                            <div class="flex items-center gap-2 text-xs font-bold text-white mb-0.5">
-                                <i class="fas fa-bolt text-amber-400"></i> <span data-i18n="quick-lite-mode-title">Chế độ Siêu Tiết Kiệm (Lite Mode)</span>
-                            </div>
-                            <p class="text-[11px] text-slate-400" data-i18n="quick-lite-mode-desc">Tắt hiệu ứng mờ GPU, tối ưu pin và siêu mượt cho máy cấu hình yếu.</p>
-                        </div>
-                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
-                            <input type="checkbox" id="quick-lite-mode-toggle" class="sr-only peer">
-                            <div class="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                        </label>
-                    </div>
-
-                    <!-- Zen Mode Switch -->
-                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
-                        <div class="pr-3">
-                            <div class="flex items-center gap-2 text-xs font-bold text-white mb-0.5">
-                                <i class="fas fa-spa text-emerald-400"></i> <span data-i18n="quick-zen-mode-title">Chế độ Đọc Tập Trung (Zen Mode)</span>
-                            </div>
-                            <p class="text-[11px] text-slate-400" data-i18n="quick-zen-mode-desc">Ẩn các thanh công cụ thừa, mang lại không gian đọc thuần khiết.</p>
-                        </div>
-                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
-                            <input type="checkbox" id="quick-zen-mode-toggle" class="sr-only peer">
-                            <div class="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                        </label>
-                    </div>
-
-                    <!-- Screen WakeLock Switch -->
-                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
-                        <div class="pr-3">
-                            <div class="flex items-center gap-2 text-xs font-bold text-white mb-0.5">
-                                <i class="fas fa-sun text-yellow-400"></i> <span data-i18n="quick-wakelock-title">Giữ Màn Hình Luôn Sáng (WakeLock)</span>
-                            </div>
-                            <p class="text-[11px] text-slate-400" data-i18n="quick-wakelock-desc">Ngăn thiết bị tự động khóa hoặc tắt màn hình trong khi đang đọc.</p>
-                        </div>
-                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
-                            <input type="checkbox" id="quick-wakelock-toggle" class="sr-only peer">
-                            <div class="w-11 h-6 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
-                        </label>
-                    </div>
-
-                    <!-- UI Language Toggle -->
-                    <div class="bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
-                        <div class="pr-3">
-                            <div class="flex items-center gap-2 text-xs font-bold text-white mb-0.5">
-                                <i class="fas fa-language text-sky-400"></i> <span data-i18n="quick-lang-title">Ngôn ngữ Giao diện (Language)</span>
-                            </div>
-                            <p class="text-[11px] text-slate-400" data-i18n="quick-lang-desc">Chuyển đổi giữa Tiếng Việt và English.</p>
-                        </div>
-                        <div class="flex items-center gap-1 bg-black/40 p-1 rounded-xl border border-white/10 shrink-0">
-                            <button type="button" id="quick-lang-vi-btn" class="px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all bg-primary text-black">VI</button>
-                            <button type="button" id="quick-lang-en-btn" class="px-2.5 py-1 text-[11px] font-bold rounded-lg transition-all text-slate-400 hover:text-white">EN</button>
-                        </div>
-                    </div>
-                </div>
-
-            </div>
-
-            <!-- Modal Footer -->
-            <div class="mt-4 pt-3 border-t border-white/10 flex items-center justify-between shrink-0">
-                <span class="text-[10px] text-slate-400 flex items-center gap-1">
-                    <i class="fas fa-check-circle text-emerald-400 text-xs"></i> <span data-i18n="quick-auto-saved">Tự động lưu 100% vào thiết bị</span>
-                </span>
-                <button id="quick-settings-done-btn" type="button" onclick="window.QuickSettingsController?.close();" class="btn-primary px-6 py-2 text-xs rounded-xl font-black cursor-pointer shadow-lg shadow-primary/20 hover:scale-105 active:scale-95 transition-all" data-i18n="quick-done-btn">
-                    Hoàn tất
-                </button>
             </div>
         </div>
     </div>

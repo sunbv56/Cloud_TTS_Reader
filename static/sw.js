@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cloud-tts-v16-console-library';
+const CACHE_NAME = 'cloud-tts-v17-console-player';
 const ASSETS = [
     '/',
     '/static/index.html',
@@ -8,6 +8,7 @@ const ASSETS = [
     '/static/js/main.js',
     '/static/js/modules/i18n.js',
     '/static/js/modules/ui-interactions.js',
+    '/static/js/modules/console-player.js',
     '/static/js/modules/account-menu.js',
     '/static/js/modules/account-sessions.js',
     '/static/js/mini-player-widget.js',

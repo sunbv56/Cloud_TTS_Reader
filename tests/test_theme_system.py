@@ -56,7 +56,6 @@ def test_themes_in_index_html():
     content = _read("static", "index.html")
     for theme_id in EXPECTED_THEMES:
         assert f'class="theme-card' in content and f'data-theme="{theme_id}"' in content, f"Theme card for '{theme_id}' missing"
-        assert f'class="quick-theme-btn' in content
     assert "reader-theme" in content, "reader-theme not found in index.html"
     assert "document.documentElement.setAttribute('data-theme', savedTheme)" in content, "Anti-FOUC theme loader missing"
 

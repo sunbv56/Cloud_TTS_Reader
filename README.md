@@ -84,7 +84,7 @@ Cloud_TTS_Reader/
 ├── main.py                     # Backward-compatible facade & entrypoint
 ├── storage_adapter.py          # Unified B2 / S3 / Firebase Storage adapter
 ├── static/                     # Modern Vanilla Frontend
-│   ├── css/                    # Modular Style Sheets (themes, ui-extras, mini-player)
+│   ├── css/                    # Style sheets (console design system, mini-player)
 │   ├── js/                     # Frontend ES Modules (UI interactions, i18n, stats)
 │   ├── app.js                  # Frontend Application Master Controller
 │   ├── index.html              # Reader SPA HTML5 Entrypoint

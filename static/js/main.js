@@ -3,14 +3,17 @@
  */
 import { initUIInteractions } from './modules/ui-interactions.js';
 import { initI18n } from './modules/i18n.js';
+import { initConsolePlayer } from './modules/console-player.js';
 
-// Initialize DOM helpers, theme controls, and i18n
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        initUIInteractions();
-        initI18n();
-    });
-} else {
+function boot() {
     initUIInteractions();
+    initConsolePlayer();
     initI18n();
+}
+
+// Initialize DOM helpers, theme controls, console wiring and i18n
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+} else {
+    boot();
 }
