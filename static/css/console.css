@@ -300,6 +300,8 @@
     }
     .btn--primary:hover { background: var(--color-accent); opacity: .9; }
     .btn--danger { color: var(--color-danger); }
+    .btn--destructive { background: var(--color-danger); border-color: var(--color-danger); color: var(--color-paper); }
+    .btn--destructive:hover { background: var(--color-danger); opacity: .9; }
     .btn--block { width: 100%; }
 
     .icon-btn {
@@ -348,6 +350,12 @@
     /* Expand the hit area to 44px without growing the chip. */
     .chip::before { content: ""; position: absolute; inset: -7px -2px; }
     .chip:hover { background: var(--color-surface); }
+    .chip[hidden] { display: none; }
+    .chip--warn { border-color: var(--color-warn); color: var(--color-warn); font-family: var(--font-ui); font-weight: 600; }
+    /* Phones: "Phát tại đây" takes the sleep chip's place while another device holds playback. */
+    @media (max-width: 559.98px) {
+        .console[data-conn-busy] #sleep-chip { display: none; }
+    }
     .chip[data-on="true"],
     .chip[aria-pressed="true"] { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
 
@@ -594,7 +602,9 @@
         -webkit-user-select: none;
         -webkit-touch-callout: none;
     }
-    .wordmark:hover { background: var(--color-surface); }
+    @media (hover: hover) {
+        .wordmark:hover { background: var(--color-surface); }
+    }
     .hdr-keys {
         display: none;
         align-items: center;
@@ -849,6 +859,12 @@
         border-bottom: 1px solid var(--color-line);
     }
     .reader-top__titles { flex: 1; min-width: 0; padding: var(--space-1) var(--space-2) var(--space-1) 0; }
+    /* Phones/tablets: a back affordance to the shelf (desktop keeps the library column beside the reader). */
+    .reader-top__back { flex: none; margin-left: calc(-1 * var(--space-3)); color: var(--color-muted); }
+    .reader-top__back:hover { color: var(--color-text); }
+    @media (min-width: 1024px) {
+        .reader-top__back { display: none; }
+    }
     .reader-top__line { display: flex; align-items: center; gap: 2px; min-width: 0; }
     .reader-title {
         min-width: 0;
@@ -958,7 +974,7 @@
     .reader-figure img {
         display: block;
         max-width: 100%;
-        max-height: 20rem;
+        max-height: min(20rem, 40vh);
         height: auto;
         object-fit: contain;
         border: 1px solid var(--color-line);
@@ -1500,6 +1516,21 @@
     .console-play__pause,
     .console-play[data-state="playing"] .console-play__play { display: none; }
     .console-play[data-state="playing"] .console-play__pause { display: block; }
+    /* Loading: a ring replaces the glyph until the first sound; the turn stops by itself. */
+    .console-play[data-state="loading"] { position: relative; cursor: progress; }
+    .console-play[data-state="loading"] .ic { display: none; }
+    .console-play[data-state="loading"]::before {
+        content: "";
+        width: 40%;
+        aspect-ratio: 1;
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+    }
+    @media (prefers-reduced-motion: no-preference) {
+        .console-play[data-state="loading"]::before { animation: cc-spin .9s linear 12; }
+    }
+    @keyframes cc-spin { to { transform: rotate(1turn); } }
     .console-play:hover { opacity: .9; }
     .console-play:active { transform: scale(.96); }
     .console-play:disabled { background: var(--color-surface); color: var(--color-muted); cursor: not-allowed; transform: none; }
@@ -2159,6 +2190,13 @@
             transform: none;
         }
     }
+    /* Dialogs (Thêm truyện, image manager, confirm…) are bottom sheets on phones and
+       centred cards on wider screens; either way the toast goes to the top edge. */
+    body:has(.modal:not(.hidden)) .toast-region {
+        top: calc(env(safe-area-inset-top) + var(--space-2));
+        bottom: auto;
+        transform: none;
+    }
     .toast-hud-glass {
         position: relative;
         overflow: hidden;
@@ -2177,7 +2215,23 @@
     .toast-hud-glass i { color: var(--toast-tone, var(--color-accent)) !important; }
     .toast-hud-glass .text-white,
     .toast-hud-glass .text-slate-200 { color: var(--color-text) !important; }
-    .toast-hud-glass button { min-width: 32px; min-height: 32px; color: var(--color-muted); }
+    .toast-hud-glass > button { position: relative; min-width: 32px; min-height: 32px; color: var(--color-muted); }
+    /* 32px visual, 44px hit area. */
+    .toast-hud-glass > button::before { content: ""; position: absolute; inset: -6px; }
+    .toast-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-2); }
+    .toast-hud-glass .toast-action {
+        min-height: var(--tap);
+        padding: 0 var(--space-3);
+        border: 1px solid var(--toast-tone, var(--color-accent));
+        border-radius: var(--radius-sm);
+        background: transparent;
+        color: var(--color-text);
+        font: 600 var(--text-sm)/1 var(--font-ui);
+        white-space: nowrap;
+        cursor: pointer;
+    }
+    .toast-hud-glass .toast-action:hover { background: var(--color-surface); }
+    .toast-hud-glass .toast-action:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
     .toast-hud-glass button i { color: var(--color-muted) !important; }
     .toast-kind-success { --toast-tone: var(--color-ok); }
     .toast-kind-error { --toast-tone: var(--color-danger); }
@@ -2188,7 +2242,7 @@
         height: 100%;
         background: var(--toast-tone, var(--color-accent));
         transform-origin: left;
-        animation: cc-toast 4.8s linear forwards;
+        animation: cc-toast var(--toast-duration, 4.8s) linear forwards;
     }
     @keyframes cc-toast { to { transform: scaleX(0); } }
 
@@ -2265,7 +2319,8 @@
         background: var(--color-line);
         overflow: hidden;
     }
-    .loading-card__fill { height: 100%; width: 0; background: var(--color-accent); transition: width var(--dur) var(--ease-out); }
+    /* No width transition: the bar must agree with the percentage printed under it. */
+    .loading-card__fill { height: 100%; width: 0; background: var(--color-accent); }
     .loading-card__meta { display: flex; justify-content: space-between; gap: var(--space-2); margin-top: var(--space-2); font: 500 var(--text-2xs)/1 var(--font-mono); color: var(--color-muted); }
 
     /* Busy buttons (fallback for the removed GSAP layer) */
@@ -2661,13 +2716,14 @@
         overflow-wrap: anywhere;
     }
     .resume__meta { font-size: var(--text-xs); color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .resume__btn { width: var(--tap); padding: 0; border-radius: 50%; }
-    .resume__btn > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+    /* Phones: the labelled button sits under the title, beside the cover. */
+    .resume { grid-template-columns: auto minmax(0, 1fr); row-gap: var(--space-2); }
+    .resume > .cover { grid-row: span 2; align-self: start; }
+    .resume__btn { justify-self: start; padding: 0 var(--space-4); }
     @media (min-width: 560px) {
         .cover--resume { width: 64px; height: 90px; }
-        .resume { padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3); gap: var(--space-4); }
-        .resume__btn { width: auto; padding: 0 var(--space-4); border-radius: var(--radius-sm); }
-        .resume__btn > span { position: static; width: auto; height: auto; overflow: visible; clip: auto; }
+        .resume { grid-template-columns: auto minmax(0, 1fr) auto; padding: var(--space-3) var(--space-4) var(--space-3) var(--space-3); gap: var(--space-4); }
+        .resume > .cover { grid-row: auto; align-self: center; }
     }
     .bar { height: 4px; margin-top: var(--space-2); border-radius: 2px; background: var(--color-line); overflow: hidden; }
     .bar__fill { display: block; width: 0; height: 100%; background: var(--color-accent); }
@@ -2840,6 +2896,52 @@
     .import-drop > .ic { width: 28px; height: 28px; margin-bottom: var(--space-1); color: var(--color-accent); }
     .import-drop__title { font: 600 var(--text-lg)/1.3 var(--font-ui); }
     .import-drop__hint { font-size: var(--text-xs); color: var(--color-muted); }
+    /* Touch screens cannot drag files in: a plain full-width primary button instead of a drop zone. */
+    @media (pointer: coarse) {
+        .import-drop {
+            display: grid;
+            grid-template-columns: auto minmax(0, 1fr);
+            column-gap: var(--space-3);
+            align-items: center;
+            padding: var(--space-3) var(--space-4);
+            border: 0;
+            background: var(--color-accent);
+            color: var(--color-on-accent);
+            text-align: left;
+        }
+        .import-drop:hover { background: var(--color-accent); }
+        .import-drop > .ic { grid-row: span 2; margin: 0; width: 22px; height: 22px; color: currentColor; }
+        .import-drop__hint { color: currentColor; opacity: .85; }
+        .import-drop__drag { display: none; }
+    }
+    .file-pick__path { cursor: pointer; }
+    .import-thumbs { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: var(--space-2) 0 0; padding: 0; list-style: none; }
+    .import-thumbs[hidden] { display: none; }
+    .import-thumb {
+        position: relative;
+        width: 56px;
+        height: 78px;
+        padding: 0;
+        border: 1px solid var(--color-line);
+        border-radius: var(--radius-sm);
+        background: var(--color-surface);
+        overflow: hidden;
+        cursor: pointer;
+    }
+    .import-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .import-thumb[aria-pressed="true"] { border: 2px solid var(--color-accent); cursor: default; }
+    .import-thumb:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+    .import-thumb__badge {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 2px 0;
+        background: var(--color-accent);
+        color: var(--color-on-accent);
+        font: 600 var(--text-2xs)/1.2 var(--font-ui);
+        text-align: center;
+    }
     .import-option {
         display: flex;
         align-items: center;
