@@ -429,6 +429,7 @@ export const SettingsSheet = {
             this.sync();
             this.sheet.hidden = false;
             if (this.scrim) this.scrim.hidden = false;
+            document.documentElement.toggleAttribute('data-settings-open', true);
             document.addEventListener('keydown', this.onKey, true);
             window.refreshInsights?.();
         }
@@ -442,6 +443,7 @@ export const SettingsSheet = {
         if (!this.isOpen()) return;
         this.sheet.hidden = true;
         if (this.scrim) this.scrim.hidden = true;
+        document.documentElement.removeAttribute('data-settings-open');
         document.removeEventListener('keydown', this.onKey, true);
         if (this.returnFocus?.isConnected) this.returnFocus.focus({ preventScroll: true });
         this.returnFocus = null;
@@ -461,7 +463,9 @@ export const SettingsSheet = {
         const target = document.getElementById(id);
         const body = document.getElementById('settings-body');
         if (!target || !body) return;
-        const top = target.offsetTop - body.offsetTop - 4;
+        // The first group sits under the local-settings note; start at the top so the note stays readable.
+        const first = body.querySelector('.set-group') === target;
+        const top = first ? 0 : target.offsetTop - body.offsetTop - 4;
         body.scrollTo({ top: Math.max(0, top), behavior: instant ? 'auto' : 'smooth' });
     },
 
