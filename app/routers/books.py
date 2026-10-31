@@ -68,6 +68,7 @@ from app.services.book_service import (
     _migrate_legacy_story,
     _active_migrations,
     _append_prepared_chapters,
+    write_toc_cache,
 )
 
 logger = logging.getLogger("cloud_tts_reader")
@@ -507,6 +508,27 @@ async def get_story_toc(request: Request, userId: str, storyId: str):
     toc_path = toc_blob_path(userId, storyId)
     toc_blob = bucket.blob(toc_path)
 
+    meta = None
+    try:
+        story_doc = await _run_firestore(
+            "firestore.get_story_for_toc",
+            db_admin.collection("users").document(userId).collection("stories").document(storyId).get,
+            request_id=_request_id(request),
+        )
+        if not story_doc.exists:
+            return JSONResponse({"error": "Story not found"}, status_code=404)
+        meta = story_doc.to_dict() or {}
+    except Exception as exc:
+        logger.warning("toc_metadata_read_failed storyId=%s error=%s", storyId, exc)
+
+    # toc.json from before a chapter edit is stale; the metadata counts are the source of truth.
+    expected_counts = None
+    if meta:
+        expected_counts = (
+            meta.get("chapterCounts") if meta.get("isSegmented")
+            else [item.get("count", 0) for item in meta.get("chaptersSummary") or []]
+        )
+
     # 1. Fast path: If pre-generated toc.json exists, return it directly
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
     tmp_path = tmp.name
@@ -520,7 +542,9 @@ async def get_story_toc(request: Request, userId: str, storyId: str):
             toc_data = await _run_blocking(
                 "storage.parse_toc", _load_json_file, tmp_path, request_id=_request_id(request)
             )
-            if isinstance(toc_data, dict) and "titles" in toc_data:
+            if isinstance(toc_data, dict) and "titles" in toc_data and (
+                not expected_counts or toc_data.get("counts") == expected_counts
+            ):
                 return JSONResponse(toc_data)
         except Exception as exc:
             if not is_storage_not_found(exc):
@@ -529,17 +553,10 @@ async def get_story_toc(request: Request, userId: str, storyId: str):
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-    # 2. Fallback path for legacy books: generate lightweight TOC from Firestore metadata or segments
+    # 2. Fallback path for legacy or stale books: rebuild the TOC from Firestore metadata or segments
+    if meta is None:
+        return JSONResponse({"error": "Failed to load TOC", "retryable": True}, status_code=503)
     try:
-        story_doc = await _run_firestore(
-            "firestore.get_story_for_toc",
-            db_admin.collection("users").document(userId).collection("stories").document(storyId).get,
-            request_id=_request_id(request),
-        )
-        if not story_doc.exists:
-            return JSONResponse({"error": "Story not found"}, status_code=404)
-
-        meta = story_doc.to_dict() or {}
         titles = []
         counts = []
 
@@ -1120,6 +1137,10 @@ async def append_chapter(
                     "updatedAt": firestore.SERVER_TIMESTAMP
                 }, merge=True)
 
+        if story_id:
+            toc_counts = chapter_counts if is_segmented else [item["count"] for item in chapters_summary]
+            write_toc_cache(userId, story_id, chapters, toc_counts)
+
         chapters_metadata = []
         for chap in chapters:
             sentences = split_text_into_chunks(chap['content'])
@@ -1253,6 +1274,9 @@ async def delete_chapters(
                 "isSegmented": False,
                 "updatedAt": firestore.SERVER_TIMESTAMP
             }, merge=True)
+
+        toc_counts = chapter_counts if is_segmented else [item["count"] for item in chapters_summary]
+        write_toc_cache(userId, bookId, chapters, toc_counts)
 
         chapters_metadata = []
         for chap in chapters:
@@ -1429,6 +1453,9 @@ async def update_chapter(
                         "isSegmented": False,
                         "updatedAt": firestore.SERVER_TIMESTAMP
                     }, merge=True)
+
+                toc_counts = chapter_counts if is_segmented else [item["count"] for item in chapters_summary]
+                write_toc_cache(userId, bookId, chapters, toc_counts)
 
                 updated_lines = newContent.split('\n')
                 new_title = "Chương không tên"

@@ -4187,6 +4187,7 @@ async function confirmMergeChapters() {
         }
 
         const { bookId, filename } = mergeSession;
+        STATE.libraryTocCache.delete(bookId);
         closeMergeModal();
 
         // Fetch fresh metadata from backend to sync total chunks and state
@@ -5561,6 +5562,7 @@ async function deleteSelectedChapters() {
         }
 
         const data = await response.json();
+        STATE.libraryTocCache.delete(STATE.currentBookId);
 
         // Calculate total chunks from metadata chapters
         const newTotalChunks = data.chapters.reduce((sum, ch) => sum + (ch.count || 0), 0);
@@ -7592,6 +7594,7 @@ async function saveChapterEdit() {
 
         const data = await response.json();
         if (response.ok) {
+            STATE.libraryTocCache.delete(STATE.currentBookId);
             // Update local state
             const chapter = STATE.currentBook.chapters[editingChapterIndex];
             if (chapter) {
