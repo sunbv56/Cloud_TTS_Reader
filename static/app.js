@@ -109,6 +109,9 @@ let STATE = {
     sleepTimerEnd: 0,
     sleepTimerMode: null,
     sleepTimerTarget: null,
+    // Set when the sleep timer or idle timeout closed the socket on purpose:
+    // background prefetches must not reopen it until the user plays again.
+    socketParked: false,
     lastPlaybackTime: 0,
     lastPlaybackTick: 0,
     stallCount: 0,
@@ -675,6 +678,7 @@ function setPlayIcon(isPlaying) {
     const label = isPlaying ? tr('pause-key', 'Tạm dừng (Space)') : tr('play-key', 'Phát (Space)');
     btn.setAttribute('aria-label', label);
     btn.title = label;
+    document.querySelector('#pocket-play-icon use')?.setAttribute('href', isPlaying ? '#i-pause' : '#i-play');
 }
 
 function setAudioWaveState(isPlaying) {
@@ -813,7 +817,7 @@ function toggleDiscoveryMode(isActive, options = {}) {
             // Discovery uses the same player as a compact dock.
             toggleMinimize(true);
             playerInfoLayer?.setAttribute('tabindex', '0');
-            playerInfoLayer?.setAttribute('aria-label', 'Bấm để quay lại trình đọc');
+            playerInfoLayer?.setAttribute('aria-label', tr('dock-return-reader', 'Bấm để quay lại trình đọc'));
         }
 
         // PiP belongs to Reader. Close its floating surface before the player
@@ -1944,6 +1948,9 @@ window.addEventListener('uilanguagechange', () => {
         }
     }
     setPlayIcon(!audio.paused);
+    updatePipUI();
+    const dockRow = document.getElementById('player-info-layer');
+    if (dockRow?.hasAttribute('aria-label')) dockRow.setAttribute('aria-label', tr('dock-return-reader', 'Bấm để quay lại trình đọc'));
 });
 
 
@@ -2616,6 +2623,10 @@ function setStatusKeepingStopReason(text) {
     indicator.innerText = text;
 }
 
+function idleStatus() {
+    return STATE.isPlaying && !audio.paused ? "Streaming" : "Ready";
+}
+
 function closeWebSocketIntentionally() {
     if (STATE.prefetchTimeout) {
         clearTimeout(STATE.prefetchTimeout);
@@ -2660,12 +2671,15 @@ async function initWebSocket() {
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
     const wsUrl = `${protocol}//${window.location.host}/ws`;
     STATE.ws = new WebSocket(wsUrl);
+    // ArrayBuffer frames are handled synchronously, so a sentence's last part
+    // is stored before its PREFETCH_DONE arrives (Blob.arrayBuffer() raced it).
+    STATE.ws.binaryType = 'arraybuffer';
     const socket = STATE.ws;
     STATE.wsConnecting = false;
 
     STATE.ws.onopen = () => {
         console.log("Connected to WebSocket");
-        document.getElementById('status-indicator').innerText = "Ready";
+        document.getElementById('status-indicator').innerText = idleStatus();
         socket.send(JSON.stringify({ type: "AUTH", token }));
 
         // --- FIXED: Clear existing heartbeat to avoid PING interval leaks ---
@@ -2816,7 +2830,7 @@ async function initWebSocket() {
                         if (typeof dispatchDownloadQueue === 'function') dispatchDownloadQueue();
                     }
                 } else {
-                    document.getElementById('status-indicator').innerText = "Ready";
+                    setStatusKeepingStopReason(idleStatus());
                 }
 
                 // Update UI using buffer health logic
@@ -2831,7 +2845,7 @@ async function initWebSocket() {
                 return;
             }
 
-            const arrayBuffer = await event.data.arrayBuffer();
+            const arrayBuffer = event.data instanceof ArrayBuffer ? event.data : await event.data.arrayBuffer();
 
             // --- Download Mode: route to download buffer ---
             if (STATE.isDownloading) {
@@ -4869,7 +4883,7 @@ async function fetchChapterSentences(index, expectedLoadGeneration = STATE.loadG
     formData.append('filename', expectedFilename);
     formData.append('chapterIndex', index);
 
-    document.getElementById('status-indicator').innerText = "Loading Chapter...";
+    setStatusKeepingStopReason("Loading Chapter...");
 
     try {
         const response = await authFetch('/api/get-chapter-sentences', {
@@ -4881,7 +4895,7 @@ async function fetchChapterSentences(index, expectedLoadGeneration = STATE.loadG
         if (data.sentences) {
             STATE.currentBook.chapters[index].sentences = data.sentences;
             STATE.currentBook.chapters[index].count = data.sentences.length; // Ensure count is correct
-            document.getElementById('status-indicator').innerText = "Ready";
+            setStatusKeepingStopReason(idleStatus());
         } else {
             throw new Error(data.error || "Failed to load chapter content.");
         }
@@ -5698,6 +5712,7 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
     if (STATE.prefetchTimeout) clearTimeout(STATE.prefetchTimeout);
 
     const runPrefetch = async () => {
+        if (STATE.socketParked) return;
         if (count === null) {
             count = document.visibilityState === 'hidden'
                 ? BACKGROUND_PREFETCH_CHUNKS
@@ -5810,6 +5825,7 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
 
 async function playFromSentence(index, expectedLoadGeneration = STATE.loadGeneration) {
     if (!STATE.currentBook) return;
+    STATE.socketParked = false;
     const expectedBookId = STATE.currentBookId;
     const isCurrentPlayback = () => (
         expectedLoadGeneration === STATE.loadGeneration &&
@@ -5896,10 +5912,10 @@ async function playFromSentence(index, expectedLoadGeneration = STATE.loadGenera
         if (STATE.sessionId !== currentSessionId || !isCurrentPlayback()) return; // User jumped or loaded another book
         await new Promise(r => setTimeout(r, 100));
         attempts++;
-        if (attempts === 50) document.getElementById('status-indicator').innerText = "Đang chờ máy chủ TTS...";
+        if (attempts === 50) document.getElementById('status-indicator').innerText = tr('status-tts-wait', 'Đang chờ máy chủ TTS…');
     }
     if (STATE.chunkTimings.length === 0 && STATE.sessionId === currentSessionId && isCurrentPlayback()) {
-        document.getElementById('status-indicator').innerText = "Máy chủ TTS không phản hồi — bấm Play để thử lại";
+        document.getElementById('status-indicator').innerText = tr('status-tts-timeout', 'TTS không đáp · bấm Play');
     }
 
     if (STATE.chunkTimings.length > 0 && STATE.sessionId === currentSessionId && isCurrentPlayback()) {
@@ -5910,7 +5926,7 @@ async function playFromSentence(index, expectedLoadGeneration = STATE.loadGenera
             // autoplay. The old code marked STATE.isPlaying=true anyway,
             // which made inactivity handling save the initial sentence.
             STATE.isPlaying = false;
-            document.getElementById('status-indicator').innerText = 'Bấm Play để bắt đầu nghe';
+            document.getElementById('status-indicator').innerText = tr('status-autoplay-blocked', 'Bấm Play để nghe');
             console.warn("Auto-play blocked; waiting for user gesture:", err);
             return;
         }
@@ -6004,6 +6020,7 @@ async function togglePlayback() {
     if (!STATE.currentBook) return;
 
     if (audio.paused) {
+        STATE.socketParked = false;
         document.getElementById('status-indicator').innerText = "Connecting...";
         if (!(await waitForWebSocket())) {
             document.getElementById('status-indicator').innerText = "Connection failed";
@@ -6023,6 +6040,7 @@ playBtn.onclick = () => togglePlayback();
 
 
 audio.onplay = async () => {
+    STATE.socketParked = false;
     STATE.isTransitioning = false;
     STATE.isPlaying = true;
     STATE.pauseTimeoutHandled = false;
@@ -6750,6 +6768,8 @@ function updatePipUI() {
 
     if (!STATE.currentBook) {
         [prevChapterBtn, nextChapterBtn, prevChunkBtn, nextChunkBtn].forEach(btn => { btn.disabled = true; });
+        const emptySentence = document.getElementById('player-sentence');
+        if (emptySentence) emptySentence.innerText = tr('player-no-sentence', 'Chưa có câu đang đọc');
         return;
     }
 
@@ -6767,7 +6787,7 @@ function updatePipUI() {
     if (sentenceEl) {
         const sentence = chapter.sentences?.[currentIndex];
         const text = typeof sentence === 'string' ? sentence : (sentence?.text || '');
-        sentenceEl.innerText = text || 'Chưa có câu đang đọc';
+        sentenceEl.innerText = text || tr('player-no-sentence', 'Chưa có câu đang đọc');
         sentenceEl.title = text;
     }
 }
@@ -7143,6 +7163,7 @@ function expireSleepTimer() {
 
     // Action: Disconnect WebSocket to stop backend workers
     closeWebSocketIntentionally();
+    STATE.socketParked = true;
 
     // Action: Increment Session ID to invalidate any pending work
     STATE.sessionId++;
@@ -7314,6 +7335,7 @@ async function handlePauseTimeout() {
 
     // 2. [TASK 3] Disconnect WebSocket ONLY (Preserve Buffer & Cache)
     closeWebSocketIntentionally();
+    STATE.socketParked = true;
 
     STATE.isPlaying = false;
     setPlayIcon(false);
@@ -7350,7 +7372,7 @@ async function handlePlaybackStall() {
         } else {
             console.warn("[Stall] Waiting for TTS, skipping reset");
         }
-        document.getElementById('status-indicator').innerText = "Đang chờ máy chủ TTS...";
+        document.getElementById('status-indicator').innerText = tr('status-tts-wait', 'Đang chờ máy chủ TTS…');
         return;
     }
     STATE._stallWaitCount = 0;

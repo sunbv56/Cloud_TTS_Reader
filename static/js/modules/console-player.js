@@ -108,6 +108,12 @@ function setStepper(open, { restoreFocus = false } = {}) {
     stepperOpen = open;
     stepper.hidden = !open;
     $('speak-speed-chip')?.setAttribute('aria-expanded', String(open));
+    // Toasts share the bottom-right corner with the stepper; lift them clear while it is open.
+    const toasts = $('app-toast-region');
+    if (toasts) {
+        toasts.style.setProperty('--toast-lift', open ? `${stepper.offsetHeight}px` : '0px');
+        toasts.classList.toggle('is-lifted', open);
+    }
     if (open) {
         paintSpeed();
         // Sit above the chip, kept inside the console row.
@@ -342,7 +348,7 @@ function statusTone(text) {
     const s = (text || '').trim();
     if (!s || /^(Ready|Streaming|Paused|System Ready|Changes saved!|Đã xóa!)$/i.test(s)) return 'quiet';
     if (/^(Lỗi|Error|Config Error)|RAM\/ROM|Chưa lưu/i.test(s)) return 'error';
-    if (/^Session Expired|^Sleep Timer|Disconnected|failed|không phản hồi|Bấm Play|Ngoại tuyến|^Offline/i.test(s)) return 'warn';
+    if (/^Session Expired|^Sleep Timer|Disconnected|failed|không đáp|No TTS reply|Bấm Play|Press Play|Ngoại tuyến|^Offline/i.test(s)) return 'warn';
     return 'busy';
 }
 
@@ -683,6 +689,8 @@ function initPanel() {
 
     $('cpanel-pocket')?.addEventListener('click', () => {
         closePanel({ restoreFocus: false });
+        // Pocket returns focus to whatever had it; the panel is hidden now, so hand it the panel button.
+        $('console-panel-btn')?.focus({ preventScroll: true });
         (bridge()?.applyLiteMode || window.applyLiteMode)?.(true);
     });
     $('cpanel-advanced')?.addEventListener('click', () => {
