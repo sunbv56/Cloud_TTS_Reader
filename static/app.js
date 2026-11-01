@@ -1,13 +1,14 @@
 // Firebase Modules
-import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
-import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-auth.js";
-import { initializeFirestore, getFirestore, doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
+import { initializeFirestore, getFirestore, waitForPendingWrites, terminate, doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { compressImageForStorage, IMAGE_MAX_BYTES } from "./js/image-manager.js";
 import { toggleSidebar } from "./js/modules/ui-interactions.js";
+import { AccountSessions } from "./js/modules/account-sessions.js";
+import { createAccountMenu } from "./js/modules/account-menu.js";
 
-// Firebase placeholders (Initialized via API)
-let app, auth, db, provider;
-let authListenerBound = false;
+// Firebase placeholders (Initialized via API); swapped on account switch
+let app, auth, db;
+let accountSessions = null;
+let accountMenu = null;
 
 // Keep enough compressed audio for background playback without dispatching
 // hundreds of TTS jobs at once. The old 150/500-chunk policy caused large
@@ -331,6 +332,9 @@ const STATS_MANAGER = {
     _lastActiveTime: 0,
     _syncTimer: null,
     _saveChain: Promise.resolve(),
+    // Stats are only written back for the account they were loaded from, so
+    // unloaded zeros never overwrite a real streak.
+    _loadedUid: null,
 
     init() {
         this._lastActiveTime = Date.now();
@@ -343,7 +347,7 @@ const STATS_MANAGER = {
         const deltaMs = now - this._lastActiveTime;
         this._lastActiveTime = now;
 
-        if (!STATE.isPlaying || !STATE.user) return;
+        if (!STATE.isPlaying || !STATE.user || this._loadedUid !== STATE.user.uid) return;
 
         // Add to local state
         STATE.stats.totalTime += Math.floor(deltaMs / 1000);
@@ -392,12 +396,13 @@ const STATS_MANAGER = {
     },
 
     async syncToFirestore(force = false) {
-        if (!STATE.user || (STATE.strictSyncMode && !force)) return;
+        if (!STATE.user || this._loadedUid !== STATE.user.uid || (STATE.strictSyncMode && !force)) return false;
         const userId = STATE.user.uid;
+        const firestore = db;
         const statsSnapshot = { ...STATE.stats };
         const write = async () => {
             try {
-                const statsRef = doc(db, 'users', userId, 'stats', 'reading');
+                const statsRef = doc(firestore, 'users', userId, 'stats', 'reading');
                 await setDoc(statsRef, statsSnapshot, { merge: true });
                 return true;
             } catch (err) {
@@ -415,12 +420,15 @@ const STATS_MANAGER = {
 
     async load() {
         if (!STATE.user) return;
+        const uid = STATE.user.uid;
         try {
-            const statsRef = doc(db, 'users', STATE.user.uid, 'stats', 'reading');
+            const statsRef = doc(db, 'users', uid, 'stats', 'reading');
             const snap = await getDoc(statsRef);
+            if (STATE.user?.uid !== uid) return;
             if (snap.exists()) {
                 STATE.stats = { ...STATE.stats, ...snap.data() };
             }
+            this._loadedUid = uid;
             this.updateUI();
         } catch (err) {
             console.warn('[Stats] Load failed:', err);
@@ -440,79 +448,123 @@ async function startFirebase() {
             return;
         }
 
-        const existingApps = getApps();
-        if (existingApps.length > 0) {
-            app = getApp();
-        } else {
-            app = initializeApp(firebaseConfig);
-        }
-
-        if (!auth) auth = getAuth(app);
-        if (!db) {
-            try {
-                db = initializeFirestore(app, {
-                    experimentalForceLongPolling: true,
-                    useFetchStreams: false,
-                });
-            } catch (e) {
-                db = getFirestore(app);
-            }
-        }
-        if (!provider) provider = new GoogleAuthProvider();
-
-        // Bind Auth Change
-        if (!authListenerBound) {
-            authListenerBound = true;
-            onAuthStateChanged(auth, async (user) => {
-            STATE.user = user;
-            const authInfo = document.getElementById('auth-info');
-            const authBtn = document.getElementById('auth-btn');
-            if (user) {
-                authInfo.innerHTML = `<img src="${user.photoURL}" class="w-6 h-6 rounded-full"> ${user.displayName}`;
-                authBtn.innerHTML = '<i class="fas fa-sign-out-alt"></i>';
-                authBtn.onclick = () => {
-                    signOut(auth).catch(err => {
-                        console.error('Sign out error:', err);
-                        APP_STATUS.error('Đăng xuất thất bại: ' + (err.message || err));
-                    });
-                };
-
-                // Fetch recent books from Firestore
-                await refreshLibrary();
-                initWebSocket();
-            } else {
-                closeWebSocketIntentionally();
-                authInfo.innerHTML = `<span class="text-slate-500">Guest Mode</span>`;
-                authBtn.innerHTML = '<i class="fab fa-google"></i>';
-                authBtn.onclick = () => {
-                    signInWithPopup(auth, provider).catch(err => {
-                        console.error('Sign in error:', err);
-                        if (err.code !== 'auth/popup-closed-by-user') {
-                            APP_STATUS.error('Đăng nhập thất bại: ' + (err.message || err));
-                        }
-                    });
-                };
-
-                // --- Reset UI on Logout ---
-                document.getElementById('book-list').innerHTML = '<div class="text-center p-8 text-slate-500 italic text-sm">Login to see your library.</div>';
-
-                const discoveryGrid = document.getElementById('discovery-grid');
-                if (discoveryGrid) {
-                    discoveryGrid.innerHTML = '<div class="col-span-full text-center p-20 text-slate-500 italic">Login to discover your library.</div>';
-                }
-
-                // Clear any search query
-                const discoverySearch = document.getElementById('discovery-search');
-                if (discoverySearch) discoverySearch.value = '';
-            }
-        });
+        if (!accountSessions) {
+            accountSessions = new AccountSessions(firebaseConfig, {
+                onSession: handleAccountSession,
+                beforeLeave: () => leaveAccount({ save: true }),
+                onAccountsChange: () => accountMenu?.render()
+            });
+            accountMenu = createAccountMenu({
+                sessions: accountSessions,
+                onError: message => APP_STATUS.error(message),
+                onStatus: text => APP_STATUS.set(text)
+            });
+            await accountSessions.start();
         }
 
         console.log("Firebase initialized successfully via API");
     } catch (err) {
         console.error("Failed to initialize Firebase:", err);
+        accountSessions = null;
         setTimeout(startFirebase, 5000); // Retry, bounded by fetchWithTimeout
     }
+}
+
+function attachFirestore(firebaseApp) {
+    try {
+        return initializeFirestore(firebaseApp, {
+            experimentalForceLongPolling: true,
+            useFetchStreams: false,
+        });
+    } catch (e) {
+        return getFirestore(firebaseApp);
+    }
+}
+
+async function handleAccountSession(session) {
+    if (!session) {
+        await leaveAccount({ save: false });
+        accountMenu?.render();
+        renderSignedOutLibrary();
+        return;
+    }
+
+    app = session.app;
+    auth = session.auth;
+    db = attachFirestore(app);
+    STATE.user = session.user;
+    accountMenu?.render();
+
+    void STATS_MANAGER.load();
+    await refreshLibrary();
+    initWebSocket();
+    APP_STATUS.set('Ready');
+}
+
+/**
+ * Detach everything tied to the current account before another one becomes
+ * active: flush its progress and stats, stop playback, close the open book and
+ * drop per-user caches so nothing is written to or shown for the next account.
+ */
+async function leaveAccount({ save }) {
+    // Cancel book loads, uploads and downloads that belong to this account
+    // before anything else, so none of them can finish under the next one.
+    STATE.loadController?.abort();
+    STATE.selectionGeneration++;
+    STATE.loadGeneration++;
+    if (STATE.isDownloading) stopDownload();
+
+    const leavingDb = db;
+    if (save && STATE.user && leavingDb) {
+        const flush = Promise.allSettled([saveProgress(true), STATS_MANAGER.syncToFirestore(true)])
+            .then(() => waitForPendingWrites(leavingDb));
+        await promiseWithTimeout(flush, 6_000, 'Account switch flush')
+            .catch(err => console.warn('[Accounts] Flush before leaving account incomplete:', err));
+    }
+    // Writes still stuck behind an offline/slow Firestore must not block or
+    // reach the next account.
+    STATE.progressSaveVersion++;
+    STATE.progressSaveChain = Promise.resolve();
+    STATS_MANAGER._saveChain = Promise.resolve();
+    STATS_MANAGER._loadedUid = null;
+    db = null;
+    if (leavingDb) terminate(leavingDb).catch(err => console.warn('[Accounts] Firestore terminate failed:', err));
+
+    if (STATE.progressRetryTimer) clearTimeout(STATE.progressRetryTimer);
+    STATE.progressRetryTimer = null;
+    STATE.pendingProgressRetry = null;
+    if (STATS_MANAGER._syncTimer) clearTimeout(STATS_MANAGER._syncTimer);
+    STATS_MANAGER._syncTimer = null;
+
+    if (STATE.currentBookId) {
+        await stopPlaybackSession();
+        closeCurrentBook();
+    } else {
+        closeWebSocketIntentionally();
+    }
+
+    STATE.user = null;
+    STATE.stats = { streak: 0, totalTime: 0, lastReadDate: 'never', booksCompleted: 0 };
+    STATS_MANAGER.updateUI();
+    STATE.imageManifest = null;
+    STATE.imageManifestCache.clear();
+    STATE.imageURLCache.forEach(url => URL.revokeObjectURL(url));
+    STATE.imageURLCache.clear();
+    discoveryLibrary = [];
+    auth = null;
+    app = null;
+}
+
+function renderSignedOutLibrary() {
+    document.getElementById('book-list').innerHTML = '<div class="text-center p-8 text-slate-500 italic text-sm">Login to see your library.</div>';
+
+    const discoveryGrid = document.getElementById('discovery-grid');
+    if (discoveryGrid) {
+        discoveryGrid.innerHTML = '<div class="col-span-full text-center p-20 text-slate-500 italic">Login to discover your library.</div>';
+    }
+
+    const discoverySearch = document.getElementById('discovery-search');
+    if (discoverySearch) discoverySearch.value = '';
 }
 
 /** Fetch helper for backend endpoints that access the authenticated user's data. */
@@ -663,7 +715,7 @@ const APP_STATUS = {
         removeTimer = setTimeout(dismiss, 4800);
     },
     error(error, fallback = 'Đã xảy ra lỗi. Vui lòng thử lại.') {
-        const message = error?.message || fallback;
+        const message = (typeof error === 'string' ? error : error?.message) || fallback;
         this.set('Lỗi');
         this.toast(message, 'error');
     }
@@ -2590,9 +2642,11 @@ function scheduleProgressSaveRetry(snapshot, version, error, attempt = 0) {
 }
 
 function enqueueProgressSnapshot(snapshot, version, retryAttempt = 0) {
+    const firestore = db;
     const write = async () => {
+        if (!firestore) return false;
         try {
-            const progressRef = doc(db, 'users', snapshot.userId, 'progress', snapshot.bookId);
+            const progressRef = doc(firestore, 'users', snapshot.userId, 'progress', snapshot.bookId);
             await setDoc(progressRef, {
                 title: snapshot.title,
                 filename: snapshot.filename,
@@ -2791,9 +2845,11 @@ async function refreshLibrary() {
     bookList.innerHTML = '<div class="text-center p-4 text-primary animate-pulse text-xs uppercase font-bold tracking-widest">Updating Library...</div>';
     if (discoveryGrid) discoveryGrid.innerHTML = '';
 
+    const libraryUid = STATE.user.uid;
     try {
-        const q = query(collection(db, "users", STATE.user.uid, "progress"));
+        const q = query(collection(db, "users", libraryUid, "progress"));
         const querySnapshot = await getDocs(q);
+        if (STATE.user?.uid !== libraryUid) return;
         bookList.innerHTML = '';
         // A second refresh can start while this Firestore request is pending.
         // Clear the discovery grid again after the await so overlapping
@@ -3198,17 +3254,7 @@ async function deleteBook(bookId, filename, title, bypassConfirm = false) {
         // ── 4. If the deleted book is currently open, reset the reader ────────
         if (STATE.currentBookId === bookId) {
             await handlePlaybackStall(); // This handles WS close, RAM/ROM clear, and UI reset
-            STATE.currentBook = null;
-            STATE.currentBookId = null;
-            STATE.currentFilename = null;
-            STATE.currentChapterIndex = 0;
-            STATE.currentSentenceIndex = 0;
-            document.getElementById('current-title').innerText = 'Select a Masterpiece';
-            document.getElementById('current-chapter').innerText = 'Standby Mode';
-            document.getElementById('text-container').innerHTML = '';
-            document.getElementById('edit-title-btn').classList.add('hidden');
-            updateUI();
-            toggleDiscoveryMode(true);
+            closeCurrentBook();
         }
 
         // ── 5. Refresh library sidebar ────────────────────────────────────────
@@ -3222,6 +3268,29 @@ async function deleteBook(bookId, filename, title, bypassConfirm = false) {
         document.getElementById('status-indicator').innerText = 'Error';
         setTimeout(() => document.getElementById('status-indicator').innerText = 'Ready', 3000);
     }
+}
+
+function closeCurrentBook() {
+    STATE.currentBook = null;
+    STATE.currentBookId = null;
+    STATE.currentFilename = null;
+    STATE.currentChapterIndex = 0;
+    STATE.currentSentenceIndex = 0;
+    document.getElementById('current-title').innerText = 'Select a Masterpiece';
+    document.getElementById('current-chapter').innerText = 'Standby Mode';
+    document.getElementById('text-container').innerHTML = '';
+    document.getElementById('edit-title-btn').classList.add('hidden');
+    const playerTitle = document.getElementById('player-title');
+    const playerAuthor = document.getElementById('player-author');
+    if (playerTitle) { playerTitle.innerText = 'System Ready'; playerTitle.title = ''; }
+    if (playerAuthor) { playerAuthor.innerText = 'Aureum Studio Audio'; playerAuthor.title = ''; }
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = null;
+        navigator.mediaSession.playbackState = 'none';
+    }
+    renderTOC();
+    updateUI();
+    toggleDiscoveryMode(true);
 }
 
 // ── Feature 2: Merge Chapter File ────────────────────────────────────────────
@@ -3661,8 +3730,9 @@ const handleFileUpload = async (e) => {
         progress: 10,
         status: "Tải sách"
     });
+    const uploaderUid = STATE.user.uid;
     const formData = new FormData();
-    formData.append('userId', STATE.user.uid);
+    formData.append('userId', uploaderUid);
     formData.append('file', file);
 
     document.getElementById('status-indicator').innerText = "Processing Story...";
@@ -3716,7 +3786,8 @@ const handleFileUpload = async (e) => {
 
         updateLoadingProgress(illustrations.length ? 50 : 85, "Đang khởi tạo mục lục...", "Tải thông tin metadata từ server...", "Khởi tạo");
         // Fetch fresh metadata
-        const metaRes = await authFetch(`/api/stories/${STATE.user.uid}/${data.storyId}/metadata`);
+        if (STATE.user?.uid !== uploaderUid) return;
+        const metaRes = await authFetch(`/api/stories/${uploaderUid}/${data.storyId}/metadata`);
         let bookInfo = await metaRes.json();
 
         // --- FIX BUG 1 & 5: Normalize bookInfo for non-segmented upload flow ---
@@ -3740,6 +3811,7 @@ const handleFileUpload = async (e) => {
         }
 
         updateLoadingProgress(95, "Đang mở sách...", "Sắp xong rồi!", "Hoàn tất");
+        if (STATE.user?.uid !== uploaderUid) return;
         // --- FIX BUG 6: Await loadBook and call refreshLibrary directly ---
         const loaded = await loadBook(bookInfo, data.storyId, data.filename || file.name);
         if (!loaded) return;
