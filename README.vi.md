@@ -84,7 +84,7 @@ Cloud_TTS_Reader/
 ├── main.py                     # Cổng vào chính & tương thích ngược Facade
 ├── storage_adapter.py          # Bộ điều hợp lưu trữ đám mây B2 / S3 / Firebase Storage
 ├── static/                     # Giao Diện Người Dùng (Frontend Hiện Đại)
-│   ├── css/                    # Các tệp CSS phân tầng (themes, ui-extras, mini-player)
+│   ├── css/                    # CSS (hệ thiết kế console, mini-player)
 │   ├── js/                     # Các module ES (tương tác UI, đa ngôn ngữ i18n, thống kê)
 │   ├── app.js                  # Tệp điều khiển trung tâm phía Frontend
 │   ├── index.html              # Trang chủ ứng dụng đọc sách SPA

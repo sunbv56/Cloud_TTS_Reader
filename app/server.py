@@ -44,6 +44,9 @@ class _RevalidatedStaticFiles(StaticFiles):
         response = super().file_response(full_path, *args, **kwargs)
         if str(full_path).endswith(self._REVALIDATE_SUFFIXES):
             response.headers["Cache-Control"] = "no-cache"
+        if str(full_path).endswith("sw.js"):
+            # Lets /static/sw.js register with scope '/' and control the app page offline.
+            response.headers["Service-Worker-Allowed"] = "/"
         return response
 
 
