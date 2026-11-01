@@ -371,6 +371,10 @@ function paintSleep(detail = sleepDetail) {
             remaining.textContent = `${m}:${s}`;
         }
     }
+    const pocketLine = $('pocket-sleep');
+    const pocketText = $('pocket-sleep-text');
+    if (pocketLine) pocketLine.hidden = !detail.active;
+    if (pocketText && detail.active) pocketText.textContent = sleepEndText(detail.mode);
 }
 
 function applySleep(value) {
@@ -383,11 +387,15 @@ function clockTime(ms) {
     return new Date(ms).toLocaleTimeString(uiLang() === 'vi' ? 'vi-VN' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
+function sleepEndText(mode) {
+    if (mode === 'chapter') return t('sleep-tip-chapter', 'Tắt khi hết chương');
+    return t('sleep-tip-at', 'Tắt lúc {v}', { v: clockTime(appState()?.sleepTimerEnd || Date.now()) });
+}
+
 function sleepTipText() {
     const state = appState();
     if (!state?.sleepTimer) return t('sleep-tip-off', 'Đã huỷ hẹn giờ');
-    if (state.sleepTimerMode === 'chapter') return t('sleep-tip-chapter', 'Tắt khi hết chương');
-    return t('sleep-tip-at', 'Tắt lúc {v}', { v: clockTime(state.sleepTimerEnd || Date.now()) });
+    return sleepEndText(state.sleepTimerMode);
 }
 
 function cycleSleep() {
