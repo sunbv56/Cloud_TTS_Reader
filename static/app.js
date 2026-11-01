@@ -7108,6 +7108,14 @@ async function togglePlayback() {
         if (STATE.playLoading) return;
         if (wsRefusedRecently()) setPlaybackElsewhere('busy', { flash: true });
         STATE.socketParked = false;
+        // Buffered audio resumes at once, still inside the user activation that media keys
+        // (Bluetooth headsets, keyboards, lock screen) only grant briefly; audio.onplay
+        // reconnects the socket and refills the buffer afterwards.
+        if (STATE.chunkTimings.length && hasBufferedAhead()) {
+            await resumeAudio();
+            setPlayIcon(!audio.paused);
+            return;
+        }
         STATE.playIntentAt = Date.now();
         setPlayLoading();
         document.getElementById('status-indicator').innerText = tr('status-connecting', 'Connecting…');
@@ -8202,6 +8210,36 @@ async function playPrevChapter() {
 }
 
 // --- Media Session API ---
+function hasBufferedAhead() {
+    const ranges = audio.buffered;
+    for (let i = 0; i < ranges.length; i++) {
+        if (audio.currentTime >= ranges.start(i) - 0.25 && audio.currentTime < ranges.end(i) - 0.3) return true;
+    }
+    return false;
+}
+
+let mediaActionsBound = false;
+function bindMediaSessionActions() {
+    if (mediaActionsBound || !('mediaSession' in navigator)) return;
+    mediaActionsBound = true;
+    const set = (action, handler) => {
+        try { navigator.mediaSession.setActionHandler(action, handler); } catch (_) { }
+    };
+    set('play', () => { if (audio.paused) togglePlayback(); });
+    // A single play/pause button sends "pause" whenever the browser believes audio is
+    // playing; if it is in fact paused, the press means "resume".
+    set('pause', () => { if (audio.paused) togglePlayback(); else audio.pause(); });
+    set('previoustrack', () => playPrevChapter());
+    set('nexttrack', () => playNextChapter());
+    set('seekbackward', () => playPrevChunk());
+    set('seekforward', () => playNextChunk());
+    set('stop', () => stopPlaybackSession());
+}
+bindMediaSessionActions();
+audio.addEventListener('ended', () => {
+    if ('mediaSession' in navigator && audio.paused) navigator.mediaSession.playbackState = 'paused';
+});
+
 function updateMediaSession() {
     if ('mediaSession' in navigator && STATE.currentBook) {
         const chapter = STATE.currentBook.chapters[STATE.currentChapterIndex];
@@ -8220,37 +8258,7 @@ function updateMediaSession() {
             ]
         });
 
-        // OS Handlers
-        navigator.mediaSession.setActionHandler('play', () => {
-            if (audio.paused) togglePlayback();
-        });
-        navigator.mediaSession.setActionHandler('pause', () => {
-            if (!audio.paused) audio.pause();
-        });
-        navigator.mediaSession.setActionHandler('previoustrack', () => {
-            playPrevChapter();
-        });
-        navigator.mediaSession.setActionHandler('nexttrack', () => {
-            playNextChapter();
-        });
-
-        // Skip Handlers (10s mapped to Prev/Next Chunk)
-        try {
-            navigator.mediaSession.setActionHandler('seekbackward', () => {
-                playPrevChunk();
-            });
-            navigator.mediaSession.setActionHandler('seekforward', () => {
-                playNextChunk();
-            });
-        } catch (e) { console.warn("Seek handlers not supported"); }
-
-        // Android/Chrome support for jumping chapters
-        try {
-            navigator.mediaSession.setActionHandler('stop', () => {
-                stopPlaybackSession();
-            });
-        } catch (e) { }
-
+        bindMediaSessionActions();
     }
 }
 
