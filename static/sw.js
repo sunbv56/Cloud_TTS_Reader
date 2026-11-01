@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cloud-tts-v22-nova';
+const CACHE_NAME = 'cloud-tts-v23-nova-polish';
 const ASSETS = [
     '/',
     '/static/index.html',
