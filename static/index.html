@@ -54,7 +54,7 @@
     <!-- Mini player widget (Document PiP); colours come from the console tokens -->
     <link rel="stylesheet" href="/static/css/mini-player.css?v=15">
     <!-- Console design system: tokens, components, app shell -->
-    <link rel="stylesheet" href="/static/css/console.css?v=8">
+    <link rel="stylesheet" href="/static/css/console.css?v=9">
     <style type="text/tailwindcss">
         @theme {
             --font-reading: var(--font-read);
@@ -78,7 +78,7 @@
 
 <body class="app-body" data-view="discovery">
     <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
-        <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.8v14.4L19 12z" fill="currentColor" stroke="none"/></symbol>
+        <symbol id="i-play" viewBox="0 0 24 24"><path d="M8.5 4.8v14.4L20 12z" fill="currentColor" stroke="none"/></symbol>
         <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></symbol>
         <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
         <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" /></symbol>
@@ -594,6 +594,9 @@
             </div>
             <footer id="media-player" class="console" aria-label="Trình phát" data-i18n-aria="player-label" data-status-tone="quiet">
                 <div id="player-controls-layer" class="console-transport">
+                    <button id="prev-btn" type="button" class="icon-btn console-wide" aria-label="Chương trước ([ hoặc Shift+←)" title="Chương trước ([ hoặc Shift+←)" data-i18n-aria="prev-chapter-key">
+                        <svg class="ic" aria-hidden="true"><use href="#i-chleft"/></svg>
+                    </button>
                     <button id="prev-chunk-btn" type="button" class="icon-btn console-wide" aria-label="Câu trước (←)" title="Câu trước (←)" data-i18n-aria="prev-sentence-key">
                         <svg class="ic" aria-hidden="true"><use href="#i-rw"/></svg>
                     </button>
@@ -603,9 +606,6 @@
                     </button>
                     <button id="next-chunk-btn" type="button" class="icon-btn console-wide" aria-label="Câu kế (→)" title="Câu kế (→)" data-i18n-aria="next-sentence-key">
                         <svg class="ic" aria-hidden="true"><use href="#i-ff"/></svg>
-                    </button>
-                    <button id="prev-btn" type="button" class="icon-btn console-wide" aria-label="Chương trước ([ hoặc Shift+←)" title="Chương trước ([ hoặc Shift+←)" data-i18n-aria="prev-chapter-key">
-                        <svg class="ic" aria-hidden="true"><use href="#i-chleft"/></svg>
                     </button>
                     <button id="next-btn" type="button" class="icon-btn console-wide" aria-label="Chương kế (] hoặc Shift+→)" title="Chương kế (] hoặc Shift+→)" data-i18n-aria="next-chapter-key">
                         <svg class="ic" aria-hidden="true"><use href="#i-chright"/></svg>

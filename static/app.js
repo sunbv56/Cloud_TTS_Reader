@@ -8524,7 +8524,7 @@ async function handlePauseTimeout() {
 
     const indicator = document.getElementById('status-indicator');
     if (progressSaved) {
-        indicator.innerText = tr('status-session-expired', 'Session ended (1 min idle)');
+        indicator.innerText = tr('status-session-expired', 'Đã tạm dừng · tự kết nối lại khi phát');
         indicator.style.color = "#FFB347";
     } else {
         // enqueueProgressSnapshot has already retained the exact cursor and

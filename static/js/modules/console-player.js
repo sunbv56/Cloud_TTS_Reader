@@ -435,9 +435,9 @@ function initSleep() {
 
 // ── Status line ──────────────────────────────────────────────────────────────
 const STATUS_TONE_KEYS = {
-    quiet: ['status-ready', 'status-streaming', 'status-paused', 'status-saved', 'status-deleted', 'system-ready'],
+    quiet: ['status-ready', 'status-streaming', 'status-paused', 'status-saved', 'status-deleted', 'system-ready', 'status-session-expired'],
     error: ['status-error', 'status-config-error', 'status-save-error', 'status-stalled-cleared', 'status-progress-unsaved', 'status-chapter-error'],
-    warn: ['status-disconnected', 'status-conn-failed', 'status-conn-busy', 'status-taken-over', 'status-session-expired', 'status-sleep-stopped',
+    warn: ['status-disconnected', 'status-conn-failed', 'status-conn-busy', 'status-taken-over', 'status-sleep-stopped',
         'status-tts-timeout', 'status-autoplay-blocked', 'status-offline', 'status-txt-failed']
 };
 

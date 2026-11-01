@@ -375,9 +375,12 @@
         .chip:hover::before { background: var(--color-surface); }
     }
     .chip[data-on="true"],
-    .chip[aria-pressed="true"] { color: var(--chip-on-fg); }
+    .chip[aria-pressed="true"] { color: var(--color-text); }
     .chip[data-on="true"]::before,
-    .chip[aria-pressed="true"]::before { background: var(--chip-on-bg); border-color: var(--color-accent); }
+    .chip[aria-pressed="true"]::before {
+        background: color-mix(in oklch, var(--color-accent) 16%, transparent);
+        border-color: var(--color-accent);
+    }
 
     .seg {
         display: grid;
@@ -1873,6 +1876,35 @@
         #mpw-player-pip-btn { display: inline-grid; }
         #media-player.minimized-player .console-info { flex: 1 1 auto; }
         #media-player.minimized-player .console-progress { display: none; }
+    }
+    /* Desktop console: transport | now playing | scrub | tools, each group a
+       fixed share of the row so the title is never squeezed by a long track. */
+    @media (min-width: 1024px) {
+        .console { gap: var(--space-4); }
+        .console-transport { gap: var(--space-1); padding-right: var(--space-4); border-right: 1px solid var(--color-line); }
+        .console-transport .icon-btn { min-width: 36px; min-height: 36px; }
+        .console-play { width: 44px; height: 44px; margin: 0 var(--space-1); }
+        .console-info { flex: 1 1 260px; max-width: 420px; }
+        .console-scrub { flex: 1.3 1 200px; max-width: 640px; }
+        .console-utils {
+            gap: 6px;
+            margin-left: auto;
+            padding-left: var(--space-4);
+            border-left: 1px solid var(--color-line);
+        }
+        .console-utils .chip { min-height: 36px; }
+        .console-utils .chip::before { inset: 0; }
+        .console-utils .icon-btn { min-width: 36px; min-height: 36px; }
+        .console-voice .select,
+        .console-pocket {
+            min-height: 36px;
+            height: 36px;
+            border: 1px solid var(--color-line);
+            border-radius: var(--radius-sm);
+            background: transparent;
+            font: 500 var(--text-sm)/1 var(--font-ui);
+        }
+        .console-pocket { padding: 0 var(--space-3); }
     }
     @media (min-width: 1024px) and (max-width: 1239.98px) {
         .console-pocket > span { display: none; }
