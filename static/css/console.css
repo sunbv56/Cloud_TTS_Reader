@@ -1822,6 +1822,8 @@
             touch-action: auto;
         }
         .console-wide { display: inline-flex; }
+        /* Icon buttons stay grids so their glyph sits in the middle of the hit area. */
+        .icon-btn.console-wide { display: inline-grid; place-items: center; }
         .console-info { flex: 0 1 240px; }
         .console-scrub {
             display: flex;
