@@ -1512,7 +1512,7 @@ function buildLibraryRow(entry, listName) {
     meta.textContent = formatEntryMeta(entry);
     text.append(title, meta);
     main.append(createCoverElement(entry, 'thumb'), text);
-    head.append(main, buildProgressRing(entry));
+    head.append(main, buildProgressRing(entry), buildMoreButton(entry, 'lib-row__more'));
 
     const details = document.createElement('div');
     details.className = 'lib-row__x';
@@ -1543,16 +1543,21 @@ function buildShelfCard(entry) {
     meta.className = 'shelf-card__meta';
     meta.textContent = formatEntryMeta(entry, { withTime: false });
     open.append(createCoverElement(entry, 'grid'), bar, title, meta);
+    card.append(open, buildMoreButton(entry, 'shelf-card__more'));
+    return card;
+}
+
+function buildMoreButton(entry, className) {
     const more = document.createElement('button');
     more.type = 'button';
-    more.className = 'icon-btn shelf-card__more';
+    more.className = `icon-btn ${className}`;
     more.dataset.action = 'more';
     more.setAttribute('aria-haspopup', 'menu');
     more.setAttribute('aria-expanded', 'false');
     more.setAttribute('aria-label', tr('book-options', 'Tuỳ chọn cho {title}', { title: displayTitle(entry.title) }));
+    more.title = tr('book-options-hint', 'Tuỳ chọn (hoặc chuột phải / nhấn giữ)');
     more.innerHTML = iconSVG('dots');
-    card.append(open, more);
-    return card;
+    return more;
 }
 
 function buildChapterStrip(entry) {
@@ -1607,15 +1612,7 @@ function buildRowActions(entry) {
     play.className = 'btn btn--primary';
     play.dataset.action = 'play';
     play.dataset.role = 'listen';
-    const more = document.createElement('button');
-    more.type = 'button';
-    more.className = 'icon-btn icon-btn--line';
-    more.dataset.action = 'more';
-    more.setAttribute('aria-haspopup', 'menu');
-    more.setAttribute('aria-expanded', 'false');
-    more.setAttribute('aria-label', tr('book-options', 'Tuỳ chọn cho {title}', { title: displayTitle(entry.title) }));
-    more.innerHTML = iconSVG('dotsh');
-    actions.append(open, play, more);
+    actions.append(open, play);
     return actions;
 }
 
@@ -2044,7 +2041,7 @@ function onBookMenuViewportChange() {
     closeBookMenu();
 }
 
-function openBookMenu(entry, trigger) {
+function openBookMenu(entry, trigger, at = null) {
     const menu = document.getElementById('book-menu');
     const scrim = document.getElementById('book-menu-scrim');
     if (!menu) return;
@@ -2065,11 +2062,11 @@ function openBookMenu(entry, trigger) {
     menu.hidden = false;
     if (scrim) scrim.hidden = !isSheet;
     if (!isSheet) {
-        const rect = trigger.getBoundingClientRect();
+        const rect = at ? { left: at.x, right: at.x, top: at.y, bottom: at.y } : trigger.getBoundingClientRect();
         const width = menu.offsetWidth;
         const height = menu.offsetHeight;
-        const left = Math.min(Math.max(8, rect.right - width), window.innerWidth - width - 8);
-        let top = rect.bottom + 6;
+        const left = Math.min(Math.max(8, at ? rect.left : rect.right - width), window.innerWidth - width - 8);
+        let top = rect.bottom + (at ? 2 : 6);
         if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 6);
         menu.style.left = `${left}px`;
         menu.style.top = `${top}px`;
@@ -2179,6 +2176,64 @@ function onLibraryListClick(event) {
 
 document.getElementById('book-list')?.addEventListener('click', onLibraryListClick);
 document.getElementById('discovery-grid')?.addEventListener('click', onLibraryListClick);
+
+// Right-click a book (mouse) or press and hold it (touch) for the same menu as its ⋮.
+const LONG_PRESS_MS = 520;
+let bookPress = null;
+let suppressBookClickUntil = 0;
+
+function openBookMenuAt(item, at) {
+    const entry = findLibraryEntry(item?.dataset.bookId);
+    const trigger = item?.querySelector('[data-action="more"]');
+    if (!entry || !trigger) return false;
+    if (bookMenu.entry?.id === entry.id && !document.getElementById('book-menu')?.hidden) closeBookMenu();
+    openBookMenu(entry, trigger, at);
+    return true;
+}
+
+function onLibraryContextMenu(event) {
+    const item = event.target.closest('[data-book-id]');
+    if (!item || !event.currentTarget.contains(item)) return;
+    if (Date.now() < suppressBookClickUntil) { event.preventDefault(); return; }
+    if (openBookMenuAt(item, { x: event.clientX, y: event.clientY })) event.preventDefault();
+}
+
+function onLibraryPointerDown(event) {
+    if (event.pointerType !== 'touch') return;
+    const item = event.target.closest('[data-book-id]');
+    if (!item || event.target.closest('[data-action="more"]')) return;
+    const start = { x: event.clientX, y: event.clientY };
+    clearTimeout(bookPress?.timer);
+    bookPress = {
+        start,
+        timer: setTimeout(() => {
+            bookPress = null;
+            if (openBookMenuAt(item, start)) {
+                suppressBookClickUntil = Date.now() + 700;
+                AudioHapticFX.haptic(15);
+            }
+        }, LONG_PRESS_MS)
+    };
+}
+
+function cancelBookPress(event) {
+    if (!bookPress) return;
+    if (event?.type === 'pointermove' && Math.hypot(event.clientX - bookPress.start.x, event.clientY - bookPress.start.y) < 10) return;
+    clearTimeout(bookPress.timer);
+    bookPress = null;
+}
+
+['book-list', 'discovery-grid'].forEach(id => {
+    const list = document.getElementById(id);
+    if (!list) return;
+    list.addEventListener('contextmenu', onLibraryContextMenu);
+    list.addEventListener('pointerdown', onLibraryPointerDown);
+    ['pointermove', 'pointerup', 'pointercancel', 'scroll'].forEach(type => list.addEventListener(type, cancelBookPress, { passive: true }));
+    // The click that ends a long-press must not also open or toggle the row.
+    list.addEventListener('click', event => {
+        if (Date.now() < suppressBookClickUntil) { event.preventDefault(); event.stopImmediatePropagation(); }
+    }, true);
+});
 document.querySelectorAll('[data-lib-filter]').forEach(group => group.addEventListener('click', event => {
     const button = event.target.closest('[data-filter]');
     if (button && !button.disabled) setLibraryFilter(button.dataset.filter);
@@ -9104,7 +9159,7 @@ function requireOpenBook() {
 
 document.addEventListener('reader-menu-open', () => {
     const hasBook = !!STATE.currentBook;
-    ['reader-edit-chapter-btn', 'reader-rename-btn', 'reader-images-btn', 'manual-save-btn'].forEach(id => {
+    ['reader-edit-chapter-btn', 'reader-rename-btn', 'reader-images-btn', 'reader-merge-btn', 'reader-delete-btn', 'manual-save-btn'].forEach(id => {
         const item = document.getElementById(id);
         if (item) item.disabled = !hasBook;
     });
@@ -9118,6 +9173,14 @@ document.getElementById('reader-rename-btn')?.addEventListener('click', () => {
 });
 document.getElementById('reader-images-btn')?.addEventListener('click', () => {
     if (requireOpenBook()) void openImageManager();
+});
+document.getElementById('reader-merge-btn')?.addEventListener('click', () => {
+    const entry = requireOpenBook() && findLibraryEntry(STATE.currentBookId);
+    if (entry) runBookAction('merge', entry);
+});
+document.getElementById('reader-delete-btn')?.addEventListener('click', () => {
+    const entry = requireOpenBook() && findLibraryEntry(STATE.currentBookId);
+    if (entry) runBookAction('delete', entry);
 });
 document.getElementById('reader-pocket-btn')?.addEventListener('click', () => applyLiteMode(true));
 

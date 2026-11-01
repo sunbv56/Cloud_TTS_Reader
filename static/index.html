@@ -54,7 +54,7 @@
     <!-- Mini player widget (Document PiP); colours come from the console tokens -->
     <link rel="stylesheet" href="/static/css/mini-player.css?v=15">
     <!-- Console design system: tokens, components, app shell -->
-    <link rel="stylesheet" href="/static/css/console.css?v=9">
+    <link rel="stylesheet" href="/static/css/console.css?v=10">
     <style type="text/tailwindcss">
         @theme {
             --font-reading: var(--font-read);
@@ -371,6 +371,14 @@
                         <button id="reader-images-btn" type="button" class="menu-item" role="menuitem">
                             <svg class="ic" aria-hidden="true"><use href="#i-image"/></svg>
                             <span data-i18n="images-title">Ảnh &amp; bìa</span>
+                        </button>
+                        <button id="reader-merge-btn" type="button" class="menu-item" role="menuitem">
+                            <svg class="ic" aria-hidden="true"><use href="#i-merge"/></svg>
+                            <span data-i18n="merge-chapters">Nối chương</span>
+                        </button>
+                        <button id="reader-delete-btn" type="button" class="menu-item menu-item--danger" role="menuitem">
+                            <svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg>
+                            <span data-i18n="delete-book">Xoá truyện</span>
                         </button>
                         <hr class="menu__rule">
                         <button id="zen-mode-toggle-btn" type="button" class="menu-item" role="menuitemcheckbox" aria-checked="false" data-keep-open>

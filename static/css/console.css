@@ -2766,12 +2766,16 @@
     .lib-empty .btn[hidden] { display: none; }
 
     /* ---------------------------------------------------- mục lục row */
-    .lib-row { position: relative; border-bottom: 1px solid var(--color-line); }
+    .lib-row { position: relative; border-bottom: 1px solid var(--color-line); -webkit-touch-callout: none; }
+    .lib-row__more { color: var(--color-muted); }
+    @media (hover: hover) { .lib-row__more:hover { color: var(--color-text); background: var(--color-surface); } }
+    .lib-row__more[aria-expanded="true"] { color: var(--color-text); background: var(--color-surface); }
+    .shelf-card { -webkit-touch-callout: none; }
     .lib-row[hidden] { display: none; }
     .lib-row[aria-current="true"] { background: var(--color-surface); }
     .lib-row__head {
         display: grid;
-        grid-template-columns: minmax(0, 1fr) var(--tap);
+        grid-template-columns: minmax(0, 1fr) var(--tap) var(--tap);
         align-items: center;
         gap: var(--space-1);
         padding-right: var(--space-2);
