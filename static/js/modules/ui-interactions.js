@@ -37,6 +37,22 @@ export const THEMES_DATA = {
         moodVi: 'Sáng · giấy ấm',
         metaColor: '#F2E6D3',
         isLight: true
+    },
+    'sepia-dark': {
+        nameEn: 'Sepia Dark',
+        nameVi: 'Sepia tối',
+        moodEn: 'Dark · warm wood, cream text',
+        moodVi: 'Tối · gỗ nâu, chữ kem',
+        metaColor: '#2C2219',
+        isLight: false
+    },
+    'ember': {
+        nameEn: 'Ember',
+        nameVi: 'Than hồng',
+        moodEn: 'Late night · nothing glows',
+        moodVi: 'Đêm khuya · không gì loé sáng',
+        metaColor: '#17100C',
+        isLight: false
     }
 };
 

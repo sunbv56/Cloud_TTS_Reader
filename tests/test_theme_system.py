@@ -3,7 +3,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-EXPECTED_THEMES = ['slate', 'slate-deep', 'mist', 'sepia']
+EXPECTED_THEMES = ['slate', 'slate-deep', 'mist', 'sepia', 'sepia-dark', 'ember']
 LEGACY_THEMES = {
     'default': 'slate',
     'forest': 'slate',
