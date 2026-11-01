@@ -3231,14 +3231,39 @@
     }
     .shelf-card__bar { display: block; height: 3px; border-radius: 2px; background: var(--color-line); overflow: hidden; }
     .shelf-card__bar > span { display: block; height: 100%; background: var(--color-accent); }
+    /* The 44px hit area stays transparent; only a small dot sits on the cover art. */
     .shelf-card__more {
         position: absolute;
-        top: var(--space-1);
-        right: var(--space-1);
-        background: color-mix(in oklch, var(--color-raised) 86%, transparent);
-        border-radius: var(--radius-sm);
+        top: 0;
+        right: 0;
+        background: transparent;
     }
-    @media (hover: hover) { .shelf-card__more:hover { background: var(--color-raised); } }
+    .shelf-card__more::before {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        background: color-mix(in oklch, var(--color-paper) 72%, transparent);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        box-shadow: 0 1px 3px var(--color-shadow);
+    }
+    .shelf-card__more .ic { position: relative; width: 16px; height: 16px; }
+    .shelf-card__more[aria-expanded="true"]::before { background: var(--color-raised); }
+    @media (hover: hover) {
+        .shelf-card__more:hover { background: transparent; }
+        .shelf-card__more:hover::before { background: var(--color-raised); }
+    }
+    @media (hover: hover) and (pointer: fine) {
+        .shelf-card__more { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
+        .shelf-card:hover .shelf-card__more,
+        .shelf-card:focus-within .shelf-card__more,
+        .shelf-card__more[aria-expanded="true"] { opacity: 1; }
+    }
 
     /* File drag over Home */
     .drop-veil {

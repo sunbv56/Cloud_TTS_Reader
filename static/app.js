@@ -1006,7 +1006,7 @@ discoveryPlayerInfo?.addEventListener('keydown', (event) => {
 // mục lục rows in the left column / drawer, Home's list or cover grid, and the
 // "Nghe tiếp" card. Filter and sort are shared; each view keeps its own search.
 const DISCOVERY_VIEW_STORAGE_KEY = 'cloud-tts-discovery-view';
-const LIBRARY_FILTER_KEY = 'cloud-tts-library-filter';
+const LIBRARY_FILTER_KEY = 'cloud-tts-library-filter-v2';
 const LIBRARY_SORT_KEY = 'cloud-tts-library-sort';
 const LIBRARY_FILTERS = ['listening', 'all', 'done'];
 const LIBRARY_SORTS = ['recent', 'title', 'progress'];
@@ -1032,7 +1032,7 @@ function writePref(key, value) {
 
 const libraryView = {
     status: 'idle',
-    filter: readPref(LIBRARY_FILTER_KEY, LIBRARY_FILTERS, 'listening'),
+    filter: readPref(LIBRARY_FILTER_KEY, LIBRARY_FILTERS, 'all'),
     sort: readPref(LIBRARY_SORT_KEY, LIBRARY_SORTS, 'recent'),
     discovery: readPref(DISCOVERY_VIEW_STORAGE_KEY, ['grid', 'list'], window.innerWidth < 768 ? 'list' : 'grid'),
     expanded: { sidebar: null, shelf: null },
