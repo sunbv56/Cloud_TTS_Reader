@@ -41,18 +41,15 @@ def test_index_page_serves_html():
     response = client.get("/")
     assert response.status_code == 200
     assert "Cloud TTS" in response.text
-    assert "/static/css/main.css" in response.text
+    assert "/static/css/console.css" in response.text
     assert "/static/js/main.js" in response.text
 
 
 def test_static_modular_assets_served():
-    css_res = client.get("/static/css/main.css")
+    css_res = client.get("/static/css/console.css")
     assert css_res.status_code == 200
-    assert "themes.css" in css_res.text
-
-    themes_res = client.get("/static/css/themes.css")
-    assert themes_res.status_code == 200
-    assert "--theme-primary" in themes_res.text
+    assert "--color-accent" in css_res.text
+    assert "--theme-primary" in css_res.text
 
     js_res = client.get("/static/js/main.js")
     assert js_res.status_code == 200

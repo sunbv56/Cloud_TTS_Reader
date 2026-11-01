@@ -1,10 +1,17 @@
-const CACHE_NAME = 'cloud-tts-v14-discovery-light-fix';
+const CACHE_NAME = 'cloud-tts-v21-console-polish';
 const ASSETS = [
     '/',
     '/static/index.html',
     '/static/app.js',
-    '/static/js/mini-player-widget.js',
+    '/static/css/console.css',
     '/static/css/mini-player.css',
+    '/static/js/main.js',
+    '/static/js/modules/i18n.js',
+    '/static/js/modules/ui-interactions.js',
+    '/static/js/modules/console-player.js',
+    '/static/js/modules/account-menu.js',
+    '/static/js/modules/account-sessions.js',
+    '/static/js/mini-player-widget.js',
     '/static/js/image-manager.js',
     '/static/icon.svg',
     '/static/manifest.json'
@@ -23,7 +30,8 @@ self.addEventListener('activate', (event) => {
         caches.keys()
             .then((keys) => Promise.all(
                 keys
-                    .filter((key) => key !== CACHE_NAME)
+                    // The cover cache (cloud-tts-covers-*) is user data managed by app.js.
+                    .filter((key) => key !== CACHE_NAME && !key.startsWith('cloud-tts-covers-'))
                     .map((key) => caches.delete(key))
             ))
             .then(() => self.clients.claim())
@@ -37,8 +45,9 @@ self.addEventListener('fetch', (event) => {
     if (request.method !== 'GET') return;
 
     const url = new URL(request.url);
+    // Scope is '/', so only the shell is handled; /api and other routes go straight to the network.
     const isAppShell = url.origin === self.location.origin
-        && (request.mode === 'navigate' || url.pathname === '/' || url.pathname.startsWith('/static/'));
+        && (url.pathname === '/' || url.pathname.startsWith('/static/'));
     if (!isAppShell) return;
 
     event.respondWith(
@@ -54,7 +63,7 @@ self.addEventListener('fetch', (event) => {
                 const cached = await caches.match(request);
                 if (cached) return cached;
                 if (request.mode === 'navigate') {
-                    return caches.match('/static/index.html');
+                    return (await caches.match('/')) || caches.match('/static/index.html');
                 }
                 throw new Error(`Offline asset unavailable: ${url.pathname}`);
             })

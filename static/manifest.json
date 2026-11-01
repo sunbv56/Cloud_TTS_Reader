@@ -4,8 +4,8 @@
   "description": "Premium Text-to-Speech Reader with Cloud Sync",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0C0A09",
-  "theme_color": "#D4AF37",
+  "background_color": "#2A3139",
+  "theme_color": "#2A3139",
   "icons": [
     {
       "src": "/static/icon.svg",

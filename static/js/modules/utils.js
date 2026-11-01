@@ -65,3 +65,15 @@ export async function fetchWithTimeout(url, options = {}, config = {}) {
     }
     throw lastError;
 }
+
+// Titles often come from filenames ("Dạ_Hành_Thư_Sinh"); show them with spaces.
+export function displayTitle(title) {
+    return String(title ?? '').replace(/_+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// Where a label already carries "C.n", drop the "Chương n:" the title repeats.
+const CHAPTER_PREFIX = /^(?:chương|chapter|chap|ch)\.?\s*\d+\s*[:.\-–—]\s*/i;
+export function shortChapterTitle(title) {
+    const text = String(title ?? '').trim();
+    return text.replace(CHAPTER_PREFIX, '') || text;
+}

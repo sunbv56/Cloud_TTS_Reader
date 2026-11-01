@@ -18,6 +18,7 @@ from app.parsers import (
     split_text_into_chunks,
     partition_chapters,
     segment_blob_path,
+    toc_blob_path,
     _should_segment_book,
     _build_segment_data,
     reconstruct_text_from_segments,
@@ -74,6 +75,16 @@ def _upload_json_blob(blob, payload: list):
     """Serialize and upload JSON to storage without keeping large strings in memory."""
     serialized = json.dumps(payload, ensure_ascii=False)
     blob.upload_from_string(serialized, content_type="application/json; charset=utf-8")
+
+
+def write_toc_cache(user_id: str, story_id: str, chapters: List[dict], counts: List[int]) -> None:
+    """Rewrite toc.json after a chapter edit; /toc serves this file before metadata."""
+    try:
+        titles = [chap.get("title") or f"Chương {idx + 1}" for idx, chap in enumerate(chapters)]
+        blob = storage.bucket().blob(toc_blob_path(user_id, story_id))
+        _upload_json_blob(blob, {"titles": titles, "counts": list(counts)})
+    except Exception as exc:
+        logger.warning("toc_cache_refresh_failed story_id=%s error=%s", story_id, exc)
 
 
 async def persist_book_segments(
@@ -191,7 +202,9 @@ async def append_prepared_chapters(
 
         if _should_segment_book(total_chapters):
             title = filename.replace(".txt", "")
-            await persist_book_segments(user_id, book_id, title, chapters, request_id=request_id)
+            _, chapter_counts, _ = await persist_book_segments(
+                user_id, book_id, title, chapters, request_id=request_id
+            )
         else:
             chapters_summary = []
             for chap in chapters:
@@ -209,6 +222,11 @@ async def append_prepared_chapters(
                 merge=True,
                 request_id=request_id,
             )
+            chapter_counts = [item["count"] for item in chapters_summary]
+        await _run_blocking(
+            "storage.upload_toc", write_toc_cache, user_id, book_id, chapters, chapter_counts,
+            request_id=request_id,
+        )
         return chapters, None
     finally:
         if os.path.exists(tmp_path):

@@ -35,8 +35,21 @@ function i18nText(tag, className, key) {
     return node;
 }
 
+const LEGACY_FALLBACK_NAME = 'Tài khoản Google';
+
+function realName(profile) {
+    return profile?.name && profile.name !== LEGACY_FALLBACK_NAME ? profile.name : '';
+}
+
+function profileName(profile) {
+    return realName(profile) || profile?.email || t('account-fallback-name');
+}
+
+// The initial never comes from the translated fallback, so it stays put when the language flips.
 function avatar(profile, className = 'acct-avatar') {
-    const initial = el('span', `${className} acct-avatar--initial`, (profile.name || profile.email || '?').trim().charAt(0).toUpperCase());
+    const letter = (realName(profile) || profile?.email || '').trim().charAt(0).toUpperCase();
+    const initial = el('span', `${className} acct-avatar--initial`, letter || undefined);
+    if (!letter) initial.append(icon('fa-user'));
     initial.setAttribute('aria-hidden', 'true');
     if (!profile.photo) return initial;
     const img = el('img', className);
@@ -66,7 +79,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
             trigger.removeAttribute('aria-haspopup');
             trigger.removeAttribute('aria-expanded');
             trigger.setAttribute('aria-label', t('sign-in'));
-            info?.replaceChildren(el('span', 'w-2 h-2 rounded-full bg-amber-500/70'), i18nText('span', 'text-slate-400', 'guest-mode'));
+            info?.replaceChildren(el('span', 'menu-who__guest'), i18nText('span', '', 'guest-mode'));
             return;
         }
         trigger.classList.remove('btn-primary');
@@ -75,8 +88,8 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         trigger.setAttribute('aria-haspopup', 'menu');
         trigger.setAttribute('aria-controls', 'account-menu');
         trigger.setAttribute('aria-expanded', String(isOpen));
-        trigger.setAttribute('aria-label', `${profile.name} — ${t('account-menu-title')}`);
-        info?.replaceChildren(avatar(profile, 'acct-avatar acct-avatar--sm'), el('span', 'acct-info__name', profile.name));
+        trigger.setAttribute('aria-label', `${profileName(profile)} — ${t('account-menu-title')}`);
+        info?.replaceChildren(avatar(profile, 'acct-avatar acct-avatar--sm'), el('span', 'acct-info__name', profileName(profile)));
     }
 
     function renderMenu() {
@@ -97,8 +110,9 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
             if (account.uid === pendingUid) item.dataset.state = 'loading';
 
             const text = el('span', 'acct-item__text');
-            text.append(el('span', 'acct-item__name', account.name));
+            text.append(el('span', 'acct-item__name', profileName(account)));
             if (account.email) text.append(el('span', 'acct-item__email', account.email));
+            else if (account.uid) text.append(el('span', 'acct-item__email', t('account-no-email').replace('{id}', account.uid.slice(-4))));
 
             const mark = account.uid === pendingUid
                 ? icon('fa-circle-notch fa-spin acct-item__mark')
@@ -116,7 +130,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         add.append(icon('fa-user-plus'), i18nText('span', '', 'account-add'));
         if (full) add.append(i18nText('span', 'acct-action__hint', 'account-limit'));
 
-        const signOutBtn = el('button', 'acct-action acct-action--quiet');
+        const signOutBtn = el('button', 'acct-action acct-action--sign-out');
         signOutBtn.type = 'button';
         signOutBtn.setAttribute('role', 'menuitem');
         signOutBtn.dataset.action = 'sign-out';
@@ -124,7 +138,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         signOutBtn.append(icon('fa-right-from-bracket'), i18nText('span', '', 'account-sign-out'));
 
         menu.setAttribute('aria-busy', String(busy));
-        menu.replaceChildren(i18nText('p', 'acct-menu__label', 'account-menu-title'), list, el('div', 'acct-menu__rule'), add, signOutBtn);
+        menu.replaceChildren(i18nText('p', 'acct-menu__label', 'account-menu-title'), list, el('div', 'acct-menu__rule'), add, el('div', 'acct-menu__rule'), signOutBtn);
     }
 
     function focusables() {
@@ -165,7 +179,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         try {
             await sessions.add();
         } catch (err) {
-            reportAuthError(err, 'Đăng nhập thất bại');
+            reportAuthError(err, t('sign-in-failed'));
         }
         render();
     }
@@ -182,7 +196,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
             await sessions.switchTo(uid);
             closeMenu({ restoreFocus: true });
         } catch (err) {
-            reportAuthError(err, 'Chuyển tài khoản thất bại');
+            reportAuthError(err, t('account-switch-failed'));
         } finally {
             pendingUid = null;
             render();
@@ -194,7 +208,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         try {
             await sessions.signOutActive();
         } catch (err) {
-            reportAuthError(err, 'Đăng xuất thất bại');
+            reportAuthError(err, t('sign-out-failed'));
         }
         render();
     }
@@ -206,6 +220,9 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
             else closeMenu();
         }
     }
+
+    // account-menu.js owns the trigger's label, so it re-renders when the UI language flips.
+    window.addEventListener('uilanguagechange', render);
 
     trigger.addEventListener('click', () => {
         if (!sessions.user) {
