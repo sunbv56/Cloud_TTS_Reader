@@ -1856,13 +1856,17 @@
 
     .console-utils { display: flex; align-items: center; gap: var(--space-2); flex: none; }
     #sleep-chip { gap: 4px; padding: 0 var(--space-2); }
-    /* Phones: speed and sleep timer live in the listening panel (⌃); the row keeps the
-       chapter skips beside play instead. */
+    /* Phones: speed, sleep timer and chapter skips live in the listening panel (⌃) and the
+       chapter list; the row keeps only sentence steps beside play, so a mis-tap in the dark
+       moves one sentence instead of a whole chapter. */
     @media (max-width: 1023.98px) {
         #speak-speed-chip,
         #sleep-chip { display: none; }
-        .console-transport #prev-btn,
-        .console-transport #next-btn { display: inline-grid; place-items: center; }
+        .console-transport { gap: var(--space-1); }
+        .console-transport #prev-chunk-btn,
+        .console-transport #next-chunk-btn { display: inline-grid; place-items: center; min-width: var(--tap); min-height: var(--tap); border-radius: 50%; }
+        .console-transport #prev-chunk-btn .ic,
+        .console-transport #next-chunk-btn .ic { stroke-width: 2.1; }
         /* Screen-off listening is used a lot on phones: keep it, icon only. */
         .console-utils .console-pocket {
             display: inline-grid;
