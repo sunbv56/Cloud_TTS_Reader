@@ -23,10 +23,16 @@ function el(tag, className, text) {
     return node;
 }
 
-function icon(name) {
-    const node = el('i', name.startsWith('fab ') ? name : `fas ${name}`);
-    node.setAttribute('aria-hidden', 'true');
-    return node;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+function icon(name, className = '') {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', `ic ${className}`.trim());
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS(SVG_NS, 'use');
+    use.setAttribute('href', `#i-${name}`);
+    svg.append(use);
+    return svg;
 }
 
 function i18nText(tag, className, key) {
@@ -49,7 +55,7 @@ function profileName(profile) {
 function avatar(profile, className = 'acct-avatar') {
     const letter = (realName(profile) || profile?.email || '').trim().charAt(0).toUpperCase();
     const initial = el('span', `${className} acct-avatar--initial`, letter || undefined);
-    if (!letter) initial.append(icon('fa-user'));
+    if (!letter) initial.append(icon('user', 'acct-avatar__icon'));
     initial.setAttribute('aria-hidden', 'true');
     if (!profile.photo) return initial;
     const img = el('img', className);
@@ -74,7 +80,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         const profile = sessions.user ? activeProfile() : null;
         trigger.replaceChildren();
         if (!profile) {
-            trigger.append(icon('fab fa-google'), i18nText('span', 'hidden sm:inline', 'sign-in'));
+            trigger.append(icon('google', 'ic--sm'), i18nText('span', 'hidden sm:inline', 'sign-in'));
             trigger.classList.replace('acct-trigger--signed-in', 'btn-primary');
             trigger.removeAttribute('aria-haspopup');
             trigger.removeAttribute('aria-expanded');
@@ -84,7 +90,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         }
         trigger.classList.remove('btn-primary');
         trigger.classList.add('acct-trigger--signed-in');
-        trigger.append(avatar(profile, 'acct-avatar acct-avatar--sm'), icon('fa-chevron-down acct-trigger__chevron'));
+        trigger.append(avatar(profile, 'acct-avatar acct-avatar--sm'), icon('down', 'acct-trigger__chevron'));
         trigger.setAttribute('aria-haspopup', 'menu');
         trigger.setAttribute('aria-controls', 'account-menu');
         trigger.setAttribute('aria-expanded', String(isOpen));
@@ -115,8 +121,8 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
             else if (account.uid) text.append(el('span', 'acct-item__email', t('account-no-email').replace('{id}', account.uid.slice(-4))));
 
             const mark = account.uid === pendingUid
-                ? icon('fa-circle-notch fa-spin acct-item__mark')
-                : isActive ? icon('fa-check acct-item__mark') : el('span', 'acct-item__mark');
+                ? icon('spinner', 'acct-item__mark acct-item__mark--spin')
+                : isActive ? icon('check', 'acct-item__mark') : el('span', 'acct-item__mark');
             item.append(avatar(account), text, mark);
             list.append(item);
         }
@@ -127,7 +133,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         add.setAttribute('role', 'menuitem');
         add.dataset.action = 'add';
         add.disabled = busy || full;
-        add.append(icon('fa-user-plus'), i18nText('span', '', 'account-add'));
+        add.append(icon('user-plus'), i18nText('span', '', 'account-add'));
         if (full) add.append(i18nText('span', 'acct-action__hint', 'account-limit'));
 
         const signOutBtn = el('button', 'acct-action acct-action--sign-out');
@@ -135,7 +141,7 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         signOutBtn.setAttribute('role', 'menuitem');
         signOutBtn.dataset.action = 'sign-out';
         signOutBtn.disabled = busy;
-        signOutBtn.append(icon('fa-right-from-bracket'), i18nText('span', '', 'account-sign-out'));
+        signOutBtn.append(icon('logout'), i18nText('span', '', 'account-sign-out'));
 
         menu.setAttribute('aria-busy', String(busy));
         menu.replaceChildren(i18nText('p', 'acct-menu__label', 'account-menu-title'), list, el('div', 'acct-menu__rule'), add, el('div', 'acct-menu__rule'), signOutBtn);

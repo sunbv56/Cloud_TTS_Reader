@@ -29,7 +29,6 @@
             window.__initialThemeColor = THEMES[savedTheme];
         })();
     </script>
-    <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
 
     <link rel="manifest" href="/static/manifest.json">
     <meta name="theme-color" content="#2A3139">
@@ -44,8 +43,6 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
     <link rel="icon" type="image/svg+xml" href="/static/icon.svg">
-    <!-- Font Awesome: Google glyph, account menu and PiP widget icons -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <!-- Fonts: UI (Be Vietnam Pro), numbers/meta (JetBrains Mono), reading (Source Serif 4).
          Other reading fonts load on demand when the reader picks them. -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -55,25 +52,6 @@
     <link rel="stylesheet" href="/static/css/mini-player.css?v=15">
     <!-- Console design system: tokens, components, app shell -->
     <link rel="stylesheet" href="/static/css/console.css?v=18">
-    <style type="text/tailwindcss">
-        @theme {
-            --font-reading: var(--font-read);
-            --font-inter: var(--font-ui);
-            --font-mono: var(--font-mono);
-            --color-primary: var(--color-accent);
-            --color-primary-dim: var(--color-accent);
-            --color-bg-dark: var(--color-paper);
-            --color-surface: var(--color-surface);
-            --color-surface-low: var(--color-paper);
-            --color-surface-high: var(--color-raised);
-            --color-glass: var(--color-raised);
-            --color-glass-border: var(--color-line);
-            --color-main: var(--color-text);
-            --color-muted: var(--color-muted);
-            --color-text-main: var(--color-text);
-            --color-text-reading: var(--color-text-reading);
-        }
-    </style>
 </head>
 
 <body class="app-body" data-view="discovery">
@@ -134,6 +112,12 @@
         <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
         <symbol id="i-volume" viewBox="0 0 24 24"><path d="M4 9.5h3.5L12 5.5v13l-4.5-4H4zM15.5 9a4 4 0 0 1 0 6M18 6.5a7.5 7.5 0 0 1 0 11"/></symbol>
         <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3.5H7a1.5 1.5 0 0 0-1.5 1.5v14A1.5 1.5 0 0 0 7 20.5h10a1.5 1.5 0 0 0 1.5-1.5V8L14 3.5zM14 3.5V8h4.5M9 13h6M9 16.5h4"/></symbol>
+        <symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></symbol>
+        <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5"/><path d="M5 20c.8-3.5 3.6-5.5 7-5.5s6.2 2 7 5.5"/></symbol>
+        <symbol id="i-user-plus" viewBox="0 0 24 24"><circle cx="10" cy="8.5" r="3.5"/><path d="M3.5 20c.7-3.4 3.3-5.5 6.5-5.5 1.5 0 2.9.4 4 1.2M18.5 13v6M15.5 16h6"/></symbol>
+        <symbol id="i-logout" viewBox="0 0 24 24"><path d="M10 4.5H6.5A1.5 1.5 0 0 0 5 6v12a1.5 1.5 0 0 0 1.5 1.5H10M15 8l4 4-4 4M19 12H9.5"/></symbol>
+        <symbol id="i-google" viewBox="0 0 24 24"><path d="M17.66 6.34A8 8 0 1 0 20 12h-7.5" stroke-width="2.2"/></symbol>
+        <symbol id="i-spinner" viewBox="0 0 24 24"><path d="M12 3.5a8.5 8.5 0 1 1-8.5 8.5"/></symbol>
     </svg>
 
     <header class="app-header" id="app-header">
@@ -194,7 +178,7 @@
         <!-- Account switcher: trigger + menu are rendered by js/modules/account-menu.js -->
         <div class="acct-switch">
             <button id="auth-btn" type="button" class="btn-primary" aria-label="Sign In">
-                <i class="fab fa-google"></i>
+                <svg class="ic ic--sm" aria-hidden="true"><use href="#i-google"/></svg>
                 <span class="hidden sm:inline" data-i18n="sign-in">Sign in</span>
             </button>
             <div id="account-menu" class="acct-menu" role="menu" aria-label="Account" data-i18n-aria="account" hidden></div>
