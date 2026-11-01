@@ -5,6 +5,7 @@ import { toggleSidebar, trapTab, normalizeThemeId, applyTheme as applyThemeToken
 import { AccountSessions } from "./js/modules/account-sessions.js";
 import { createAccountMenu } from "./js/modules/account-menu.js";
 import { displayTitle, shortChapterTitle } from "./js/modules/utils.js";
+import { openLayer, closeLayer } from "./js/modules/layer-history.js";
 
 // Firebase placeholders (Initialized via API); swapped on account switch
 let app, auth, db;
@@ -885,6 +886,8 @@ function toggleDiscoveryMode(isActive, options = {}) {
     const playerInfoLayer = document.getElementById('player-info-layer');
 
     document.body.dataset.view = isActive ? 'discovery' : 'reader';
+    if (isActive) closeLayer('reader');
+    else openLayer('reader', () => toggleDiscoveryMode(true));
     if (isActive && libraryView.orderFrozen) {
         libraryView.orderFrozen = false;
         discoveryLibrary.sort(byRecency);
@@ -2083,6 +2086,7 @@ function openBookMenu(entry, trigger, at = null) {
         menu.style.top = `${top}px`;
     }
     trigger.setAttribute('aria-expanded', 'true');
+    openLayer('book-menu', () => closeBookMenu({ restoreFocus: true }));
     document.addEventListener('pointerdown', onBookMenuOutside, true);
     menu.addEventListener('keydown', onBookMenuKey);
     window.addEventListener('resize', onBookMenuViewportChange);
@@ -2095,6 +2099,7 @@ function closeBookMenu({ restoreFocus = false } = {}) {
     const menu = document.getElementById('book-menu');
     const scrim = document.getElementById('book-menu-scrim');
     if (!menu || menu.hidden) return;
+    closeLayer('book-menu');
     menu.hidden = true;
     if (scrim) scrim.hidden = true;
     document.removeEventListener('pointerdown', onBookMenuOutside, true);
@@ -2842,6 +2847,8 @@ function setModalVisibility(id, visible) {
     const wasVisible = !modal.classList.contains('hidden');
     modal.classList.toggle('hidden', !visible);
     modal.classList.toggle('flex', visible);
+    if (visible && !wasVisible) openLayer(id, () => closeModalFromBack(id));
+    else if (!visible && wasVisible) closeLayer(id);
     if (visible && !wasVisible) {
         modalReturnFocus.set(id, document.activeElement);
         requestAnimationFrame(() => {
@@ -2855,6 +2862,18 @@ function setModalVisibility(id, visible) {
         modalReturnFocus.delete(id);
         if (previous && typeof previous.focus === 'function') previous.focus({ preventScroll: true });
     }
+}
+
+// Back closes a modal the way its own Cancel/X does.
+function closeModalFromBack(id) {
+    const closers = {
+        'upload-options-modal': () => { STATE.uploadImagesChoice = false; setModalVisibility(id, false); },
+        'upload-files-modal': closeUploadFilesModal,
+        'merge-chapters-modal': closeMergeModal,
+        'image-crop-modal': closeImageCropper,
+        'rename-modal': () => (renameDialog ? renameDialog.finish(null) : setModalVisibility(id, false)),
+    };
+    (closers[id] || (() => setModalVisibility(id, false)))();
 }
 
 function openUploadOptions() {
@@ -7594,6 +7613,10 @@ if (fontSelect) {
     };
 }
 
+// The reader hides the app header below 1024px; its ⋮ menu stands in for these two buttons.
+document.getElementById('reader-settings-btn')?.addEventListener('click', () => window.SettingsSheet?.open('listen'));
+document.getElementById('reader-search-btn')?.addEventListener('click', () => document.getElementById('header-search-btn')?.click());
+
 function applyTypographySettings() {
     const s = STATE.settings;
     const root = document.documentElement;
@@ -7887,7 +7910,10 @@ function applyLiteMode(isLite) {
             pocketOverlay.classList.add('flex');
             updatePocketModeInfo();
             if (!wasOpen) document.getElementById('pocket-play-btn')?.focus({ preventScroll: true });
+            // Back only wakes the locked screen; unlocking stays a deliberate double tap.
+            openLayer('pocket', () => { brightenPocketOverlay(); return false; });
         } else {
+            closeLayer('pocket');
             pocketOverlay.classList.add('hidden');
             pocketOverlay.classList.remove('flex');
             dimPocketOverlay();
@@ -8856,6 +8882,7 @@ async function openEditChapterModal(index, triggerBtn = null) {
             editingChapterGap = parts.gap;
             textarea.value = nameInput ? parts.body : data.content;
             modal.classList.remove('hidden');
+            openLayer('edit-chapter-modal', closeEditModal);
             textarea.scrollTop = 0;
             (nameInput || textarea).focus({ preventScroll: true });
             if (statusIndicator) statusIndicator.innerText = tr('status-ready', 'Ready');
@@ -8904,6 +8931,7 @@ function flashTOCRow(index) {
 }
 
 function closeEditModal() {
+    closeLayer('edit-chapter-modal');
     document.getElementById('edit-chapter-modal').classList.add('hidden');
     const index = editingChapterIndex;
     editingChapterIndex = -1;
@@ -9272,11 +9300,13 @@ function openReaderTypePanel() {
     if (readerTypeScrim) readerTypeScrim.hidden = !isSheet;
     document.addEventListener('pointerdown', onReaderTypeOutside, true);
     document.addEventListener('keydown', onReaderTypeKey, true);
+    openLayer('reader-type', () => closeReaderTypePanel({ restoreFocus: true }));
     document.getElementById('reader-type-font')?.focus({ preventScroll: true });
 }
 
 function closeReaderTypePanel({ restoreFocus = false } = {}) {
     if (!readerTypePanel || readerTypePanel.hidden) return;
+    closeLayer('reader-type');
     readerTypePanel.hidden = true;
     if (readerTypeScrim) readerTypeScrim.hidden = true;
     document.removeEventListener('pointerdown', onReaderTypeOutside, true);

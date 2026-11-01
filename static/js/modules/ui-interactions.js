@@ -2,6 +2,8 @@
  * UI Interactions & Theme Controller
  */
 
+import { openLayer, closeLayer } from './layer-history.js';
+
 export const DEFAULT_THEME = 'slate';
 export const DEFAULT_READER_FONT = 'Source Serif 4';
 
@@ -162,7 +164,9 @@ export function toggleSidebar(show) {
         sidebar.classList.add('open');
         overlay.classList.remove('hidden');
         setTimeout(() => overlay.classList.add('opacity-100'), 10);
+        if (window.innerWidth < 1024) openLayer('drawer', () => toggleSidebar(false));
     } else {
+        closeLayer('drawer');
         sidebar.classList.remove('open');
         overlay.classList.remove('opacity-100');
         setTimeout(() => overlay.classList.add('hidden'), 300);
@@ -311,6 +315,7 @@ export function openTOCSheet() {
     document.getElementById('toc-close-btn')?.focus({ preventScroll: true });
     document.addEventListener('keydown', onTOCSheetKey, true);
     window.addEventListener('resize', onTOCSheetResize);
+    openLayer('toc-sheet', dismissTOCSheet);
 }
 
 export function closeTOCSheet({ restoreFocus = true } = {}) {
@@ -319,6 +324,7 @@ export function closeTOCSheet({ restoreFocus = true } = {}) {
     const panel = document.getElementById('panel-toc');
     const sidebar = document.getElementById('sidebar-container');
     if (!sheet || sheet.hidden) return false;
+    closeLayer('toc-sheet');
     sheet.hidden = true;
     if (scrim) scrim.hidden = true;
     if (panel && sidebar) {
@@ -457,6 +463,7 @@ export const SettingsSheet = {
             document.documentElement.toggleAttribute('data-settings-open', true);
             document.addEventListener('keydown', this.onKey, true);
             window.refreshInsights?.();
+            openLayer('settings', () => this.close());
         }
         requestAnimationFrame(() => {
             this.scrollTo(`settings-${section}`, { instant: true });
@@ -490,6 +497,7 @@ export const SettingsSheet = {
 
     close() {
         if (!this.isOpen()) return;
+        closeLayer('settings');
         this.sheet.hidden = true;
         if (this.scrim) this.scrim.hidden = true;
         document.documentElement.removeAttribute('data-settings-open');
@@ -727,7 +735,9 @@ export function initReaderMoreMenu() {
         if (next) {
             document.addEventListener('pointerdown', onOutside, true);
             items()[0]?.focus();
+            openLayer('reader-menu', () => setOpen(false, { restoreFocus: true }));
         } else {
+            closeLayer('reader-menu');
             document.removeEventListener('pointerdown', onOutside, true);
             if (restoreFocus) moreBtn.focus();
         }
