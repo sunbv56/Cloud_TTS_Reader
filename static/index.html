@@ -361,7 +361,7 @@
 
             <!-- Aa: reading type settings. Popover under the top bar; bottom sheet on phones. -->
             <div id="reader-type-scrim" class="sheet-scrim sheet-scrim--clear" hidden></div>
-            <div id="reader-type-panel" class="type-panel" role="dialog" aria-modal="false" aria-labelledby="reader-type-title" hidden>
+            <div id="reader-type-panel" class="type-panel" role="dialog" aria-modal="false" aria-labelledby="reader-type-title" tabindex="-1" hidden>
                 <div class="sheet__grab" aria-hidden="true"></div>
                 <div class="type-panel__head">
                     <h3 id="reader-type-title" class="type-panel__title" data-i18n="reader-type">Chữ đọc</h3>
@@ -1194,6 +1194,23 @@ Nội dung chương hai...</pre>
                 <button type="submit" class="btn btn--primary" data-i18n="save">Lưu</button>
             </div>
         </form>
+    </div>
+    <!-- Confirm an unusual or destructive step (replaces the browser's confirm()) -->
+    <div id="confirm-modal" class="modal modal--top hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirm-modal-title" aria-describedby="confirm-modal-msg">
+        <div class="modal__scrim" data-close-confirm></div>
+        <div class="modal-card modal-card--sm">
+            <div class="modal-head">
+                <h2 id="confirm-modal-title" class="modal-title"></h2>
+                <button type="button" class="icon-btn" data-close-confirm aria-label="Đóng" data-i18n-aria="close">
+                    <svg class="ic" aria-hidden="true"><use href="#i-x"/></svg>
+                </button>
+            </div>
+            <p id="confirm-modal-msg" class="confirm-msg"></p>
+            <div class="modal-actions">
+                <button type="button" class="btn" data-close-confirm data-autofocus data-i18n="cancel">Huỷ</button>
+                <button type="button" id="confirm-modal-ok" class="btn btn--primary"></button>
+            </div>
+        </div>
     </div>
     <!-- Edit chapter: raw text of one chapter -->
     <div id="edit-chapter-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="edit-chapter-title">
