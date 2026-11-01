@@ -733,7 +733,6 @@
         padding: 0 5px;
     }
     .hdr-keys span + kbd { margin-left: var(--space-2); }
-    .hdr-menu-wrap { position: relative; flex: none; }
 
     /* Account switcher (markup rendered by account-menu.js) */
     .acct-switch { position: relative; flex: none; }
@@ -859,29 +858,11 @@
     .acct-item__mark { width: 18px; flex: none; text-align: center; font-size: var(--text-sm); color: var(--color-accent); }
     .acct-action { font-size: var(--text-md); }
     .acct-action > i { width: 36px; text-align: center; color: var(--color-muted); }
-    .acct-action__hint { margin-left: auto; font: 500 var(--text-2xs)/1 var(--font-mono); color: var(--color-muted); }
+    .acct-action > .ic { flex: none; margin-inline: 10px; color: var(--color-muted); }
+    .acct-action__hint { margin-left: auto; flex: none; font: 500 var(--text-xs)/1 var(--font-ui); font-variant-numeric: tabular-nums; color: var(--color-muted); white-space: nowrap; }
     .acct-action--sign-out,
     .acct-action--sign-out > i { color: var(--color-text); }
 
-    .menu-who {
-        display: flex;
-        align-items: center;
-        gap: var(--space-3);
-        min-height: 48px;
-        padding: var(--space-1) var(--space-3);
-        font-size: var(--text-md);
-        font-weight: 600;
-        border-bottom: 1px solid var(--color-line);
-        margin-bottom: var(--space-1);
-    }
-    .menu-who .acct-avatar { width: 28px; height: 28px; }
-    .menu-who__guest {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: var(--color-warn);
-        flex: none;
-    }
 
     /* Main grid: reader row + console row; desktop adds the 360px column. */
     .app-main {
@@ -994,7 +975,8 @@
     @media (hover: hover) { .reader-top__pen:hover { color: var(--color-text); } }
     .reader-chapter {
         margin: 2px 0 0;
-        font: 500 var(--text-2xs)/1.4 var(--font-mono);
+        font: 500 var(--text-xs)/1.4 var(--font-ui);
+        font-variant-numeric: tabular-nums;
         color: var(--color-muted);
         white-space: nowrap;
         overflow: hidden;
@@ -1672,8 +1654,8 @@
         .app-main { grid-template-columns: var(--sidebar-w) minmax(0, 1fr); }
         .app-main > .sidebar { grid-column: 1; grid-row: 1; border-right: 1px solid var(--color-line); }
         .app-main > .reader { grid-column: 2; }
-        /* Master–detail: the left column stays, Home replaces the detail pane. */
-        .app-main > .discovery { grid-column: 2; }
+        /* Home owns the full width; the left column belongs to the reader. */
+        body[data-view="discovery"] .app-main > .sidebar { display: none; }
         .hdr-keys { display: inline-flex; }
         #mobile-menu-btn { display: none; }
         #text-container { padding-left: var(--space-6); padding-right: var(--space-7); }
@@ -1780,7 +1762,8 @@
     }
     .console-sub,
     .console-status {
-        font: 500 var(--text-2xs)/1.35 var(--font-mono);
+        font: 500 var(--text-xs)/1.35 var(--font-ui);
+        font-variant-numeric: tabular-nums;
         color: var(--color-muted);
         white-space: nowrap;
         overflow: hidden;
@@ -1816,7 +1799,7 @@
             overflow: hidden;
             text-overflow: ellipsis;
             vertical-align: top;
-            font-size: var(--text-2xs);
+            font-size: var(--text-xs);
         }
     }
     @media (min-width: 1024px) {
@@ -2390,6 +2373,15 @@
         border-bottom: 1px solid var(--color-line);
     }
     .settings__jump::-webkit-scrollbar { display: none; }
+    /* Faded edges say there is more to scroll; JS sets the flags only while that side overflows. */
+    .settings__jump {
+        --fade-start: 0px;
+        --fade-end: 0px;
+        -webkit-mask-image: linear-gradient(to right, transparent, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent);
+        mask-image: linear-gradient(to right, transparent, #000 var(--fade-start), #000 calc(100% - var(--fade-end)), transparent);
+    }
+    .settings__jump[data-more-start] { --fade-start: 28px; }
+    .settings__jump[data-more-end] { --fade-end: 28px; }
     .settings__jump a {
         display: inline-flex;
         flex: none;
@@ -2442,6 +2434,7 @@
     .set-row--range .range { grid-column: 1 / -1; min-height: 32px; }
     .set-row--stack { display: flex; flex-direction: column; align-items: stretch; gap: var(--space-2); }
     .set-row--switch { cursor: pointer; }
+    .set-row[hidden] { display: none; }
     .switch-input { position: absolute; opacity: 0; width: 1px; height: 1px; pointer-events: none; }
     @media (hover: hover) { .set-row--switch:hover { background: color-mix(in oklch, var(--color-surface) 50%, transparent); } }
     .seg--fit { display: inline-grid; grid-auto-columns: 48px; }
@@ -3133,15 +3126,21 @@
         .shelf { padding: var(--space-5) var(--space-6) var(--space-7); }
     }
     .shelf-head { display: flex; align-items: center; gap: var(--space-3); min-height: var(--tap); }
-    .shelf-title { margin: 0 auto 0 0; font: 500 var(--text-lg)/1.2 var(--font-mono); color: var(--color-text); }
+    .shelf-title { flex: none; margin: 0; font: 600 var(--text-xl)/1.2 var(--font-ui); color: var(--color-text); white-space: nowrap; }
+    .shelf-count { margin-right: auto; padding-top: 3px; min-width: 0; font: 500 var(--text-sm)/1.2 var(--font-ui); font-variant-numeric: tabular-nums; color: var(--color-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .shelf-add { flex: none; }
+    @media (max-width: 359.98px) {
+        .shelf-head { gap: var(--space-2); }
+        .shelf-add { padding: 0 var(--space-2); }
+    }
+    body:has(#discovery-mode[data-library-empty]) #header-search-btn { display: none; }
 
     .shelf-tools { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
     .shelf-search { flex: 1 1 100%; }
-    .shelf-filter { flex: 1 1 100%; }
-    .shelf-tools__row { flex: 1 1 100%; display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
-    .shelf-count { margin-right: auto; font-size: var(--text-xs); color: var(--color-muted); white-space: nowrap; }
-    .shelf-sort { flex: 0 1 auto; min-width: 0; }
+    .shelf-filter { flex: 1 1 auto; grid-auto-columns: auto; }
+    .shelf-tools__row { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+    .shelf-sort { position: relative; flex: 0 1 auto; min-width: 0; }
+    .shelf-sort__ic { display: none; }
     .shelf-sort .select {
         width: 100%;
         max-width: 12rem;
@@ -3150,12 +3149,56 @@
         font-size: var(--text-sm);
         background: var(--color-raised);
     }
+    /* Phones: the header search icon opens the field; filter, sort and view share one row. */
+    @media (max-width: 899.98px) {
+        .shelf-tools:not([data-search-open]):not(:has(input:not(:placeholder-shown))) .shelf-search:not(:focus-within) { display: none; }
+        .shelf-filter > button { padding: 0 var(--space-1); }
+        .shelf-sort { width: var(--tap); flex: none; }
+        .shelf-sort__ic {
+            display: block;
+            position: absolute;
+            inset: 0;
+            margin: auto;
+            color: var(--color-muted);
+            pointer-events: none;
+        }
+        .shelf-sort .select {
+            width: var(--tap);
+            padding: 0;
+            color: transparent;
+            appearance: none;
+        }
+        .shelf-sort .select option { color: var(--color-text); }
+        .shelf-tools__row .seg--icons > [aria-pressed="true"] { display: none; }
+    }
     @media (min-width: 900px) {
         .shelf-search { flex: 1 1 220px; }
-        .shelf-filter { flex: 0 1 300px; }
-        .shelf-tools__row { flex: 0 0 auto; }
-        .shelf-count { margin: 0 var(--space-2) 0 0; }
+        .shelf-filter { flex: 0 1 300px; grid-auto-columns: minmax(0, 1fr); }
     }
+
+    /* Empty library: one centred invitation instead of tools that have nothing to act on. */
+    .discovery[data-library-empty] .shelf-count,
+    .discovery[data-library-empty] .shelf-add,
+    .discovery[data-library-empty] .shelf-tools,
+    .discovery[data-library-empty] .resume { display: none; }
+    .discovery[data-library-empty] .shelf { flex: 1; }
+    .shelf-empty {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--space-3);
+        margin: auto;
+        padding: var(--space-7) var(--space-4);
+        max-width: 26rem;
+        text-align: center;
+    }
+    .shelf-empty[hidden] { display: none; }
+    .shelf-empty__ic { width: 40px; height: 40px; color: var(--color-muted); }
+    .shelf-empty__title { margin: 0; font: 600 var(--text-xl)/1.3 var(--font-ui); color: var(--color-text); }
+    .shelf-empty__text { margin: 0; font: 400 var(--text-md)/1.5 var(--font-ui); color: var(--color-muted); }
+    .shelf-empty .btn--primary { margin-top: var(--space-2); padding: 0 var(--space-5); }
+    .shelf-empty__hint { margin: 0; font: 400 var(--text-sm)/1.4 var(--font-ui); color: var(--color-muted); }
+    @media (hover: none) { .shelf-empty__hint { display: none; } }
 
     /* "Nghe tiếp" card */
     .resume {
@@ -3174,7 +3217,7 @@
     .resume[hidden] { display: none; }
     @media (hover: hover) { .resume:hover { border-color: var(--color-muted); } }
     .resume__body { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-    .resume__label { font-size: var(--text-2xs); color: var(--color-muted); }
+    .resume__label { font: 500 var(--text-xs)/1.4 var(--font-ui); color: var(--color-muted); }
     .resume__title {
         margin: 0;
         font: 600 var(--text-lg)/1.3 var(--font-ui);
@@ -3561,6 +3604,43 @@
     .crop-zoom { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-3); font-size: var(--text-sm); }
     .crop-zoom output { min-width: 4ch; text-align: right; color: var(--color-muted); }
     .range { width: 100%; min-height: var(--tap); accent-color: var(--color-accent); cursor: pointer; }
+    /* Track and thumb from theme tokens; the native track is a grey that ignores the theme. */
+    .range {
+        --range-fill: 50%;
+        appearance: none;
+        -webkit-appearance: none;
+        background: transparent;
+    }
+    .range::-webkit-slider-runnable-track {
+        height: 4px;
+        border-radius: 2px;
+        background: linear-gradient(to right, var(--color-accent) var(--range-fill), var(--color-line) var(--range-fill));
+    }
+    .range::-moz-range-track { height: 4px; border-radius: 2px; background: var(--color-line); }
+    .range::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--color-accent); }
+    .range::-webkit-slider-thumb {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 18px;
+        height: 18px;
+        margin-top: -7px;
+        border: 2px solid var(--color-paper);
+        border-radius: 50%;
+        background: var(--color-accent);
+        box-shadow: 0 0 0 1px var(--color-accent);
+    }
+    .range::-moz-range-thumb {
+        width: 14px;
+        height: 14px;
+        border: 2px solid var(--color-paper);
+        border-radius: 50%;
+        background: var(--color-accent);
+        box-shadow: 0 0 0 1px var(--color-accent);
+    }
+    .range:focus-visible { outline: none; }
+    .range:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 1px var(--color-accent), 0 0 0 4px var(--color-focus); }
+    .range:focus-visible::-moz-range-thumb { box-shadow: 0 0 0 1px var(--color-accent), 0 0 0 4px var(--color-focus); }
+    .range:disabled { opacity: .5; cursor: not-allowed; }
 
     /* Merge chapters */
     .merge-card { height: min(88dvh, 52rem); }
@@ -3593,12 +3673,6 @@
     }
 
     /* ============================================================ desktop power-use fixes */
-    /* Home on desktop: the main pane owns search, filters and "Thêm truyện", so the
-       library column keeps only its list (one search field, one filter row on screen). */
-    @media (min-width: 1024px) {
-        body[data-view="discovery"] #panel-library .lib-tools,
-        body[data-view="discovery"] #panel-library .lib-filter { display: none; }
-    }
     /* Keyboard hints only while a book is open in the reader. */
     body:not([data-has-book]) .hdr-keys,
     body[data-view="discovery"] .hdr-keys { display: none; }

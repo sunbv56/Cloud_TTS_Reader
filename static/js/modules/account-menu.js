@@ -29,6 +29,16 @@ function icon(name) {
     return node;
 }
 
+function spriteIcon(name) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'ic ic--sm');
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', `#i-${name}`);
+    svg.append(use);
+    return svg;
+}
+
 function i18nText(tag, className, key) {
     const node = el(tag, className, t(key));
     node.dataset.i18n = key;
@@ -61,9 +71,8 @@ function avatar(profile, className = 'acct-avatar') {
     return img;
 }
 
-export function createAccountMenu({ sessions, onError, onStatus }) {
+export function createAccountMenu({ sessions, onError, onStatus, onSync, syncLabel }) {
     const trigger = document.getElementById('auth-btn');
-    const info = document.getElementById('auth-info');
     const menu = document.getElementById('account-menu');
     let isOpen = false;
     let pendingUid = null;
@@ -79,7 +88,6 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
             trigger.removeAttribute('aria-haspopup');
             trigger.removeAttribute('aria-expanded');
             trigger.setAttribute('aria-label', t('sign-in'));
-            info?.replaceChildren(el('span', 'menu-who__guest'), i18nText('span', '', 'guest-mode'));
             return;
         }
         trigger.classList.remove('btn-primary');
@@ -89,7 +97,6 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         trigger.setAttribute('aria-controls', 'account-menu');
         trigger.setAttribute('aria-expanded', String(isOpen));
         trigger.setAttribute('aria-label', `${profileName(profile)} — ${t('account-menu-title')}`);
-        info?.replaceChildren(avatar(profile, 'acct-avatar acct-avatar--sm'), el('span', 'acct-info__name', profileName(profile)));
     }
 
     function renderMenu() {
@@ -137,8 +144,21 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         signOutBtn.disabled = busy;
         signOutBtn.append(icon('fa-right-from-bracket'), i18nText('span', '', 'account-sign-out'));
 
+        const sync = el('button', 'acct-action');
+        sync.type = 'button';
+        sync.setAttribute('role', 'menuitem');
+        sync.dataset.action = 'sync';
+        sync.disabled = busy;
+        sync.append(spriteIcon('sync'), i18nText('span', '', 'menu-sync'));
+        const synced = syncLabel?.() || '';
+        if (synced) sync.append(el('span', 'acct-action__hint', synced));
+
+        // A re-render while open (sync finished, accounts changed) keeps focus on the same row.
+        const active = menu.contains(document.activeElement) ? document.activeElement : null;
+        const focusKey = active ? (active.dataset.uid || active.dataset.action) : null;
         menu.setAttribute('aria-busy', String(busy));
-        menu.replaceChildren(i18nText('p', 'acct-menu__label', 'account-menu-title'), list, el('div', 'acct-menu__rule'), add, el('div', 'acct-menu__rule'), signOutBtn);
+        menu.replaceChildren(i18nText('p', 'acct-menu__label', 'account-menu-title'), list, el('div', 'acct-menu__rule'), add, sync, el('div', 'acct-menu__rule'), signOutBtn);
+        if (focusKey) [...menu.querySelectorAll('button:not(:disabled)')].find(b => (b.dataset.uid || b.dataset.action) === focusKey)?.focus();
     }
 
     function focusables() {
@@ -238,6 +258,10 @@ export function createAccountMenu({ sessions, onError, onStatus }) {
         if (!button || button.disabled) return;
         if (button.dataset.uid) switchTo(button.dataset.uid);
         else if (button.dataset.action === 'add') addAccount();
+        else if (button.dataset.action === 'sync') {
+            closeMenu({ restoreFocus: true });
+            onSync?.();
+        }
         else if (button.dataset.action === 'sign-out') signOutActive();
     });
 

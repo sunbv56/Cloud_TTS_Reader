@@ -169,67 +169,17 @@ export function toggleSidebar(show) {
     }
 }
 
-// Header "settings & tools" popover: same keyboard model as the account menu.
-export function initAppMenu() {
-    const trigger = document.getElementById('app-menu-btn');
-    const menu = document.getElementById('app-menu');
-    if (!trigger || !menu) return;
-    let isOpen = false;
-
-    const items = () => [...menu.querySelectorAll('[role="menuitem"]:not(:disabled)')];
-
-    function onOutside(event) {
-        if (!menu.contains(event.target) && !trigger.contains(event.target)) setOpen(false);
-    }
-
-    function setOpen(next, { restoreFocus = false } = {}) {
-        if (isOpen === next) return;
-        isOpen = next;
-        menu.hidden = !next;
-        trigger.setAttribute('aria-expanded', String(next));
-        if (next) {
-            document.addEventListener('pointerdown', onOutside, true);
-            items()[0]?.focus();
-        } else {
-            document.removeEventListener('pointerdown', onOutside, true);
-            if (restoreFocus) trigger.focus();
-        }
-    }
-
-    trigger.addEventListener('click', () => setOpen(!isOpen));
-    // Capture phase: close before an item's own handler, some of which stop propagation.
-    menu.addEventListener('click', (event) => {
-        if (event.target.closest('[role="menuitem"]')) setOpen(false);
-    }, true);
-    menu.addEventListener('keydown', (event) => {
-        const list = items();
-        const index = list.indexOf(document.activeElement);
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            setOpen(false, { restoreFocus: true });
-        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            const step = event.key === 'ArrowDown' ? 1 : -1;
-            list[(index + step + list.length) % list.length]?.focus();
-        } else if (event.key === 'Home' || event.key === 'End') {
-            event.preventDefault();
-            list[event.key === 'Home' ? 0 : list.length - 1]?.focus();
-        } else if (event.key === 'Tab') {
-            setOpen(false);
-        }
-    });
-
-    window.closeAppMenu = () => setOpen(false);
-}
-
 // Header search: Discovery search when Home is showing, otherwise the library search.
 export function initHeaderSearch() {
     const button = document.getElementById('header-search-btn');
+    // Below 900px the shelf search stays folded until this button opens it; an empty field folds back.
+    const shelfTools = document.querySelector('.shelf-tools');
     button?.addEventListener('click', () => {
         const discovery = document.getElementById('discovery-mode');
         if (discovery && !discovery.classList.contains('hidden')) {
             const input = document.getElementById('discovery-search');
-            input?.scrollIntoView({ block: 'center' });
+            shelfTools?.toggleAttribute('data-search-open', true);
+            input?.scrollIntoView({ block: 'nearest' });
             input?.focus();
             return;
         }
@@ -237,6 +187,34 @@ export function initHeaderSearch() {
         if (window.innerWidth < 1024) toggleSidebar(true);
         setTimeout(() => document.getElementById('library-search')?.focus(), 60);
     });
+    shelfTools?.addEventListener('focusout', () => shelfTools.removeAttribute('data-search-open'));
+    document.getElementById('discovery-search')?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || event.target.value) return;
+        event.target.blur();
+        button?.focus();
+    });
+}
+
+// Range fill for WebKit, which has no ::-moz-range-progress. Values set in code fire no event,
+// so a range is repainted whenever it scrolls or opens into view.
+function paintRange(range) {
+    const min = Number(range.min || 0);
+    const max = Number(range.max || 100);
+    const pct = max > min ? ((Number(range.value) - min) / (max - min)) * 100 : 0;
+    range.style.setProperty('--range-fill', `${Math.min(100, Math.max(0, pct))}%`);
+}
+
+function initRanges() {
+    document.addEventListener('input', (event) => {
+        if (event.target.classList?.contains('range')) paintRange(event.target);
+    }, true);
+    const ranges = document.querySelectorAll('.range');
+    ranges.forEach(paintRange);
+    if (!('IntersectionObserver' in window)) return;
+    const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => { if (entry.isIntersecting) paintRange(entry.target); });
+    });
+    ranges.forEach(range => observer.observe(range));
 }
 
 export function switchSidebarTab(tabName) {
@@ -403,8 +381,19 @@ export const SettingsSheet = {
         if (!this.sheet) return;
         this.onKey = this.onKey.bind(this);
 
+        document.getElementById('settings-btn')?.addEventListener('click', () => this.open('listen'));
         document.getElementById('settings-close')?.addEventListener('click', () => this.close());
         this.scrim?.addEventListener('click', () => this.close());
+
+        const jump = this.sheet.querySelector('.settings__jump');
+        this.fadeJump = () => {
+            if (!jump || this.sheet.hidden) return;
+            const max = jump.scrollWidth - jump.clientWidth;
+            jump.toggleAttribute('data-more-start', jump.scrollLeft > 1);
+            jump.toggleAttribute('data-more-end', jump.scrollLeft < max - 1);
+        };
+        jump?.addEventListener('scroll', this.fadeJump, { passive: true });
+        window.addEventListener('resize', this.fadeJump);
 
         this.sheet.querySelectorAll('.settings__jump a').forEach(link => {
             link.addEventListener('click', (event) => {
@@ -457,12 +446,10 @@ export const SettingsSheet = {
 
     open(section = 'listen') {
         if (!this.sheet) return;
-        window.closeAppMenu?.();
         if (!this.isOpen()) {
             const active = document.activeElement;
-            // Menu items are hidden once the sheet opens; hand focus back to the menu button.
-            this.returnFocus = (!active || active === document.body || active.closest('#app-menu'))
-                ? document.getElementById('app-menu-btn')
+            this.returnFocus = (!active || active === document.body)
+                ? document.getElementById('settings-btn')
                 : active;
             this.sync();
             this.sheet.hidden = false;
@@ -471,16 +458,10 @@ export const SettingsSheet = {
             document.addEventListener('keydown', this.onKey, true);
             window.refreshInsights?.();
         }
-        // Opened from "Thống kê đọc", the sheet is titled for what it shows.
-        const title = document.getElementById('settings-title');
-        if (title) {
-            title.dataset.i18n = section === 'stats' ? 'settings-stats' : 'settings-title';
-            const lang = currentUiLang();
-            title.textContent = window.translations?.[lang]?.[title.dataset.i18n] || (section === 'stats' ? 'Thống kê' : 'Cài đặt');
-        }
         requestAnimationFrame(() => {
             this.scrollTo(`settings-${section}`, { instant: true });
             this.markSection(`settings-${section}`);
+            this.fadeJump?.();
             document.getElementById('settings-close')?.focus({ preventScroll: true });
         });
     },
@@ -546,12 +527,13 @@ export const SettingsSheet = {
                 return;
             }
             link.setAttribute('aria-current', 'true');
-            // At 320px the bar scrolls sideways; keep the marked link in view.
+            // At 320px the bar scrolls sideways; keep the marked link clear of the faded edges.
             const nav = link.parentElement;
             const box = link.getBoundingClientRect();
             const bar = nav.getBoundingClientRect();
-            if (box.left < bar.left) nav.scrollLeft -= bar.left - box.left;
-            else if (box.right > bar.right) nav.scrollLeft += box.right - bar.right;
+            const fade = 28;
+            if (box.left < bar.left + fade) nav.scrollLeft -= bar.left + fade - box.left;
+            else if (box.right > bar.right - fade) nav.scrollLeft += box.right - (bar.right - fade);
         });
     },
 
@@ -642,8 +624,8 @@ export function initUIInteractions() {
     } catch (_) {}
     applyTheme(normalizeThemeId(savedTheme));
 
-    initAppMenu();
     initHeaderSearch();
+    initRanges();
 
     SettingsSheet.init();
 

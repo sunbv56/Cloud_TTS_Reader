@@ -109,6 +109,7 @@
         <symbol id="i-dotsh" viewBox="0 0 24 24"><path d="M5.5 12h.01M12 12h.01M18.5 12h.01" stroke-width="3"/></symbol>
         <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6.5" height="7" rx="1"/><rect x="13.5" y="4" width="6.5" height="7" rx="1"/><rect x="4" y="13" width="6.5" height="7" rx="1"/><rect x="13.5" y="13" width="6.5" height="7" rx="1"/></symbol>
         <symbol id="i-rows" viewBox="0 0 24 24"><rect x="4" y="4.5" width="4" height="5.5" rx="1"/><rect x="4" y="14" width="4" height="5.5" rx="1"/><path d="M11 6h9M11 9h5M11 15.5h9M11 18.5h5"/></symbol>
+        <symbol id="i-sort" viewBox="0 0 24 24"><path d="M8 5v14M4.5 15.5L8 19l3.5-3.5M16 19V5M12.5 8.5L16 5l3.5 3.5"/></symbol>
         <symbol id="i-image" viewBox="0 0 24 24"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.8"/><path d="M20.5 16l-5-5-8.5 8.5"/></symbol>
         <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5M4.5 15v3.5a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5V15"/></symbol>
         <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M4.5 15v3.5a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5V15"/></symbol>
@@ -156,40 +157,9 @@
             <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
         </button>
 
-        <div class="hdr-menu-wrap">
-            <button id="app-menu-btn" type="button" class="icon-btn" aria-haspopup="menu" aria-expanded="false" aria-controls="app-menu" aria-label="Cài đặt và tiện ích" title="Cài đặt và tiện ích" data-i18n-aria="app-menu-label">
-                <svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg>
-            </button>
-            <div id="app-menu" class="menu" role="menu" aria-label="Cài đặt và tiện ích" hidden>
-                <div id="auth-info" class="menu-who" role="presentation">
-                    <span class="menu-who__guest"></span>
-                    <span data-i18n="guest-mode">Guest Mode</span>
-                </div>
-                <button id="quick-settings-btn" type="button" class="menu-item" role="menuitem">
-                    <svg class="ic" aria-hidden="true"><use href="#i-gear"/></svg>
-                    <span data-i18n="menu-settings">Cài đặt hiển thị &amp; giọng</span>
-                </button>
-                <button id="stats-toggle-btn" type="button" class="menu-item" role="menuitem">
-                    <svg class="ic" aria-hidden="true"><use href="#i-chart"/></svg>
-                    <span data-i18n="menu-stats">Thống kê đọc</span>
-                    <span id="stats-menu-value" class="menu-item__value" hidden></span>
-                </button>
-                <button id="sync-btn" type="button" class="menu-item" role="menuitem">
-                    <svg class="ic" aria-hidden="true"><use href="#i-sync"/></svg>
-                    <span data-i18n="menu-sync">Đồng bộ thư viện</span>
-                    <span id="sync-btn-value" class="menu-item__value"></span>
-                </button>
-                <button id="lang-btn" type="button" class="menu-item" role="menuitem">
-                    <svg class="ic" aria-hidden="true"><use href="#i-lang"/></svg>
-                    <span data-i18n="menu-language">Ngôn ngữ</span>
-                    <span id="lang-btn-value" class="menu-item__value">Tiếng Việt</span>
-                </button>
-                <button id="fullscreen-btn" type="button" class="menu-item" role="menuitem">
-                    <svg class="ic" aria-hidden="true"><use href="#i-full"/></svg>
-                    <span data-i18n="menu-fullscreen">Toàn màn hình</span>
-                </button>
-            </div>
-        </div>
+        <button id="settings-btn" type="button" class="icon-btn" aria-label="Cài đặt" title="Cài đặt" data-i18n-aria="settings-title">
+            <svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg>
+        </button>
 
         <!-- Account switcher: trigger + menu are rendered by js/modules/account-menu.js -->
         <div class="acct-switch">
@@ -527,7 +497,8 @@
             <div class="shelf">
                 <header class="shelf-head">
                     <h1 id="discovery-heading" class="shelf-title" data-i18n="shelf-title">Kệ sách</h1>
-                    <button id="discovery-add-btn" type="button" class="btn btn--primary shelf-add">
+                    <span id="discovery-result-count" class="shelf-count" aria-live="polite"></span>
+                    <button id="discovery-add-btn" type="button" class="btn shelf-add">
                         <svg class="ic ic--sm" aria-hidden="true"><use href="#i-plus"/></svg>
                         <span data-i18n="add-book">Thêm truyện</span>
                     </button>
@@ -536,7 +507,7 @@
                 <section id="discovery-continue-card" class="resume" hidden aria-labelledby="discovery-continue-title">
                     <span id="discovery-continue-cover" class="cover cover--resume" aria-hidden="true"></span>
                     <div class="resume__body">
-                        <p id="discovery-continue-label" class="resume__label mono">Nghe gần nhất</p>
+                        <p id="discovery-continue-label" class="resume__label">Nghe gần nhất</p>
                         <h2 id="discovery-continue-title" class="resume__title">—</h2>
                         <p id="discovery-continue-meta" class="resume__meta mono">—</p>
                         <div class="bar" aria-hidden="true"><span id="discovery-continue-progress" class="bar__fill"></span></div>
@@ -564,9 +535,9 @@
                         <button type="button" data-filter="done" aria-pressed="false" data-i18n="filter-done">Đã xong</button>
                     </div>
                     <div class="shelf-tools__row">
-                        <span id="discovery-result-count" class="shelf-count mono" aria-live="polite"></span>
                         <label class="shelf-sort">
                             <span class="sr-only-text" data-i18n="sort-label">Sắp xếp</span>
+                            <svg class="ic ic--sm shelf-sort__ic" aria-hidden="true"><use href="#i-sort"/></svg>
                             <select id="discovery-sort" class="select">
                                 <option value="recent" data-i18n="sort-recent">Gần đây</option>
                                 <option value="title" data-i18n="sort-title">Tên A–Z</option>
@@ -585,6 +556,17 @@
                 </div>
 
                 <ul id="discovery-grid" class="shelf-list" aria-labelledby="discovery-heading"></ul>
+
+                <div id="shelf-empty" class="shelf-empty" hidden>
+                    <svg class="ic shelf-empty__ic" aria-hidden="true"><use href="#i-book"/></svg>
+                    <h2 class="shelf-empty__title" data-i18n="shelf-empty-title">Kệ sách còn trống</h2>
+                    <p class="shelf-empty__text" data-i18n="shelf-empty-text">Thêm một file .txt, .epub hoặc .pdf để bắt đầu nghe.</p>
+                    <button id="shelf-empty-add" type="button" class="btn btn--primary">
+                        <svg class="ic ic--sm" aria-hidden="true"><use href="#i-plus"/></svg>
+                        <span data-i18n="add-book">Thêm truyện</span>
+                    </button>
+                    <p class="shelf-empty__hint" data-i18n="shelf-empty-drop">Hoặc kéo thả file vào đây</p>
+                </div>
 
                 <div id="discovery-search-empty" class="lib-empty" hidden>
                     <p id="discovery-search-empty-text">Không tìm thấy truyện phù hợp.</p>
@@ -632,9 +614,9 @@
                         <span id="player-author" class="console-title">NOVA</span>
                         <span class="console-sub">
                             <span id="console-chapter" class="console-chapter"></span>
-                            <span id="player-title" class="console-chapter-title">Ready</span>
+                            <span id="player-title" class="console-chapter-title">Sẵn sàng</span>
                         </span>
-                        <span id="status-indicator" class="console-status" role="status">Ready</span>
+                        <span id="status-indicator" class="console-status" role="status">Sẵn sàng</span>
                     </div>
                 </div>
 
@@ -1023,6 +1005,11 @@
                     <input type="checkbox" id="settings-wake-toggle" class="switch-input">
                     <span class="switch" aria-hidden="true"></span>
                 </label>
+                <label class="set-row set-row--switch" hidden>
+                    <span class="set-row__label"><span data-i18n="fullscreen-title">Toàn màn hình</span><small data-i18n="fullscreen-desc">Ẩn thanh địa chỉ và thanh tab của trình duyệt</small></span>
+                    <input type="checkbox" id="settings-fullscreen-toggle" class="switch-input">
+                    <span class="switch" aria-hidden="true"></span>
+                </label>
                 <label class="set-row set-row--switch">
                     <span class="set-row__label"><span data-i18n="feedback-title">Rung và tiếng bấm</span><small data-i18n="feedback-desc">Khi bấm phát, đổi tốc độ, khoá màn hình</small></span>
                     <input type="checkbox" id="settings-feedback-toggle" class="switch-input" checked>
@@ -1129,7 +1116,7 @@ Nội dung chương một...
 Chương 2: Hành trình
 
 Nội dung chương hai...</pre>
-                <a href="/static/examples/mau-sach-cloud-tts.txt" download class="format-help__link">
+                <a href="/static/examples/mau-sach-nova.txt" download class="format-help__link">
                     <svg class="ic ic--sm" aria-hidden="true"><use href="#i-download"/></svg>
                     <span data-i18n="download-sample-file">Tải file mẫu .txt</span>
                 </a>
