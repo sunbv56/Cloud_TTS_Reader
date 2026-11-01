@@ -1709,6 +1709,20 @@
         #sleep-chip { display: none; }
         .console-transport #prev-btn,
         .console-transport #next-btn { display: inline-grid; place-items: center; }
+        /* Screen-off listening is used a lot on phones: keep it, icon only. */
+        .console-utils .console-pocket {
+            display: inline-grid;
+            place-items: center;
+            width: var(--tap);
+            min-height: var(--tap);
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            background: transparent;
+        }
+        .console-pocket > span {
+            position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+        }
     }
     #sleep-chip .ic { width: 14px; height: 14px; }
     #sleep-chip-label[data-i18n="sleep-chip-off"] { font-family: var(--font-ui); font-weight: 500; }
