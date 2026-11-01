@@ -719,6 +719,11 @@ function setAudioWaveState(isPlaying) {
 }
 
 const TOAST_ACTION_MS = 10000;
+// Chapter and image deletes wait out the Undo window before touching storage.
+let pendingChapterDelete = null;
+const pendingImageDeletes = new Map();
+// Image commits run one at a time because each rewrites the shared manifest.
+let imageDeleteChain = Promise.resolve();
 const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)');
 
 function scrollBehavior() {
@@ -4461,10 +4466,6 @@ async function renderImageManager() {
     restoreImageManagerFocus(list);
 }
 
-// Image delete waits out the Undo window; commits run one at a time because each
-// rewrites the shared manifest.
-const pendingImageDeletes = new Map();
-let imageDeleteChain = Promise.resolve();
 
 function imageDeleteKey(bookId, imageId) {
     return `${bookId}::${imageId}`;
@@ -6257,7 +6258,8 @@ function syncTOCNowLabels() {
 function updateTOCCount() {
     const countEl = document.getElementById('toc-count');
     if (!countEl) return;
-    const total = STATE.currentBook?.chapters?.length || 0;
+    const pending = pendingChapterDelete?.bookId === STATE.currentBookId ? pendingChapterDelete.indices.size : 0;
+    const total = (STATE.currentBook?.chapters?.length || 0) - pending;
     if (!total) {
         countEl.textContent = '';
         return;
@@ -6712,9 +6714,6 @@ function stopDownload() {
         STATE.downloadResolve = null;
     }
 }
-
-// Chapter delete waits out the Undo window: the rows hide now, the file changes later.
-let pendingChapterDelete = null;
 
 function isChapterPendingDelete(index) {
     return !!pendingChapterDelete && pendingChapterDelete.bookId === STATE.currentBookId && pendingChapterDelete.indices.has(index);
