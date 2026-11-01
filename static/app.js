@@ -1,7 +1,7 @@
 // Firebase Modules
 import { initializeFirestore, getFirestore, waitForPendingWrites, terminate, doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { compressImageForStorage, IMAGE_MAX_BYTES } from "./js/image-manager.js";
-import { toggleSidebar, trapTab, normalizeThemeId, applyTheme as applyThemeTokens, ensureReaderFont, readerFontStack, DEFAULT_READER_FONT } from "./js/modules/ui-interactions.js";
+import { toggleSidebar, trapTab, paintRange, normalizeThemeId, applyTheme as applyThemeTokens, ensureReaderFont, readerFontStack, DEFAULT_READER_FONT } from "./js/modules/ui-interactions.js";
 import { AccountSessions } from "./js/modules/account-sessions.js";
 import { createAccountMenu } from "./js/modules/account-menu.js";
 import { displayTitle, shortChapterTitle } from "./js/modules/utils.js";
@@ -735,7 +735,7 @@ const APP_STATUS = {
         indicator.innerText = text;
         indicator.style.color = '';
     },
-    toast(message, kind = 'error', { key = null, actions = [], action = null, duration = null } = {}) {
+    toast(message, kind = 'error', { key = null, actions = [], action = null, duration = null, onExpire = null } = {}) {
         const region = document.getElementById('app-toast-region');
         if (!region) return;
         // A single `action` (e.g. "Hoàn tác") is shorthand for one entry in `actions`.
@@ -814,10 +814,15 @@ const APP_STATUS = {
             toast.dataset.leaving = 'true';
             toast.remove();
         };
+        // Running out or the X accepts the toast (e.g. commits a delete); an action or a keyed replacement does not.
+        const expire = () => {
+            dismiss();
+            onExpire?.();
+        };
         const startTimer = () => {
             if (removeTimer) return;
             startedAt = Date.now();
-            removeTimer = setTimeout(dismiss, remaining);
+            removeTimer = setTimeout(expire, remaining);
         };
         const pauseTimer = () => {
             if (!removeTimer) return;
@@ -833,7 +838,7 @@ const APP_STATUS = {
 
         closeBtn?.addEventListener('click', (e) => {
             e.stopPropagation();
-            dismiss();
+            expire();
         });
         toast.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') { hovered = true; syncPause(); } });
         toast.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { hovered = false; syncPause(); } });
@@ -2912,6 +2917,7 @@ function closeModalFromBack(id) {
         'merge-chapters-modal': closeMergeModal,
         'image-crop-modal': closeImageCropper,
         'rename-modal': () => (renameDialog ? renameDialog.finish(null) : setModalVisibility(id, false)),
+        'confirm-modal': () => (confirmDialog ? confirmDialog.finish(false) : setModalVisibility(id, false)),
     };
     (closers[id] || (() => setModalVisibility(id, false)))();
 }
@@ -4505,10 +4511,10 @@ function scheduleImageDelete(bookId, image) {
     const key = imageDeleteKey(bookId, image.id);
     if (!STATE.user || pendingImageDeletes.has(key)) return;
     const uid = STATE.user.uid;
-    let undoToast = null;
-    const timer = setTimeout(() => {
+    const commit = () => {
+        if (!pendingImageDeletes.has(key)) return;
+        clearTimeout(pendingImageDeletes.get(key));
         pendingImageDeletes.delete(key);
-        undoToast?.dismissToast?.();
         imageDeleteChain = imageDeleteChain.then(async () => {
             if (STATE.user?.uid !== uid) return;
             try {
@@ -4519,12 +4525,13 @@ function scheduleImageDelete(bookId, image) {
                 void renderImageManager();
             }
         });
-    }, TOAST_ACTION_MS);
-    pendingImageDeletes.set(key, timer);
+    };
+    pendingImageDeletes.set(key, null);
     void renderImageManager();
     const name = image.alt || tr('illustration', 'Ảnh minh hoạ');
-    undoToast = APP_STATUS.toast(tr('image-deleted-undo', 'Đã xoá ảnh “{name}”.', { name: escapeHTML(name) }), 'info', {
+    const undoToast = APP_STATUS.toast(tr('image-deleted-undo', 'Đã xoá ảnh “{name}”.', { name: escapeHTML(name) }), 'info', {
         duration: TOAST_ACTION_MS,
+        onExpire: commit,
         action: {
             label: tr('undo', 'Hoàn tác'),
             onClick: () => {
@@ -4536,6 +4543,7 @@ function scheduleImageDelete(bookId, image) {
             }
         }
     });
+    if (!undoToast) pendingImageDeletes.set(key, setTimeout(commit, TOAST_ACTION_MS));
 }
 
 async function openImageManager(bookId = STATE.currentBookId, bookTitle = STATE.currentBook?.title || '') {
@@ -4938,17 +4946,18 @@ async function deleteBook(bookId, filename, title, bypassConfirm = false) {
     renderLibraryViews();
 
     const uid = STATE.user.uid;
-    let undoToast = null;
-    const timer = setTimeout(() => {
+    const commit = () => {
+        if (!pendingBookDeletes.has(bookId)) return;
+        clearTimeout(pendingBookDeletes.get(bookId));
         pendingBookDeletes.delete(bookId);
-        undoToast?.dismissToast?.();
         if (STATE.user?.uid !== uid) return;
         void commitDeleteBook(bookId, filename, title);
-    }, BOOK_DELETE_UNDO_MS);
-    pendingBookDeletes.set(bookId, timer);
+    };
+    pendingBookDeletes.set(bookId, null);
 
-    undoToast = APP_STATUS.toast(tr('book-deleted-undo', 'Đã xoá “{title}”.', { title: escapeHTML(displayTitle(title)) }), 'info', {
+    const undoToast = APP_STATUS.toast(tr('book-deleted-undo', 'Đã xoá “{title}”.', { title: escapeHTML(displayTitle(title)) }), 'info', {
         duration: BOOK_DELETE_UNDO_MS,
+        onExpire: commit,
         action: {
             label: tr('undo', 'Hoàn tác'),
             onClick: () => {
@@ -4965,6 +4974,7 @@ async function deleteBook(bookId, filename, title, bypassConfirm = false) {
             }
         }
     });
+    if (!undoToast) pendingBookDeletes.set(bookId, setTimeout(commit, BOOK_DELETE_UNDO_MS));
 }
 
 async function commitDeleteBook(bookId, filename, title) {
@@ -5229,6 +5239,7 @@ cropStage?.addEventListener('keydown', event => {
         const delta = (event.key === '-' || event.key === '_') ? -0.1 : 0.1;
         const next = Math.min(Number(cropZoom.max), Math.max(Number(cropZoom.min), Number(cropZoom.value) + delta));
         cropZoom.value = String(next);
+        paintRange(cropZoom);
         imageCropSession.scale = imageCropSession.baseScale * next;
     } else {
         return;
@@ -6771,7 +6782,7 @@ async function deleteSelectedChapters() {
     };
     selectedIndices.forEach(i => batch.indices.add(i));
     clearTimeout(batch.timer);
-    batch.timer = setTimeout(() => void flushChapterDelete(), TOAST_ACTION_MS);
+    batch.timer = null;
     pendingChapterDelete = batch;
 
     toggleSelectMode();
@@ -6779,6 +6790,7 @@ async function deleteSelectedChapters() {
     batch.toast = APP_STATUS.toast(trCount('delete-chapters-done', 'Đã xoá {n} chương.', batch.indices.size), 'info', {
         key: 'chapter-delete',
         duration: TOAST_ACTION_MS,
+        onExpire: () => { if (pendingChapterDelete === batch) void flushChapterDelete(); },
         action: {
             label: tr('undo', 'Hoàn tác'),
             onClick: () => {
@@ -6789,6 +6801,7 @@ async function deleteSelectedChapters() {
             }
         }
     });
+    if (!batch.toast) batch.timer = setTimeout(() => void flushChapterDelete(), TOAST_ACTION_MS);
 }
 
 async function flushChapterDelete() {
@@ -8326,6 +8339,7 @@ function applySettingsToUI() {
         document.getElementById('font-size-range').value = s.fontSize;
         document.getElementById('font-size-val').innerText = `${s.fontSize}px`;
     }
+    document.querySelectorAll('.range').forEach(paintRange);
 
     if (document.getElementById('font-color-picker')) {
         if (String(s.textColor).startsWith('#')) {
@@ -9028,6 +9042,9 @@ let editReturnFocus = null;
 
 async function openEditChapterModal(index, triggerBtn = null) {
     if (!STATE.user || !STATE.currentFilename) return;
+    // A pending chapter delete shifts indices once sent, so send it before picking a chapter.
+    if (pendingChapterDelete) await flushChapterDelete();
+    if (index >= (STATE.currentBook?.chapters?.length || 0)) return;
 
     editingChapterIndex = index;
     const modal = document.getElementById('edit-chapter-modal');

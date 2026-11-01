@@ -1329,7 +1329,11 @@
         animation: cc-fade var(--dur) var(--ease-out);
     }
     .sheet-scrim[hidden] { display: none; }
+    @media (min-width: 640px) { #reader-more-menu-scrim, #reader-type-scrim { display: none; } }
     .sheet-scrim--clear { background: transparent; }
+    @media (min-width: 640px) and (max-width: 1023.98px) {
+        body[data-view="reader"] .type-panel { top: calc(56px + var(--safe-top)); }
+    }
     .type-panel {
         position: absolute;
         top: 56px;

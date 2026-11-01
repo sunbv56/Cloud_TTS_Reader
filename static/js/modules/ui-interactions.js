@@ -201,7 +201,7 @@ export function initHeaderSearch() {
 
 // Range fill for WebKit, which has no ::-moz-range-progress. Values set in code fire no event,
 // so a range is repainted whenever it scrolls or opens into view.
-function paintRange(range) {
+export function paintRange(range) {
     const min = Number(range.min || 0);
     const max = Number(range.max || 100);
     const pct = max > min ? ((Number(range.value) - min) / (max - min)) * 100 : 0;
