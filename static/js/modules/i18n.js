@@ -296,13 +296,25 @@ export const translations = {
         "keys-sentence": "sentence",
         "keys-chapter": "chapter",
         "search-books": "Search books",
-        "app-menu-label": "Settings and tools",
-        "menu-settings": "Settings",
-        "menu-stats": "Reading stats",
         "menu-sync": "Sync library",
-        "menu-language": "Language",
-        "menu-fullscreen": "Full screen",
-        "menu-fullscreen-exit": "Exit full screen",
+        "fullscreen-title": "Full screen",
+        "fullscreen-desc": "Hide the browser's address and tab bars",
+        "shelf-count-all": "{n} books",
+        "shelf-count-all-one": "{n} book",
+        "shelf-empty-title": "Your shelf is empty",
+        "shelf-empty-text": "Add a .txt, .epub or .pdf file to start listening.",
+        "shelf-empty-drop": "Or drop a file here",
+        "dl-preparing": "Preparing chapters for download…",
+        "dl-preparing-n": "Preparing chapter {i}/{total}…",
+        "dl-chapter-n": "Chapter {n}",
+        "dl-parts": "{done}/{total} parts",
+        "dl-dispatching": "Sending {total} parts to read in parallel…",
+        "dl-processing": "Reading… ({done}/{total})",
+        "dl-retrying": "Retrying a failed part ({retries}/{max})… ({done}/{total})",
+        "dl-merging": "Merging audio…",
+        "dl-building": "All parts received. Building the MP3…",
+        "dl-done": "Download complete.",
+        "dl-failed": "Download failed.",
         "offline-banner": "You are offline. New changes cannot be saved yet.",
         "player-label": "Player",
         "pocket-mode-active": "Audio only · touch locked",
@@ -824,13 +836,24 @@ export const translations = {
         "keys-sentence": "câu",
         "keys-chapter": "chương",
         "search-books": "Tìm truyện",
-        "app-menu-label": "Cài đặt và tiện ích",
-        "menu-settings": "Cài đặt",
-        "menu-stats": "Thống kê đọc",
         "menu-sync": "Đồng bộ thư viện",
-        "menu-language": "Ngôn ngữ",
-        "menu-fullscreen": "Toàn màn hình",
-        "menu-fullscreen-exit": "Thoát toàn màn hình",
+        "fullscreen-title": "Toàn màn hình",
+        "fullscreen-desc": "Ẩn thanh địa chỉ và thanh tab của trình duyệt",
+        "shelf-count-all": "{n} truyện",
+        "shelf-empty-title": "Kệ sách còn trống",
+        "shelf-empty-text": "Thêm một file .txt, .epub hoặc .pdf để bắt đầu nghe.",
+        "shelf-empty-drop": "Hoặc kéo thả file vào đây",
+        "dl-preparing": "Đang chuẩn bị các chương để tải…",
+        "dl-preparing-n": "Đang chuẩn bị chương {i}/{total}…",
+        "dl-chapter-n": "Chương {n}",
+        "dl-parts": "{done}/{total} đoạn",
+        "dl-dispatching": "Đang gửi {total} đoạn đi đọc song song…",
+        "dl-processing": "Đang đọc… ({done}/{total})",
+        "dl-retrying": "Đang thử lại đoạn lỗi ({retries}/{max})… ({done}/{total})",
+        "dl-merging": "Đang ghép âm thanh…",
+        "dl-building": "Đã nhận đủ các đoạn. Đang tạo file MP3…",
+        "dl-done": "Đã tải xong.",
+        "dl-failed": "Không tải được.",
         "offline-banner": "Bạn đang ngoại tuyến. Các thay đổi mới chưa thể lưu.",
         "player-label": "Trình phát",
         "pocket-mode-active": "Chỉ nghe · đã khoá chạm",
@@ -1094,10 +1117,6 @@ export function applyLanguage(lang) {
         }
     });
 
-    // Like every other menu value, the language row shows the current state.
-    const langValue = document.getElementById('lang-btn-value');
-    if (langValue) langValue.textContent = lang === 'en' ? 'English' : 'Tiếng Việt';
-
     let activeThemeId = 'slate';
     try {
         activeThemeId = localStorage.getItem('reader-theme') || 'slate';
@@ -1112,25 +1131,10 @@ if (typeof window !== 'undefined') {
 }
 
 export function initI18n() {
-    const langBtn = document.getElementById('lang-btn');
-    const storedLang = () => {
-        try {
-            return localStorage.getItem('ui-lang') || 'en';
-        } catch (_) {
-            return 'en';
-        }
-    };
-
-    // Read the stored language on every click so Quick Settings and this row never disagree.
-    langBtn?.addEventListener('click', () => {
-        const nextLang = storedLang() === 'en' ? 'vi' : 'en';
-        try {
-            localStorage.setItem('ui-lang', nextLang);
-        } catch (_) {}
-        applyLanguage(nextLang);
-        window.SettingsSheet?.syncLang?.(nextLang);
-    });
-
-    applyLanguage(storedLang());
+    let lang = 'en';
+    try {
+        lang = localStorage.getItem('ui-lang') || 'en';
+    } catch (_) {}
+    applyLanguage(lang);
 }
 
