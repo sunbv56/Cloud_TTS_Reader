@@ -513,7 +513,7 @@ function paintChapterLabels() {
     const label = $('console-chapter');
     if (label) label.textContent = info ? `C.${info.index + 1} ·` : '';
     const book = $('cpanel-book');
-    if (book) book.textContent = $('player-author')?.textContent || 'Cloud TTS';
+    if (book) book.textContent = $('player-author')?.textContent || 'NOVA';
     const chapter = $('cpanel-chapter');
     if (chapter) chapter.textContent = info ? `C.${info.index + 1} · ${shortChapterTitle(info.title)}` : t('no-book-playing', 'Chưa phát truyện nào');
     const pos = $('cpanel-chpos');

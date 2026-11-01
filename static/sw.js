@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cloud-tts-v21-console-polish';
+const CACHE_NAME = 'cloud-tts-v22-nova';
 const ASSETS = [
     '/',
     '/static/index.html',
@@ -14,6 +14,8 @@ const ASSETS = [
     '/static/js/mini-player-widget.js',
     '/static/js/image-manager.js',
     '/static/icon.svg',
+    '/static/icon-192.png',
+    '/static/icon-512.png',
     '/static/manifest.json'
 ];
 

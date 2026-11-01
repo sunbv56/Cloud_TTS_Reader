@@ -40,7 +40,7 @@ def test_parse_book_invalid_extension():
 def test_index_page_serves_html():
     response = client.get("/")
     assert response.status_code == 200
-    assert "Cloud TTS" in response.text
+    assert "<title>NOVA</title>" in response.text
     assert "/static/css/console.css" in response.text
     assert "/static/js/main.js" in response.text
 

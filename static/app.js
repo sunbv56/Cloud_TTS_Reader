@@ -4890,7 +4890,7 @@ function closeCurrentBook() {
     const playerTitle = document.getElementById('player-title');
     const playerAuthor = document.getElementById('player-author');
     if (playerTitle) { playerTitle.innerText = tr('system-ready', 'Ready'); playerTitle.title = ''; }
-    if (playerAuthor) { playerAuthor.innerText = 'Cloud TTS'; playerAuthor.title = ''; }
+    if (playerAuthor) { playerAuthor.innerText = 'NOVA'; playerAuthor.title = ''; }
     paintPlayerArt();
     if ('mediaSession' in navigator) {
         navigator.mediaSession.metadata = null;
@@ -7740,7 +7740,7 @@ function updatePocketModeInfo() {
     const playIcon = document.getElementById('pocket-play-icon');
 
     if (STATE.currentBook) {
-        if (bookTitleEl) bookTitleEl.textContent = displayTitle(STATE.currentBook.title) || 'Cloud TTS Reader';
+        if (bookTitleEl) bookTitleEl.textContent = displayTitle(STATE.currentBook.title) || 'NOVA';
         const chap = STATE.currentBook.chapters?.[STATE.currentChapterIndex];
         if (chapterTitleEl) chapterTitleEl.textContent = `C.${STATE.currentChapterIndex + 1} · ${chap?.title || `${tr('chapter-word', 'Chương')} ${STATE.currentChapterIndex + 1}`}`;
         if (sentenceEl) {
@@ -8265,8 +8265,8 @@ function updateMediaSession() {
                 ...(STATE.coverResolved.get(STATE.currentBookId)?.url
                     ? [{ src: STATE.coverResolved.get(STATE.currentBookId).url, sizes: '512x512', type: 'image/webp' }]
                     : []),
-                { src: '/static/icon.svg', sizes: '512x512', type: 'image/svg+xml' },
-                { src: 'https://cdn-icons-png.flaticon.com/512/3771/3771417.png', sizes: '512x512', type: 'image/png' }
+                { src: '/static/icon-512.png', sizes: '512x512', type: 'image/png' },
+                { src: '/static/icon.svg', sizes: 'any', type: 'image/svg+xml' }
             ]
         });
 
@@ -8746,7 +8746,7 @@ if (STATE.wakeLockEnabled) {
     updateWakeLockUI(false);
 }
 
-console.log("Cloud TTS Reader Pro Initialized.");
+console.log("NOVA initialized.");
 
 // --- Keyboard Shortcuts ---
 // Space       → Play / Pause
