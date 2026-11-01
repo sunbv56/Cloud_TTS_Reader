@@ -1,4 +1,4 @@
-const CACHE_NAME = 'cloud-tts-v22-nova';
+const CACHE_NAME = 'cloud-tts-v23-nova-polish';
 const ASSETS = [
     '/',
     '/static/index.html',
@@ -11,6 +11,7 @@ const ASSETS = [
     '/static/js/modules/console-player.js',
     '/static/js/modules/account-menu.js',
     '/static/js/modules/account-sessions.js',
+    '/static/js/modules/layer-history.js',
     '/static/js/mini-player-widget.js',
     '/static/js/image-manager.js',
     '/static/icon.svg',

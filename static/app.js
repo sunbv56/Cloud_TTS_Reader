@@ -1,10 +1,11 @@
 // Firebase Modules
 import { initializeFirestore, getFirestore, waitForPendingWrites, terminate, doc, setDoc, getDoc, deleteDoc, serverTimestamp, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 import { compressImageForStorage, IMAGE_MAX_BYTES } from "./js/image-manager.js";
-import { toggleSidebar, trapTab, normalizeThemeId, applyTheme as applyThemeTokens, ensureReaderFont, readerFontStack, DEFAULT_READER_FONT } from "./js/modules/ui-interactions.js";
+import { toggleSidebar, trapTab, paintRange, normalizeThemeId, applyTheme as applyThemeTokens, ensureReaderFont, readerFontStack, DEFAULT_READER_FONT } from "./js/modules/ui-interactions.js";
 import { AccountSessions } from "./js/modules/account-sessions.js";
 import { createAccountMenu } from "./js/modules/account-menu.js";
 import { displayTitle, shortChapterTitle } from "./js/modules/utils.js";
+import { openLayer, closeLayer } from "./js/modules/layer-history.js";
 
 // Firebase placeholders (Initialized via API); swapped on account switch
 let app, auth, db;
@@ -65,8 +66,7 @@ let STATE = {
         fontSize: (function () {
             const saved = localStorage.getItem('reader-font-size');
             if (saved) return parseInt(saved, 10);
-            const isAndroid = /Android/i.test(navigator.userAgent);
-            return isAndroid ? 10 : 20;
+            return window.innerWidth < 480 ? 18 : 20;
         })(),
         textColor: "default"
     },
@@ -385,7 +385,6 @@ const STATS_MANAGER = {
     updateUI() {
         const streakEl = document.getElementById('stat-streak');
         const timeEl = document.getElementById('stat-total-time');
-        const streakValue = document.getElementById('stats-menu-value');
 
         if (streakEl) {
             streakEl.innerText = STATE.stats.streak;
@@ -400,11 +399,6 @@ const STATS_MANAGER = {
             timeEl.innerText = mins > 60
                 ? tr('hours-n', '{n} giờ', { n: (mins / 60).toFixed(1) })
                 : tr('minutes-n', '{n} phút', { n: mins });
-        }
-        if (streakValue) {
-            const showStreak = !!STATE.user && STATE.stats.streak > 0;
-            streakValue.hidden = !showStreak;
-            streakValue.textContent = showStreak ? trCount('streak-days-short', '{n} ngày liên tiếp', STATE.stats.streak) : '';
         }
     },
 
@@ -478,7 +472,9 @@ async function startFirebase() {
             accountMenu = createAccountMenu({
                 sessions: accountSessions,
                 onError: message => APP_STATUS.error(message),
-                onStatus: text => APP_STATUS.set(text)
+                onStatus: text => APP_STATUS.set(text),
+                onSync: () => { void syncLibraryNow(); },
+                syncLabel: librarySyncLabel
             });
             await accountSessions.start();
         }
@@ -577,6 +573,7 @@ async function leaveAccount({ save }) {
     // Never show the previous account's shelf while the next one loads.
     libraryView.refreshSeq += 1;
     libraryView.status = 'idle';
+    libraryView.syncedAt = 0;
     libraryView.expanded = { sidebar: null, shelf: null };
     renderLibraryViews();
     auth = null;
@@ -719,6 +716,18 @@ function setAudioWaveState(isPlaying) {
     document.querySelectorAll('.audio-wave-bars').forEach(el => el.classList.toggle('is-playing', !!isPlaying));
 }
 
+const TOAST_ACTION_MS = 10000;
+// Chapter and image deletes wait out the Undo window before touching storage.
+let pendingChapterDelete = null;
+const pendingImageDeletes = new Map();
+// Image commits run one at a time because each rewrites the shared manifest.
+let imageDeleteChain = Promise.resolve();
+const REDUCED_MOTION = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+function scrollBehavior() {
+    return REDUCED_MOTION.matches ? 'auto' : 'smooth';
+}
+
 const APP_STATUS = {
     set(text) {
         const indicator = document.getElementById('status-indicator');
@@ -726,7 +735,7 @@ const APP_STATUS = {
         indicator.innerText = text;
         indicator.style.color = '';
     },
-    toast(message, kind = 'error', { key = null, actions = [], action = null, duration = null } = {}) {
+    toast(message, kind = 'error', { key = null, actions = [], action = null, duration = null, onExpire = null } = {}) {
         const region = document.getElementById('app-toast-region');
         if (!region) return;
         // A single `action` (e.g. "Hoàn tác") is shorthand for one entry in `actions`.
@@ -755,15 +764,17 @@ const APP_STATUS = {
         const kindClass = `toast-kind-${kind || 'info'}`;
         const iconHtml = iconSVG(icons[kind] || icons.info, 'toast__icon');
         const titleText = titles[kind] || titles.info;
-        // Info is a passing note: no "System" heading, one compact line, gone after ~2s.
-        const brief = !kind || kind === 'info';
+        // Only problems get a heading; info and success are one compact line.
+        const brief = kind !== 'error' && kind !== 'warning';
         const plainLength = String(message).replace(/<[^>]*>/g, '').length;
-        const lifetime = duration ?? (brief ? Math.min(4800, 2000 + Math.max(0, plainLength - 40) * 40) : 4800);
+        const shortLife = !kind || kind === 'info' ? Math.min(4800, 2000 + Math.max(0, plainLength - 40) * 40) : 4800;
+        const lifetime = duration ?? (actions.length ? TOAST_ACTION_MS : shortLife);
 
         const toast = document.createElement('div');
         toast.className = `toast ${kindClass}${brief ? ' toast--brief' : ''}`;
         toast.style.setProperty('--toast-life', `${lifetime}ms`);
-        toast.setAttribute('role', brief ? 'status' : 'alert');
+        toast.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+        if (actions.length) toast.dataset.hasAction = 'true';
         toast.innerHTML = `
             ${iconHtml}
             <div class="toast__body">
@@ -795,17 +806,44 @@ const APP_STATUS = {
             toast.querySelector('.toast__body')?.appendChild(row);
         }
         let removeTimer = null;
+        let remaining = lifetime;
+        let startedAt = 0;
+        let hovered = false;
         const dismiss = () => {
             if (removeTimer) clearTimeout(removeTimer);
             toast.dataset.leaving = 'true';
             toast.remove();
         };
+        // Running out or the X accepts the toast (e.g. commits a delete); an action or a keyed replacement does not.
+        const expire = () => {
+            dismiss();
+            onExpire?.();
+        };
+        const startTimer = () => {
+            if (removeTimer) return;
+            startedAt = Date.now();
+            removeTimer = setTimeout(expire, remaining);
+        };
+        const pauseTimer = () => {
+            if (!removeTimer) return;
+            clearTimeout(removeTimer);
+            removeTimer = null;
+            remaining = Math.max(0, remaining - (Date.now() - startedAt));
+        };
+        const syncPause = () => {
+            const held = hovered || toast.contains(document.activeElement);
+            toast.classList.toggle('is-paused', held);
+            if (held) pauseTimer(); else startTimer();
+        };
 
         closeBtn?.addEventListener('click', (e) => {
             e.stopPropagation();
-            dismiss();
+            expire();
         });
-        toast.addEventListener('click', dismiss);
+        toast.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse') { hovered = true; syncPause(); } });
+        toast.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { hovered = false; syncPause(); } });
+        toast.addEventListener('focusin', syncPause);
+        toast.addEventListener('focusout', syncPause);
         toast.dismissToast = dismiss;
         if (key) {
             toast.dataset.toastKey = key;
@@ -819,7 +857,9 @@ const APP_STATUS = {
                     fill.style.animation = '';
                 }
                 if (removeTimer) clearTimeout(removeTimer);
-                removeTimer = setTimeout(dismiss, lifetime);
+                removeTimer = null;
+                remaining = lifetime;
+                syncPause();
             };
         }
         if (key) {
@@ -829,13 +869,16 @@ const APP_STATUS = {
         }
 
         // Keep the stack short so it never buries the reader on a phone: drop the oldest first.
+        // A toast with an action (Hoàn tác) is never pushed out.
         const maxToasts = window.matchMedia('(max-width: 639.98px)').matches ? 2 : 3;
         const live = [...region.children].filter(node => !node.dataset.leaving);
-        live.slice(0, Math.max(0, live.length - maxToasts + 1)).forEach(node => (node.dismissToast ? node.dismissToast() : node.remove()));
+        const evictable = live.filter(node => !node.dataset.hasAction);
+        evictable.slice(0, Math.max(0, Math.min(evictable.length, live.length - maxToasts + 1))).forEach(node => (node.dismissToast ? node.dismissToast() : node.remove()));
 
         region.appendChild(toast);
-        removeTimer = setTimeout(dismiss, lifetime);
+        startTimer();
         requestAnimationFrame(() => revealFocusAboveToasts(region));
+        return toast;
     },
     error(error, fallback = 'Đã xảy ra lỗi. Vui lòng thử lại.') {
         const message = (typeof error === 'string' ? error : error?.message) || fallback;
@@ -888,6 +931,8 @@ function toggleDiscoveryMode(isActive, options = {}) {
     const playerInfoLayer = document.getElementById('player-info-layer');
 
     document.body.dataset.view = isActive ? 'discovery' : 'reader';
+    if (isActive) closeLayer('reader');
+    else openLayer('reader', () => toggleDiscoveryMode(true));
     if (isActive && libraryView.orderFrozen) {
         libraryView.orderFrozen = false;
         discoveryLibrary.sort(byRecency);
@@ -923,12 +968,11 @@ function toggleDiscoveryMode(isActive, options = {}) {
 
         if (discoveryMode) discoveryMode.classList.remove('hidden');
         updateDiscoveryContinueCard();
-        // From 1024px Home hides the column's search box; it must not keep filtering unseen.
+        // From 1024px Home hides the library column; its search must not keep filtering unseen.
         const columnSearch = document.getElementById('library-search');
         if (columnSearch?.value && window.matchMedia('(min-width: 1024px)').matches) columnSearch.value = '';
         applyDiscoverySearch();
-        // Master–detail: from 1024px the library column stays beside Home;
-        // below that the sidebar is the off-canvas drawer, so just close it.
+        // From 1024px CSS hides the column on Home; below that it is the off-canvas drawer, so just close it.
         toggleSidebar(false);
         if (sidebarContainer) sidebarContainer.classList.remove('hidden');
         if (readerContainer) readerContainer.classList.add('hidden');
@@ -962,7 +1006,7 @@ function toggleDiscoveryMode(isActive, options = {}) {
                 const current = document.getElementById(`sentence-${STATE.currentSentenceIndex}`);
                 if (current) {
                     highlightSentence(STATE.currentSentenceIndex);
-                    current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    current.scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
                 }
             });
         }
@@ -1014,7 +1058,7 @@ const COVER_CONCURRENCY = 3;
 const IMAGE_URL_CACHE_LIMIT = 48;
 const LIBRARY_TOC_CACHE_LIMIT = 12;
 let discoveryLibrary = [];
-const BOOK_DELETE_UNDO_MS = 6000;
+const BOOK_DELETE_UNDO_MS = TOAST_ACTION_MS;
 const pendingBookDeletes = new Map();
 
 function readPref(key, allowed, fallback) {
@@ -1038,7 +1082,8 @@ const libraryView = {
     expanded: { sidebar: null, shelf: null },
     refreshSeq: 0,
     orderFrozen: false,
-    manualSync: false
+    manualSync: false,
+    syncedAt: 0
 };
 
 function byRecency(a, b) {
@@ -1778,8 +1823,15 @@ function applyLibraryFilters() {
     if (shelfClear) shelfClear.hidden = !shelfSearch?.value;
     setLibraryEmpty('library-empty', 'library-empty-text', 'library-empty-btn',
         libraryEmptyState(sidebar.query, librarySearch?.value.trim(), sidebar.visible), 'sidebar');
+    // An empty library gets Home's own empty state; a re-sync keeps it instead of flashing the tools.
+    const discovery = document.getElementById('discovery-mode');
+    const libraryEmpty = !discoveryLibrary.length && (libraryView.status === 'ready'
+        || (libraryView.status === 'loading' && !!discovery?.hasAttribute('data-library-empty')));
+    discovery?.toggleAttribute('data-library-empty', libraryEmpty);
+    const shelfEmpty = document.getElementById('shelf-empty');
+    if (shelfEmpty) shelfEmpty.hidden = !libraryEmpty;
     setLibraryEmpty('discovery-search-empty', 'discovery-search-empty-text', 'discovery-clear-search',
-        libraryEmptyState(shelf.query, shelfSearch?.value.trim(), shelf.visible), 'shelf');
+        libraryEmpty ? null : libraryEmptyState(shelf.query, shelfSearch?.value.trim(), shelf.visible), 'shelf');
     // A re-sync keeps the old list on screen; say so while it runs.
     const syncing = (libraryView.status === 'loading' || libraryView.manualSync) && discoveryLibrary.length > 0;
     const syncHint = document.getElementById('library-sync-hint');
@@ -1789,7 +1841,9 @@ function applyLibraryFilters() {
         count.textContent = syncing
             ? tr('library-syncing', 'Đang đồng bộ…')
             : libraryView.status === 'ready' && discoveryLibrary.length
-                ? tr('shelf-count', '{shown}/{total} truyện', { shown: shelf.visible, total: discoveryLibrary.length })
+                ? (shelf.visible === discoveryLibrary.length
+                    ? trCount('shelf-count-all', '{n} truyện', discoveryLibrary.length)
+                    : tr('shelf-count', '{shown}/{total} truyện', { shown: shelf.visible, total: discoveryLibrary.length }))
                 : '';
     }
 }
@@ -1814,9 +1868,14 @@ function setLibrarySort(sort) {
 }
 
 function setDiscoveryView(view, persist = true) {
+    const focused = document.activeElement;
     libraryView.discovery = view === 'list' ? 'list' : 'grid';
     if (persist) writePref(DISCOVERY_VIEW_STORAGE_KEY, libraryView.discovery);
     renderLibraryViews();
+    // Below 900px only the button for the other view shows; keep focus on the one left visible.
+    if (focused?.closest('.seg--icons') && !focused.offsetParent) {
+        document.querySelector('.seg--icons > [aria-pressed="false"]')?.focus();
+    }
 }
 
 // ── Current book: highlight, ring state, "Nghe tiếp" ───────────────────────
@@ -2072,6 +2131,7 @@ function openBookMenu(entry, trigger, at = null) {
         menu.style.top = `${top}px`;
     }
     trigger.setAttribute('aria-expanded', 'true');
+    openLayer('book-menu', () => closeBookMenu({ restoreFocus: true }));
     document.addEventListener('pointerdown', onBookMenuOutside, true);
     menu.addEventListener('keydown', onBookMenuKey);
     window.addEventListener('resize', onBookMenuViewportChange);
@@ -2084,6 +2144,7 @@ function closeBookMenu({ restoreFocus = false } = {}) {
     const menu = document.getElementById('book-menu');
     const scrim = document.getElementById('book-menu-scrim');
     if (!menu || menu.hidden) return;
+    closeLayer('book-menu');
     menu.hidden = true;
     if (scrim) scrim.hidden = true;
     document.removeEventListener('pointerdown', onBookMenuOutside, true);
@@ -2831,6 +2892,8 @@ function setModalVisibility(id, visible) {
     const wasVisible = !modal.classList.contains('hidden');
     modal.classList.toggle('hidden', !visible);
     modal.classList.toggle('flex', visible);
+    if (visible && !wasVisible) openLayer(id, () => closeModalFromBack(id));
+    else if (!visible && wasVisible) closeLayer(id);
     if (visible && !wasVisible) {
         modalReturnFocus.set(id, document.activeElement);
         requestAnimationFrame(() => {
@@ -2845,6 +2908,32 @@ function setModalVisibility(id, visible) {
         if (previous && typeof previous.focus === 'function') previous.focus({ preventScroll: true });
     }
 }
+
+// Back closes a modal the way its own Cancel/X does.
+function closeModalFromBack(id) {
+    const closers = {
+        'upload-options-modal': () => { STATE.uploadImagesChoice = false; setModalVisibility(id, false); },
+        'upload-files-modal': closeUploadFilesModal,
+        'merge-chapters-modal': closeMergeModal,
+        'image-crop-modal': closeImageCropper,
+        'rename-modal': () => (renameDialog ? renameDialog.finish(null) : setModalVisibility(id, false)),
+        'confirm-modal': () => (confirmDialog ? confirmDialog.finish(false) : setModalVisibility(id, false)),
+    };
+    (closers[id] || (() => setModalVisibility(id, false)))();
+}
+
+function topOpenModal() {
+    const open = [...document.querySelectorAll('.modal[aria-modal="true"]:not(.hidden)')];
+    if (!open.length) return null;
+    const layer = el => (el.classList.contains('modal--top') ? 1 : 0);
+    return open.reduce((top, el) => (layer(el) >= layer(top) ? el : top));
+}
+
+document.addEventListener('keydown', event => {
+    if (event.key !== 'Tab' || event.defaultPrevented) return;
+    const modal = topOpenModal();
+    if (modal) trapTab(modal, event);
+});
 
 function openUploadOptions() {
     setModalVisibility('upload-options-modal', true);
@@ -3025,10 +3114,10 @@ document.getElementById('upload-book-btn')?.addEventListener('click', () => {
     STATE.uploadInputTarget = 'sidebar';
     openUploadOptions();
 });
-document.getElementById('discovery-add-btn')?.addEventListener('click', () => {
+['discovery-add-btn', 'shelf-empty-add'].forEach(id => document.getElementById(id)?.addEventListener('click', () => {
     STATE.uploadInputTarget = 'discovery';
     openUploadOptions();
-});
+}));
 document.getElementById('upload-txt-only-btn')?.addEventListener('click', () => beginBookUpload(false));
 document.getElementById('upload-txt-images-btn')?.addEventListener('click', () => beginBookUpload(true));
 document.querySelectorAll('[data-close-upload-options]').forEach(el => el.addEventListener('click', () => {
@@ -3063,6 +3152,10 @@ document.addEventListener('keydown', event => {
         setModalVisibility('upload-options-modal', false);
     } else if (isOpen('image-manager-modal')) {
         setModalVisibility('image-manager-modal', false);
+    } else if (isOpen('edit-chapter-modal')) {
+        closeEditModal();
+    } else if (isOpen('merge-chapters-modal')) {
+        closeMergeModal();
     } else {
         return;
     }
@@ -3359,7 +3452,7 @@ async function initWebSocket() {
                                     const statusEl = document.getElementById('toc-download-status');
                                     const received = STATE.downloadBuffer.size;
                                     const total = STATE.downloadExpected;
-                                    if (statusEl) statusEl.innerText = `Retrying failed chunk (${retries}/${MAX_RETRIES})... (${received}/${total})`;
+                                    if (statusEl) statusEl.innerText = tr('dl-retrying', 'Đang thử lại đoạn lỗi ({retries}/{max})… ({done}/{total})', { retries, max: MAX_RETRIES, done: received, total });
 
                                     setTimeout(() => {
                                         if (!STATE.isDownloading) return;
@@ -3421,8 +3514,8 @@ async function initWebSocket() {
 
                 if (progressBar) progressBar.style.width = `${progress}%`;
                 if (percentEl) percentEl.innerText = `${progress}%`;
-                if (chapterInfo) chapterInfo.innerText = `${received} / ${total} chunks`;
-                if (statusEl) statusEl.innerText = `Workers processing... (${received}/${total})`;
+                if (chapterInfo) chapterInfo.innerText = tr('dl-parts', '{done}/{total} đoạn', { done: received, total });
+                if (statusEl) statusEl.innerText = tr('dl-processing', 'Đang đọc… ({done}/{total})', { done: received, total });
 
                 // Check if all chunks received
                 if (received >= total && STATE.downloadResolve) {
@@ -4332,10 +4425,11 @@ async function renderImageManager() {
 
     const manifest = await loadImageManifest(bookId);
     if (bookId === STATE.currentBookId) STATE.imageManifest = manifest;
+    const images = manifest.images.filter(image => !pendingImageDeletes.has(imageDeleteKey(bookId, image.id)));
     const bookTitle = displayTitle(imageManagerBookTitle || STATE.currentBook?.title) || tr('current-book', 'Truyện hiện tại');
-    if (title) title.textContent = `${bookTitle} · ${tr(manifest.images.length === 1 ? 'image-count-one' : 'image-count', '{count} ảnh', { count: manifest.images.length })}`;
+    if (title) title.textContent = `${bookTitle} · ${tr(images.length === 1 ? 'image-count-one' : 'image-count', '{count} ảnh', { count: images.length })}`;
     list.replaceChildren();
-    if (!manifest.images.length) {
+    if (!images.length) {
         const empty = document.createElement('div');
         empty.className = 'img-empty';
         const line1 = document.createElement('p');
@@ -4347,8 +4441,8 @@ async function renderImageManager() {
         restoreImageManagerFocus(list);
         return;
     }
-    const effectiveCoverId = (manifest.images.find(image => image.id === manifest.coverId) || manifest.images[0])?.id;
-    for (const image of manifest.images) {
+    const effectiveCoverId = (images.find(image => image.id === manifest.coverId) || images[0])?.id;
+    for (const image of images) {
         const isCover = effectiveCoverId === image.id;
         const row = document.createElement('div');
         row.className = 'img-row';
@@ -4397,24 +4491,59 @@ async function renderImageManager() {
             rememberImageManagerFocus(image.id, 'replace');
             imageInput?.click();
         }, { act: 'replace' });
-        const deleteBtn = imageManagerButton(tr('delete', 'Xoá'), async () => {
-            if (!confirm(tr('delete-image-confirm', 'Xoá ảnh “{name}”?', { name: image.alt || tr('illustration', 'Ảnh minh hoạ') }))) return;
+        const deleteBtn = imageManagerButton(tr('delete', 'Xoá'), () => {
             rememberImageManagerFocus(image.id, 'delete');
-            setButtonLoading(deleteBtn, true, '…');
-            try {
-                await removeBookImage(bookId, image.id);
-                await afterImageChange(tr('image-deleted', 'Đã xoá ảnh.'));
-            } catch (err) {
-                APP_STATUS.error(err, tr('image-delete-failed', 'Không thể xoá ảnh'));
-                imageManagerFocusHint = null;
-                setButtonLoading(deleteBtn, false);
-            }
+            scheduleImageDelete(bookId, image);
         }, { danger: true, act: 'delete' });
         actions.append(...[coverBtn, cropBtn, replaceBtn, deleteBtn].filter(Boolean));
         row.append(thumb, info, actions);
         list.append(row);
     }
     restoreImageManagerFocus(list);
+}
+
+
+function imageDeleteKey(bookId, imageId) {
+    return `${bookId}::${imageId}`;
+}
+
+function scheduleImageDelete(bookId, image) {
+    const key = imageDeleteKey(bookId, image.id);
+    if (!STATE.user || pendingImageDeletes.has(key)) return;
+    const uid = STATE.user.uid;
+    const commit = () => {
+        if (!pendingImageDeletes.has(key)) return;
+        clearTimeout(pendingImageDeletes.get(key));
+        pendingImageDeletes.delete(key);
+        imageDeleteChain = imageDeleteChain.then(async () => {
+            if (STATE.user?.uid !== uid) return;
+            try {
+                await removeBookImage(bookId, image.id);
+                await afterImageChange('');
+            } catch (err) {
+                APP_STATUS.error(err, tr('image-delete-failed', 'Không thể xoá ảnh'));
+                void renderImageManager();
+            }
+        });
+    };
+    pendingImageDeletes.set(key, null);
+    void renderImageManager();
+    const name = image.alt || tr('illustration', 'Ảnh minh hoạ');
+    const undoToast = APP_STATUS.toast(tr('image-deleted-undo', 'Đã xoá ảnh “{name}”.', { name: escapeHTML(name) }), 'info', {
+        duration: TOAST_ACTION_MS,
+        onExpire: commit,
+        action: {
+            label: tr('undo', 'Hoàn tác'),
+            onClick: () => {
+                if (!pendingImageDeletes.has(key)) return;
+                clearTimeout(pendingImageDeletes.get(key));
+                pendingImageDeletes.delete(key);
+                imageManagerFocusHint = { imageId: image.id, act: 'delete', index: -1 };
+                void renderImageManager();
+            }
+        }
+    });
+    if (!undoToast) pendingImageDeletes.set(key, setTimeout(commit, TOAST_ACTION_MS));
 }
 
 async function openImageManager(bookId = STATE.currentBookId, bookTitle = STATE.currentBook?.title || '') {
@@ -4717,6 +4846,7 @@ async function refreshLibrary() {
 
         discoveryLibrary = entries;
         libraryView.status = 'ready';
+        libraryView.syncedAt = Date.now();
         // Covers are re-derived from the cached manifests/URLs, so a cover
         // change made in the image manager shows up after this refresh.
         coverPrevious = new Map(STATE.coverResolved);
@@ -4816,18 +4946,22 @@ async function deleteBook(bookId, filename, title, bypassConfirm = false) {
     renderLibraryViews();
 
     const uid = STATE.user.uid;
-    const timer = setTimeout(() => {
+    const commit = () => {
+        if (!pendingBookDeletes.has(bookId)) return;
+        clearTimeout(pendingBookDeletes.get(bookId));
         pendingBookDeletes.delete(bookId);
         if (STATE.user?.uid !== uid) return;
         void commitDeleteBook(bookId, filename, title);
-    }, BOOK_DELETE_UNDO_MS);
-    pendingBookDeletes.set(bookId, timer);
+    };
+    pendingBookDeletes.set(bookId, null);
 
-    APP_STATUS.toast(tr('book-deleted-undo', 'Đã xoá “{title}”.', { title: escapeHTML(displayTitle(title)) }), 'info', {
+    const undoToast = APP_STATUS.toast(tr('book-deleted-undo', 'Đã xoá “{title}”.', { title: escapeHTML(displayTitle(title)) }), 'info', {
         duration: BOOK_DELETE_UNDO_MS,
+        onExpire: commit,
         action: {
             label: tr('undo', 'Hoàn tác'),
             onClick: () => {
+                if (!pendingBookDeletes.has(bookId)) return;
                 clearTimeout(pendingBookDeletes.get(bookId));
                 pendingBookDeletes.delete(bookId);
                 if (removed && !findLibraryEntry(bookId)) {
@@ -4840,6 +4974,7 @@ async function deleteBook(bookId, filename, title, bypassConfirm = false) {
             }
         }
     });
+    if (!undoToast) pendingBookDeletes.set(bookId, setTimeout(commit, BOOK_DELETE_UNDO_MS));
 }
 
 async function commitDeleteBook(bookId, filename, title) {
@@ -4947,7 +5082,7 @@ async function mergeChapterFile(event, bookId, bookData) {
         };
         renderMergeChapter();
         setModalVisibility('merge-chapters-modal', true);
-        APP_STATUS.set('Ready');
+        APP_STATUS.set(tr('status-ready', 'Sẵn sàng'));
     } catch (error) {
         console.error('[Merge preview] Error:', error);
         APP_STATUS.error(error, tr('merge-preview-failed', 'Không thể mở bản xem trước nối chương.'));
@@ -5104,6 +5239,7 @@ cropStage?.addEventListener('keydown', event => {
         const delta = (event.key === '-' || event.key === '_') ? -0.1 : 0.1;
         const next = Math.min(Number(cropZoom.max), Math.max(Number(cropZoom.min), Number(cropZoom.value) + delta));
         cropZoom.value = String(next);
+        paintRange(cropZoom);
         imageCropSession.scale = imageCropSession.baseScale * next;
     } else {
         return;
@@ -5413,9 +5549,19 @@ const handleFileUpload = async (e) => {
         if (file.name.toLowerCase().endsWith('.txt')) {
             const preview = await file.slice(0, 4 * 1024 * 1024).text();
             separatorCount = (preview.match(/^\s*={3,}\s*$/gm) || []).length;
-            if (separatorCount === 0 && !confirm(tr('import-no-separator-confirm', 'Không tìm thấy dòng === để phân cách chương. File sẽ được nhập thành một chương. Tiếp tục?'))) {
+            if (separatorCount === 0) {
                 hideLoading();
-                return;
+                const proceed = await askConfirm({
+                    title: tr('import-no-separator-title', 'Không thấy dòng phân cách chương'),
+                    message: tr('import-no-separator-confirm', 'Không tìm thấy dòng === để phân cách chương. File sẽ được nhập thành một chương. Tiếp tục?'),
+                    confirmLabel: tr('import-as-one-chapter', 'Nhập một chương')
+                });
+                if (!proceed) return;
+                showLoading(tr('upload-book-title', 'Đang tải lên {name}', { name: file.name }), {
+                    subtext: tr('upload-book-checking', 'Đang kiểm tra & phân tách chương...'),
+                    progress: 10,
+                    status: tr('upload-book-step', 'Tải sách')
+                });
             }
         }
         const estimatedChapters = separatorCount + 1;
@@ -6044,7 +6190,7 @@ function renderMinimap(index) {
             e.stopPropagation();
             const target = document.getElementById(`sentence-${i}`);
             if (target) {
-                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                target.scrollIntoView({ behavior: scrollBehavior(), block: 'center' });
             }
         };
         nodesContainer.appendChild(node);
@@ -6154,7 +6300,8 @@ function syncTOCNowLabels() {
 function updateTOCCount() {
     const countEl = document.getElementById('toc-count');
     if (!countEl) return;
-    const total = STATE.currentBook?.chapters?.length || 0;
+    const pending = pendingChapterDelete?.bookId === STATE.currentBookId ? pendingChapterDelete.indices.size : 0;
+    const total = (STATE.currentBook?.chapters?.length || 0) - pending;
     if (!total) {
         countEl.textContent = '';
         return;
@@ -6191,7 +6338,9 @@ function renderTOC() {
 
     const fragment = document.createDocumentFragment();
     STATE.currentBook.chapters.forEach((chap, i) => {
-        fragment.appendChild(buildTOCRow(chap, i, i === STATE.currentChapterIndex));
+        const row = buildTOCRow(chap, i, i === STATE.currentChapterIndex);
+        if (isChapterPendingDelete(i)) row.classList.add('is-pending-delete');
+        fragment.appendChild(row);
     });
     tocList.appendChild(fragment);
     if (checked.size) {
@@ -6416,7 +6565,7 @@ async function downloadSelectedChapters() {
     // Show progress bar early with "Preparing" message
     statusEl.classList.remove('hidden');
     progressContainer.classList.remove('hidden');
-    statusEl.innerText = "Preparing chapters for download...";
+    statusEl.innerText = tr('dl-preparing', 'Đang chuẩn bị các chương để tải…');
     progressBar.style.width = '0%';
     percentEl.innerText = '0%';
 
@@ -6433,10 +6582,10 @@ async function downloadSelectedChapters() {
             const idx = selectedIndices[i];
             const prepProgress = Math.round((i / selectedIndices.length) * 100);
 
-            statusEl.innerText = `Preparing chapter ${i + 1}/${selectedIndices.length}...`;
+            statusEl.innerText = tr('dl-preparing-n', 'Đang chuẩn bị chương {i}/{total}…', { i: i + 1, total: selectedIndices.length });
             progressBar.style.width = `${prepProgress}%`;
             percentEl.innerText = `${prepProgress}%`;
-            chapterInfo.innerText = `Chapter ${idx + 1}`;
+            chapterInfo.innerText = tr('dl-chapter-n', 'Chương {n}', { n: idx + 1 });
 
             if (!STATE.currentBook.chapters[idx].sentences) {
                 await fetchChapterSentences(idx);
@@ -6474,8 +6623,8 @@ async function downloadSelectedChapters() {
         document.getElementById('status-indicator').innerText = tr('status-offline-download', 'Downloading for offline…');
         progressBar.style.width = '0%';
         percentEl.innerText = '0%';
-        chapterInfo.innerText = `0 / ${STATE.downloadExpected} chunks`;
-        statusEl.innerText = `Dispatching ${STATE.downloadExpected} chunks to 50 parallel workers...`;
+        chapterInfo.innerText = tr('dl-parts', '{done}/{total} đoạn', { done: 0, total: STATE.downloadExpected });
+        statusEl.innerText = tr('dl-dispatching', 'Đang gửi {total} đoạn đi đọc song song…', { total: STATE.downloadExpected });
 
         console.log(`[Download] Starting 50-worker parallel download: ${STATE.downloadExpected} chunks across ${chapters.length} chapters`);
 
@@ -6528,8 +6677,8 @@ async function downloadSelectedChapters() {
         // 7. All chunks received! Sort by chapter then sentence index and concatenate
         progressBar.style.width = '100%';
         percentEl.innerText = '100%';
-        chapterInfo.innerText = 'Merging audio...';
-        statusEl.innerText = 'All chunks received. Building MP3...';
+        chapterInfo.innerText = tr('dl-merging', 'Đang ghép âm thanh…');
+        statusEl.innerText = tr('dl-building', 'Đã nhận đủ các đoạn. Đang tạo file MP3…');
 
         const sortedKeys = [...STATE.downloadBuffer.keys()].sort((a, b) => {
             const [ac, as_] = a.split('_').map(Number);
@@ -6564,7 +6713,7 @@ async function downloadSelectedChapters() {
         URL.revokeObjectURL(url);
 
         chapterInfo.innerText = '';
-        statusEl.innerText = '✓ Download complete!';
+        statusEl.innerText = tr('dl-done', 'Đã tải xong.');
         setTimeout(() => {
             statusEl.classList.add('hidden');
             progressContainer.classList.add('hidden');
@@ -6572,7 +6721,7 @@ async function downloadSelectedChapters() {
         }, 4000);
     } catch (err) {
         console.error('Download Error:', err);
-        statusEl.innerText = `✗ ${err.message || 'Download failed.'}`;
+        statusEl.innerText = err.message || tr('dl-failed', 'Không tải được.');
         progressBar.style.width = '0%';
     } finally {
         STATE.isDownloading = false;
@@ -6608,27 +6757,69 @@ function stopDownload() {
     }
 }
 
+function isChapterPendingDelete(index) {
+    return !!pendingChapterDelete && pendingChapterDelete.bookId === STATE.currentBookId && pendingChapterDelete.indices.has(index);
+}
+
 async function deleteSelectedChapters() {
     const checkboxes = document.querySelectorAll('.toc-chapter-checkbox:checked');
     if (checkboxes.length === 0) {
         APP_STATUS.toast(tr('delete-chapters-none', 'Vui lòng chọn ít nhất một chương để xóa.'));
         return;
     }
+    if (!STATE.user || !STATE.currentBookId) return;
 
     const selectedIndices = Array.from(checkboxes).map(cb => parseInt(cb.dataset.chapterIndex));
-    const confirmMsg = trCount('delete-chapters-confirm', 'Bạn có chắc chắn muốn xóa {n} chương đã chọn không?', selectedIndices.length);
+    if (pendingChapterDelete && pendingChapterDelete.bookId !== STATE.currentBookId) await flushChapterDelete();
+    const batch = pendingChapterDelete || {
+        uid: STATE.user.uid,
+        bookId: STATE.currentBookId,
+        filename: STATE.currentFilename,
+        title: STATE.currentBook?.title || '',
+        indices: new Set(),
+        timer: null,
+        toast: null
+    };
+    selectedIndices.forEach(i => batch.indices.add(i));
+    clearTimeout(batch.timer);
+    batch.timer = null;
+    pendingChapterDelete = batch;
 
-    if (!confirm(confirmMsg)) return;
+    toggleSelectMode();
+    renderTOC();
+    batch.toast = APP_STATUS.toast(trCount('delete-chapters-done', 'Đã xoá {n} chương.', batch.indices.size), 'info', {
+        key: 'chapter-delete',
+        duration: TOAST_ACTION_MS,
+        onExpire: () => { if (pendingChapterDelete === batch) void flushChapterDelete(); },
+        action: {
+            label: tr('undo', 'Hoàn tác'),
+            onClick: () => {
+                if (pendingChapterDelete !== batch) return;
+                clearTimeout(batch.timer);
+                pendingChapterDelete = null;
+                renderTOC();
+            }
+        }
+    });
+    if (!batch.toast) batch.timer = setTimeout(() => void flushChapterDelete(), TOAST_ACTION_MS);
+}
 
-    const btn = document.getElementById('toc-delete-btn');
-    setButtonLoading(btn, true, tr('deleting', 'Đang xóa…'));
+async function flushChapterDelete() {
+    const batch = pendingChapterDelete;
+    if (!batch) return;
+    pendingChapterDelete = null;
+    clearTimeout(batch.timer);
+    batch.toast?.dismissToast?.();
+    if (STATE.user?.uid !== batch.uid) return;
+    const indices = [...batch.indices].sort((a, b) => a - b);
+    const isCurrent = () => STATE.currentBookId === batch.bookId;
 
     try {
         const formData = new FormData();
-        formData.append('userId', STATE.user.uid);
-        formData.append('bookId', STATE.currentBookId);
-        formData.append('filename', STATE.currentFilename);
-        formData.append('indices', JSON.stringify(selectedIndices));
+        formData.append('userId', batch.uid);
+        formData.append('bookId', batch.bookId);
+        formData.append('filename', batch.filename);
+        formData.append('indices', JSON.stringify(indices));
 
         const response = await authFetch('/api/delete-chapters', {
             method: 'POST',
@@ -6641,10 +6832,22 @@ async function deleteSelectedChapters() {
         }
 
         const data = await response.json();
-        STATE.libraryTocCache.delete(STATE.currentBookId);
+        STATE.libraryTocCache.delete(batch.bookId);
 
         // Calculate total chunks from metadata chapters
         const newTotalChunks = data.chapters.reduce((sum, ch) => sum + (ch.count || 0), 0);
+
+        // Update Firestore total_chunks (to keep library in sync)
+        const bookRef = doc(db, "users", batch.uid, "progress", batch.bookId);
+        await setDoc(bookRef, { total_chunks: newTotalChunks }, { merge: true });
+
+        // --- AUTO-DELETE STORY IF EMPTY ---
+        if (data.chapters.length === 0) {
+            APP_STATUS.toast(tr('delete-chapters-all', 'Tất cả các chương đã bị xóa. Đang gỡ truyện khỏi thư viện…'), 'info');
+            await deleteBook(batch.bookId, batch.filename, batch.title, true);
+            return;
+        }
+        if (!isCurrent()) return;
 
         // Update local state
         if (STATE.isSegmented) {
@@ -6658,25 +6861,11 @@ async function deleteSelectedChapters() {
         } else {
             STATE.currentBook.chapters = data.chapters;
         }
-
-        // Update Firestore total_chunks (to keep library in sync)
-        const bookRef = doc(db, "users", STATE.user.uid, "progress", STATE.currentBookId);
-        await setDoc(bookRef, { total_chunks: newTotalChunks }, { merge: true });
-
-        APP_STATUS.toast(trCount('delete-chapters-done', 'Đã xóa {n} chương.', selectedIndices.length), 'success');
-
-        // Reset UI
-        toggleSelectMode();
         renderTOC();
 
-        // --- AUTO-DELETE STORY IF EMPTY ---
-        if (data.chapters.length === 0) {
-            APP_STATUS.toast(tr('delete-chapters-all', 'Tất cả các chương đã bị xóa. Đang gỡ truyện khỏi thư viện…'), 'info');
-            await deleteBook(STATE.currentBookId, STATE.currentFilename, STATE.currentBook.title, true);
-            return;
-        }
-
-        // If we deleted the current chapter or shifted things, it's safer to just reset to chapter 0 or reload
+        // Keep the same chapter under the reader when earlier ones were removed.
+        const removedBefore = indices.filter(i => i < STATE.currentChapterIndex).length;
+        STATE.currentChapterIndex = Math.max(0, STATE.currentChapterIndex - removedBefore);
         if (STATE.currentChapterIndex >= data.chapters.length) {
             STATE.currentChapterIndex = 0;
         }
@@ -6684,9 +6873,8 @@ async function deleteSelectedChapters() {
 
     } catch (err) {
         console.error('Delete Error:', err);
-        APP_STATUS.error(err, 'Không thể xóa chương.');
-    } finally {
-        setButtonLoading(btn, false);
+        APP_STATUS.error(err, tr('delete-chapters-failed', 'Không thể xoá chương.'));
+        if (isCurrent()) renderTOC();
     }
 }
 
@@ -7078,7 +7266,7 @@ function highlightSentence(index) {
                 } else {
                     container.scrollTo({
                         top: targetScroll,
-                        behavior: 'smooth'
+                        behavior: scrollBehavior()
                     });
                 }
             }
@@ -7090,7 +7278,7 @@ function highlightSentence(index) {
         const miniNode = document.getElementById(`minimap-node-${index}`);
         if (miniNode) {
             miniNode.classList.add('minimap-active');
-            miniNode.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            miniNode.scrollIntoView({ behavior: scrollBehavior(), block: 'nearest' });
         }
     }
 
@@ -7253,6 +7441,44 @@ function askBookTitle(currentTitle) {
         modal.querySelectorAll('[data-close-rename]').forEach(el => el.addEventListener('click', onCancel));
         setModalVisibility('rename-modal', true);
         requestAnimationFrame(() => input.select());
+    });
+}
+
+// In-app replacement for confirm(). Resolves true only on the confirm button.
+let confirmDialog = null;
+
+function askConfirm({ title, message, confirmLabel, danger = false }) {
+    const modal = document.getElementById('confirm-modal');
+    const okBtn = document.getElementById('confirm-modal-ok');
+    if (!modal || !okBtn) return Promise.resolve(false);
+    confirmDialog?.finish(false);
+    return new Promise(resolve => {
+        const finish = (value) => {
+            if (confirmDialog?.finish !== finish) return;
+            confirmDialog = null;
+            modal.removeEventListener('keydown', onKey);
+            okBtn.removeEventListener('click', onOk);
+            modal.querySelectorAll('[data-close-confirm]').forEach(el => el.removeEventListener('click', onCancel));
+            setModalVisibility('confirm-modal', false);
+            resolve(value);
+        };
+        const onOk = () => finish(true);
+        const onCancel = () => finish(false);
+        const onKey = (event) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
+            finish(false);
+        };
+        confirmDialog = { finish };
+        document.getElementById('confirm-modal-title').textContent = title;
+        document.getElementById('confirm-modal-msg').textContent = message;
+        okBtn.textContent = confirmLabel;
+        okBtn.className = `btn ${danger ? 'btn--destructive' : 'btn--primary'}`;
+        modal.addEventListener('keydown', onKey);
+        okBtn.addEventListener('click', onOk);
+        modal.querySelectorAll('[data-close-confirm]').forEach(el => el.addEventListener('click', onCancel));
+        setModalVisibility('confirm-modal', true);
     });
 }
 
@@ -7551,6 +7777,10 @@ document.getElementById('color-reset-btn').onclick = () => {
 
 document.querySelectorAll('.preset-color').forEach(btn => {
     btn.onclick = () => {
+        if (btn.getAttribute('aria-disabled') === 'true') {
+            APP_STATUS.toast(tr('text-color-low-contrast', 'Màu này khó đọc trên giao diện hiện tại.'), 'info', { key: 'text-color' });
+            return;
+        }
         const color = btn.dataset.color;
         STATE.settings.textColor = color;
         applyTypographySettings();
@@ -7582,9 +7812,9 @@ if (fontSelect) {
     };
 }
 
-document.getElementById('quick-settings-btn')?.addEventListener('click', () => {
-    window.SettingsSheet?.open('listen');
-});
+// The reader hides the app header below 1024px; its ⋮ menu stands in for these two buttons.
+document.getElementById('reader-settings-btn')?.addEventListener('click', () => window.SettingsSheet?.open('listen'));
+document.getElementById('reader-search-btn')?.addEventListener('click', () => document.getElementById('header-search-btn')?.click());
 
 function applyTypographySettings() {
     const s = STATE.settings;
@@ -7626,7 +7856,67 @@ function syncColorPresets() {
     });
 }
 
-window.addEventListener('themechange', () => {
+const MIN_TEXT_CONTRAST = 4.5;
+let colorProbeCtx = null;
+
+// Resolves any CSS colour (hex, oklch…) to sRGB by painting one canvas pixel.
+function cssColorToRgb(color) {
+    if (!color) return null;
+    if (!colorProbeCtx) {
+        const canvas = document.createElement('canvas');
+        canvas.width = canvas.height = 1;
+        colorProbeCtx = canvas.getContext('2d', { willReadFrequently: true });
+    }
+    const ctx = colorProbeCtx;
+    if (!ctx) return null;
+    ctx.fillStyle = '#010203';
+    ctx.fillStyle = color.trim();
+    if (ctx.fillStyle === '#010203') return null;
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b] = ctx.getImageData(0, 0, 1, 1).data;
+    return [r, g, b];
+}
+
+function contrastRatio(a, b) {
+    const lum = ([r, g, b]) => {
+        const ch = v => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+        return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b);
+    };
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+}
+
+function readerPaperRgb() {
+    return cssColorToRgb(getComputedStyle(document.documentElement).getPropertyValue('--color-paper'));
+}
+
+function textColorFailsOn(paper, color) {
+    if (!paper || !String(color || '').startsWith('#')) return false;
+    const rgb = cssColorToRgb(color);
+    return !!rgb && contrastRatio(rgb, paper) < MIN_TEXT_CONTRAST;
+}
+
+function syncPresetContrast(paper) {
+    document.querySelectorAll('.preset-color').forEach(btn => {
+        const fails = textColorFailsOn(paper, btn.dataset.color);
+        if (fails) btn.setAttribute('aria-disabled', 'true');
+        else btn.removeAttribute('aria-disabled');
+    });
+}
+
+let lastThemeId = null;
+window.addEventListener('themechange', (e) => {
+    const themeId = e.detail?.themeId || null;
+    const themeChanged = lastThemeId !== null && themeId !== lastThemeId;
+    lastThemeId = themeId;
+    const paper = readerPaperRgb();
+    syncPresetContrast(paper);
+    if (themeChanged && textColorFailsOn(paper, STATE.settings.textColor)) {
+        STATE.settings.textColor = 'default';
+        scheduleBookSettingsSave();
+        APP_STATUS.toast(tr('text-color-reset-contrast', 'Màu chữ cũ khó đọc trên giao diện này nên đã chuyển về màu mặc định.'), 'info', { key: 'text-color' });
+    }
     applyTypographySettings();
 });
 
@@ -7636,43 +7926,34 @@ document.getElementById('next-btn').onclick = () => playNextChapter();
 document.getElementById('prev-chunk-btn').onclick = () => playPrevChunk();
 document.getElementById('next-chunk-btn').onclick = () => playNextChunk();
 
-// Manual sync: the menu closes on click, so the result is reported in a toast and
-// as the row's "lúc HH:mm" value. "Đang đồng bộ…" stays up for at least 600ms.
+// Manual sync from the account menu: the menu closes on click, so the result is a toast and
+// the row's "lúc HH:mm" value. "Đang đồng bộ…" stays up for at least 600ms.
 const SYNC_MIN_MS = 600;
+function librarySyncLabel() {
+    if (libraryView.manualSync) return tr('library-syncing', 'Đang đồng bộ…');
+    if (!libraryView.syncedAt) return '';
+    const time = new Date(libraryView.syncedAt).toLocaleTimeString(uiLang() === 'vi' ? 'vi-VN' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
+    return tr('sync-at', 'lúc {time}', { time });
+}
 async function syncLibraryNow() {
     if (!STATE.user) return refreshLibrary();
     if (libraryView.manualSync) return;
-    const button = document.getElementById('sync-btn');
-    const value = document.getElementById('sync-btn-value');
     const uid = STATE.user.uid;
     libraryView.manualSync = true;
-    button?.setAttribute('data-state', 'busy');
-    button?.setAttribute('aria-busy', 'true');
-    if (value) value.textContent = tr('library-syncing', 'Đang đồng bộ…');
+    accountMenu?.render();
     try {
         await Promise.all([refreshLibrary(), new Promise(resolve => setTimeout(resolve, SYNC_MIN_MS))]);
     } finally {
         libraryView.manualSync = false;
-        button?.removeAttribute('aria-busy');
+        accountMenu?.render();
         applyLibraryFilters();
     }
-    if (STATE.user?.uid !== uid) {
-        button?.removeAttribute('data-state');
-        if (value) value.textContent = '';
-        return;
-    }
+    if (STATE.user?.uid !== uid) return;
     const ok = libraryView.status === 'ready';
-    button?.setAttribute('data-state', ok ? 'ok' : 'error');
-    if (value) {
-        value.textContent = ok
-            ? tr('sync-at', 'lúc {time}', { time: new Date().toLocaleTimeString(uiLang() === 'vi' ? 'vi-VN' : 'en-GB', { hour: '2-digit', minute: '2-digit' }) })
-            : '';
-    }
     APP_STATUS.toast(ok
         ? trCount('sync-done', 'Đã đồng bộ · {n} truyện', discoveryLibrary.length)
         : tr('sync-failed', 'Không đồng bộ được thư viện. Thử lại nhé.'), ok ? 'success' : 'error', { key: `library-sync-${ok ? 'ok' : 'error'}` });
 }
-document.getElementById('sync-btn').onclick = () => { void syncLibraryNow(); };
 document.getElementById('edit-title-btn').onclick = () => editTitle();
 document.getElementById('toc-download-txt-btn').onclick = () => {
     if (STATE.currentBookId) downloadTextBook(STATE.currentBookId, STATE.currentBook?.title);
@@ -7703,24 +7984,22 @@ const toggleFullscreen = () => {
     if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen().catch(err => {
             console.error(`Error attempting to enable fullscreen: ${err.message}`);
+            if (fullscreenToggle) fullscreenToggle.checked = false;
         });
     } else {
         document.exitFullscreen();
     }
 };
 
-const fullscreenBtn = document.getElementById('fullscreen-btn');
-if (fullscreenBtn) {
-    fullscreenBtn.onclick = toggleFullscreen;
+// iPhone Safari has no Fullscreen API; the Settings row only shows where it works.
+const fullscreenToggle = document.getElementById('settings-fullscreen-toggle');
+if (fullscreenToggle && document.fullscreenEnabled) {
+    fullscreenToggle.closest('.set-row').hidden = false;
+    fullscreenToggle.addEventListener('change', () => {
+        if (fullscreenToggle.checked !== !!document.fullscreenElement) toggleFullscreen();
+    });
     document.addEventListener('fullscreenchange', () => {
-        const active = !!document.fullscreenElement;
-        const key = active ? 'menu-fullscreen-exit' : 'menu-fullscreen';
-        const label = fullscreenBtn.querySelector('[data-i18n]');
-        if (label) {
-            label.dataset.i18n = key;
-            label.textContent = tr(key, active ? 'Thoát toàn màn hình' : 'Toàn màn hình');
-        }
-        fullscreenBtn.querySelector('use')?.setAttribute('href', active ? '#i-full-exit' : '#i-full');
+        fullscreenToggle.checked = !!document.fullscreenElement;
     });
 }
 
@@ -7890,7 +8169,10 @@ function applyLiteMode(isLite) {
             pocketOverlay.classList.add('flex');
             updatePocketModeInfo();
             if (!wasOpen) document.getElementById('pocket-play-btn')?.focus({ preventScroll: true });
+            // Back only wakes the locked screen; unlocking stays a deliberate double tap.
+            openLayer('pocket', () => { brightenPocketOverlay(); return false; });
         } else {
+            closeLayer('pocket');
             pocketOverlay.classList.add('hidden');
             pocketOverlay.classList.remove('flex');
             dimPocketOverlay();
@@ -8057,6 +8339,7 @@ function applySettingsToUI() {
         document.getElementById('font-size-range').value = s.fontSize;
         document.getElementById('font-size-val').innerText = `${s.fontSize}px`;
     }
+    document.querySelectorAll('.range').forEach(paintRange);
 
     if (document.getElementById('font-color-picker')) {
         if (String(s.textColor).startsWith('#')) {
@@ -8319,36 +8602,9 @@ function releaseWakeLock() {
     }
 }
 
-function toggleWakeLock() {
-    STATE.wakeLockEnabled = !STATE.wakeLockEnabled;
-    localStorage.setItem('wakeLockEnabled', STATE.wakeLockEnabled);
-    if (STATE.wakeLockEnabled) {
-        requestWakeLock();
-    } else {
-        releaseWakeLock();
-    }
-}
-
-// Toggle rows in the reader menu: aria-checked drives the look, the state chip says Bật/Tắt.
-function setMenuToggleState(button, pill, isOn) {
-    if (button) button.setAttribute('aria-checked', isOn ? 'true' : 'false');
-    if (pill) {
-        const key = isOn ? 'state-on' : 'state-off';
-        pill.dataset.i18n = key;
-        pill.textContent = tr(key, isOn ? 'Bật' : 'Tắt');
-    }
-}
-
 function updateWakeLockUI(isActive) {
-    const btn = document.getElementById('wake-lock-btn');
-    if (!btn) return;
-    btn.title = isActive ? tr('wake-on-title', 'Giữ màn hình sáng: đang bật') : tr('wake-off-title', 'Giữ màn hình sáng: đang tắt');
-    setMenuToggleState(btn, document.getElementById('wake-lock-status-pill'), !!isActive);
-
     const settingsWake = document.getElementById('settings-wake-toggle');
     if (settingsWake) settingsWake.checked = !!isActive;
-
-    updateReaderMoreActiveDot();
 }
 window.updateWakeLockUI = updateWakeLockUI;
 window.requestWakeLock = requestWakeLock;
@@ -8454,36 +8710,7 @@ function cancelSleepTimer() {
     updateSleepTimerUI(false);
 }
 
-function formatTime(seconds) {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    return [h, m, s].map(v => v < 10 ? "0" + v : v).join(":");
-}
-
 function updateSleepTimerUI(isActive, seconds = 0) {
-    const block = document.querySelector('.sleep-block');
-    const badge = document.getElementById('sleep-timer-badge');
-    const controls = document.getElementById('sleep-timer-active-controls');
-    const remainingText = document.getElementById('sleep-timer-remaining');
-    const byChapter = isActive && STATE.sleepTimerMode === 'chapter';
-
-    if (block) block.dataset.on = isActive ? 'true' : 'false';
-    if (badge) {
-        badge.dataset.on = isActive ? 'true' : 'false';
-        if (isActive) {
-            delete badge.dataset.i18n;
-            badge.textContent = byChapter ? tr('sleep-chapter-short', 'hết ch.') : (seconds > 60 ? `${Math.ceil(seconds / 60)}′` : `${seconds}s`);
-        } else {
-            badge.dataset.i18n = 'state-off';
-            badge.textContent = tr('state-off', 'Tắt');
-        }
-    }
-    const focusWasInControls = !!controls?.contains(document.activeElement);
-    if (controls) controls.classList.toggle('hidden', !isActive);
-    if (focusWasInControls && !isActive) block?.querySelector('.sleep-block__presets button')?.focus();
-    if (isActive && remainingText) remainingText.textContent = byChapter ? tr('sleep-end-chapter', 'Hết chương') : formatTime(seconds);
-    updateReaderMoreActiveDot();
     document.dispatchEvent(new CustomEvent('sleeptimerchange', {
         detail: { active: !!isActive, seconds, mode: isActive ? STATE.sleepTimerMode : null }
     }));
@@ -8713,7 +8940,6 @@ window.cancelSleepTimer = cancelSleepTimer;
 window.setSleepTimerEndOfChapter = setSleepTimerEndOfChapter;
 
 document.getElementById('manual-save-btn')?.addEventListener('click', () => triggerManualSave());
-document.getElementById('wake-lock-btn')?.addEventListener('click', () => toggleWakeLock());
 
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && STATE.wakeLockEnabled) {
@@ -8816,6 +9042,9 @@ let editReturnFocus = null;
 
 async function openEditChapterModal(index, triggerBtn = null) {
     if (!STATE.user || !STATE.currentFilename) return;
+    // A pending chapter delete shifts indices once sent, so send it before picking a chapter.
+    if (pendingChapterDelete) await flushChapterDelete();
+    if (index >= (STATE.currentBook?.chapters?.length || 0)) return;
 
     editingChapterIndex = index;
     const modal = document.getElementById('edit-chapter-modal');
@@ -8859,6 +9088,7 @@ async function openEditChapterModal(index, triggerBtn = null) {
             editingChapterGap = parts.gap;
             textarea.value = nameInput ? parts.body : data.content;
             modal.classList.remove('hidden');
+            openLayer('edit-chapter-modal', closeEditModal);
             textarea.scrollTop = 0;
             (nameInput || textarea).focus({ preventScroll: true });
             if (statusIndicator) statusIndicator.innerText = tr('status-ready', 'Ready');
@@ -8907,6 +9137,7 @@ function flashTOCRow(index) {
 }
 
 function closeEditModal() {
+    closeLayer('edit-chapter-modal');
     document.getElementById('edit-chapter-modal').classList.add('hidden');
     const index = editingChapterIndex;
     editingChapterIndex = -1;
@@ -9020,15 +9251,16 @@ window.refreshInsights = () => {
     OFFLINE_MANAGER.updateUsageUI();
 };
 
-document.getElementById('stats-toggle-btn')?.addEventListener('click', () => {
-    window.SettingsSheet?.open('stats');
-});
-
 document.getElementById('clear-offline-cache')?.addEventListener('click', async () => {
-    if (confirm(tr('clear-cache-confirm', 'Xoá toàn bộ âm thanh đã lưu trên máy này?'))) {
-        await OFFLINE_MANAGER.clearCache();
-        APP_STATUS.toast(tr('clear-cache-done', 'Đã xoá cache âm thanh.'), 'success');
-    }
+    const ok = await askConfirm({
+        title: tr('clear-cache-title', 'Xoá âm thanh đã lưu?'),
+        message: tr('clear-cache-body', 'Âm thanh đã lưu trên máy này sẽ bị xoá. Truyện và vị trí đọc vẫn giữ nguyên; khi nghe lại, âm thanh sẽ được tạo lại.'),
+        confirmLabel: tr('clear-cache-ok', 'Xoá âm thanh'),
+        danger: true
+    });
+    if (!ok) return;
+    await OFFLINE_MANAGER.clearCache();
+    APP_STATUS.toast(tr('clear-cache-done', 'Đã xoá cache âm thanh.'), 'success');
 });
 
 // --- Theme Management: four console themes live in ui-interactions.js ---
@@ -9137,21 +9369,11 @@ window.MPW_BRIDGE = {
 };
 
 // --- Zen Mode Control & Persistence ---
-function updateReaderMoreActiveDot() {
-    const dot = document.getElementById('reader-more-active-dot');
-    if (!dot) return;
-    const hasActive = !!(STATE.zenModeEnabled || STATE.wakeLockEnabled || STATE.sleepTimer);
-    dot.classList.toggle('hidden', !hasActive);
-}
-window.updateReaderMoreActiveDot = updateReaderMoreActiveDot;
-
 function setZenMode(enabled, persist = true) {
     STATE.zenModeEnabled = !!enabled;
     document.body.classList.toggle('zen-focus-mode', STATE.zenModeEnabled);
-    setMenuToggleState(document.getElementById('zen-mode-toggle-btn'), document.getElementById('zen-mode-status-pill'), STATE.zenModeEnabled);
     const settingsZen = document.getElementById('settings-zen-toggle');
     if (settingsZen) settingsZen.checked = STATE.zenModeEnabled;
-    updateReaderMoreActiveDot();
     if (persist) {
         try {
             localStorage.setItem('zen-mode-enabled', STATE.zenModeEnabled ? 'true' : 'false');
@@ -9159,16 +9381,6 @@ function setZenMode(enabled, persist = true) {
     }
 }
 window.setZenMode = setZenMode;
-
-const zenToggleBtn = document.getElementById('zen-mode-toggle-btn');
-if (zenToggleBtn) {
-    zenToggleBtn.addEventListener('click', () => {
-        AudioHapticFX.trigger(12);
-        const nextState = !STATE.zenModeEnabled;
-        setZenMode(nextState, true);
-        APP_STATUS.toast(nextState ? tr('zen-on', 'Đã bật chế độ tập trung.') : tr('zen-off', 'Đã tắt chế độ tập trung.'), 'info');
-    });
-}
 
 // --- Reader tools menu (⋮) ---
 function requireOpenBook() {
@@ -9183,7 +9395,6 @@ document.addEventListener('reader-menu-open', () => {
         const item = document.getElementById(id);
         if (item) item.disabled = !hasBook;
     });
-    syncReaderTypePanel();
 });
 document.getElementById('reader-edit-chapter-btn')?.addEventListener('click', () => {
     if (requireOpenBook()) void openEditChapterModal(STATE.currentChapterIndex, null);
@@ -9202,7 +9413,6 @@ document.getElementById('reader-delete-btn')?.addEventListener('click', () => {
     const entry = requireOpenBook() && findLibraryEntry(STATE.currentBookId);
     if (entry) runBookAction('delete', entry);
 });
-document.getElementById('reader-pocket-btn')?.addEventListener('click', () => applyLiteMode(true));
 
 // --- Aa: reading type panel (font, size, line height, column width, theme) ---
 const READER_TYPE_DEFAULTS = { leading: '1.72', measure: '66ch' };
@@ -9238,8 +9448,6 @@ function syncReaderTypePanel() {
             btn.setAttribute('aria-pressed', String(btn.dataset.value === current));
         });
     });
-    const summary = document.getElementById('reader-type-summary');
-    if (summary) summary.textContent = `${size}px`;
 }
 
 function setReaderFontSize(size) {
@@ -9264,27 +9472,37 @@ function onReaderTypeOutside(event) {
 }
 
 function onReaderTypeKey(event) {
+    if (event.key === 'Tab' && readerTypePanel?.getAttribute('aria-modal') === 'true') {
+        trapTab(readerTypePanel, event);
+        return;
+    }
     if (event.key !== 'Escape') return;
     event.preventDefault();
     event.stopPropagation();
     closeReaderTypePanel({ restoreFocus: true });
 }
 
-function openReaderTypePanel() {
+function openReaderTypePanel({ fromKeyboard = false } = {}) {
     if (!readerTypePanel || !readerTypePanel.hidden) return;
-    readerTypeReturnFocus = document.getElementById('reader-more-menu-btn');
+    readerTypeReturnFocus = document.getElementById('reader-type-btn');
     syncReaderTypePanel();
     readerTypePanel.hidden = false;
+    readerTypeReturnFocus?.setAttribute('aria-expanded', 'true');
     const isSheet = window.matchMedia('(max-width: 639.98px)').matches;
     if (readerTypeScrim) readerTypeScrim.hidden = !isSheet;
+    readerTypePanel.setAttribute('aria-modal', String(isSheet));
     document.addEventListener('pointerdown', onReaderTypeOutside, true);
     document.addEventListener('keydown', onReaderTypeKey, true);
-    document.getElementById('reader-type-font')?.focus({ preventScroll: true });
+    openLayer('reader-type', () => closeReaderTypePanel({ restoreFocus: true }));
+    const target = fromKeyboard ? document.getElementById('reader-type-font') : readerTypePanel;
+    target?.focus({ preventScroll: true });
 }
 
 function closeReaderTypePanel({ restoreFocus = false } = {}) {
     if (!readerTypePanel || readerTypePanel.hidden) return;
+    closeLayer('reader-type');
     readerTypePanel.hidden = true;
+    document.getElementById('reader-type-btn')?.setAttribute('aria-expanded', 'false');
     if (readerTypeScrim) readerTypeScrim.hidden = true;
     document.removeEventListener('pointerdown', onReaderTypeOutside, true);
     document.removeEventListener('keydown', onReaderTypeKey, true);
@@ -9292,9 +9510,9 @@ function closeReaderTypePanel({ restoreFocus = false } = {}) {
     readerTypeReturnFocus = null;
 }
 
-document.getElementById('reader-type-btn')?.addEventListener('click', () => {
-    // Let the menu close first, then open the panel in its place.
-    requestAnimationFrame(openReaderTypePanel);
+document.getElementById('reader-type-btn')?.addEventListener('click', (event) => {
+    if (readerTypePanel?.hidden) openReaderTypePanel({ fromKeyboard: event.detail === 0 });
+    else closeReaderTypePanel();
 });
 document.getElementById('reader-type-close')?.addEventListener('click', () => closeReaderTypePanel({ restoreFocus: true }));
 readerTypeScrim?.addEventListener('click', () => closeReaderTypePanel());
