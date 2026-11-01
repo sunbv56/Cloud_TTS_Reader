@@ -7138,6 +7138,12 @@ async function togglePlayback() {
 }
 
 playBtn.onclick = () => togglePlayback();
+// Pointer presses on console buttons drop focus, so a later Space/arrow shortcut does not
+// light the keyboard focus ring around the round play button. Keyboard activation keeps it.
+document.getElementById('media-player')?.addEventListener('click', event => {
+    const button = event.target.closest('button');
+    if (button && event.detail > 0) button.blur();
+});
 document.getElementById('console-elsewhere-btn')?.addEventListener('click', () => void takeOverPlayback());
 
 
