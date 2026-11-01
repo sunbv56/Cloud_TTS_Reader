@@ -1269,6 +1269,23 @@
         overflow-y: auto;
         overscroll-behavior: contain;
     }
+    @media (max-width: 639.98px) {
+        .menu.reader-menu {
+            position: fixed;
+            top: auto;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: var(--z-modal);
+            width: auto;
+            max-height: 80dvh;
+            padding: var(--space-2) var(--space-2) calc(var(--space-2) + env(safe-area-inset-bottom));
+            border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+            border-width: 1px 0 0;
+            animation: cc-up var(--dur-slow) var(--ease-out);
+        }
+        .reader-menu .menu-item { min-height: 48px; }
+    }
     .menu-item__text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; padding: var(--space-2) 0; }
     .menu-item__text small {
         font-size: var(--text-xs);
@@ -1290,8 +1307,7 @@
         text-align: center;
         white-space: nowrap;
     }
-    .menu-item[aria-checked="true"] > .ic,
-    .sleep-block[data-on="true"] .sleep-block__head > .ic { color: var(--color-accent); }
+    .menu-item[aria-checked="true"] > .ic { color: var(--color-accent); }
     .menu-item[aria-checked="true"] .menu-item__state,
     .menu-item__state[data-on="true"] {
         border-color: var(--color-accent);
@@ -1302,25 +1318,6 @@
     .menu-item[data-state="busy"] > .ic { color: var(--color-accent); }
     .menu-item[data-state="ok"] > .ic { color: var(--color-ok); }
     .menu-item[data-state="error"] > .ic { color: var(--color-danger); }
-    .sleep-block { padding: var(--space-1) var(--space-3) var(--space-2); }
-    .sleep-block__head {
-        display: flex;
-        align-items: center;
-        gap: var(--space-3);
-        min-height: 40px;
-        font: 400 var(--text-md)/1.3 var(--font-ui);
-    }
-    .sleep-block__head > .ic { width: 18px; height: 18px; color: var(--color-muted); }
-    .sleep-block__presets > button { font-family: var(--font-mono); font-weight: 500; min-height: var(--tap); }
-    .sleep-block__active {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        gap: var(--space-2) var(--space-3);
-        margin-top: var(--space-2);
-        font-size: var(--text-sm);
-    }
-    .sleep-block__active .btn { margin-left: auto; }
     .btn--sm { padding: 0 var(--space-3); font-size: var(--text-sm); }
 
     /* ---------------------------------------------------- Aa: reading type panel */
@@ -1643,6 +1640,8 @@
         max-width: 100%;
     }
     .pocket__badge span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .pocket__sleep { display: inline-flex; align-items: center; gap: 6px; margin: 0; font: 500 var(--text-sm)/1.4 var(--font-ui); font-variant-numeric: tabular-nums; }
+    .pocket__sleep[hidden] { display: none; }
     .pocket__prompt { margin: 0; min-height: 1.4em; font: 600 var(--text-sm)/1.4 var(--font-ui); opacity: 0; transition: opacity var(--dur) var(--ease-out); }
     .pocket__center {
         width: 100%;
@@ -1749,10 +1748,10 @@
     }
 
     /* ============================================================ console
-     * Phone (<1024px): one 56px row — play · title/chapter · speed · timer · ⌃,
+     * Phone (<1024px): one 56px row — ↺ ▶ ↻ · title/chapter · timer · screen off · ⌃,
      * with the chapter progress as a 3px line on top.
-     * Desktop: one 64px row — ↺ ▶ ↻ ‹ › · title · scrub + count · speed ·
-     * timer · voice · screen off · PiP · panel. */
+     * Desktop: one 64px row — ‹ ↺ ▶ ↻ › · title · scrub + count · speed ·
+     * timer · screen off · PiP · panel (voice lives in the panel). */
     .console-shell {
         position: relative;
         z-index: var(--z-console);
@@ -1930,8 +1929,7 @@
        chapter list; the row keeps only sentence steps beside play, so a mis-tap in the dark
        moves one sentence instead of a whole chapter. */
     @media (max-width: 1023.98px) {
-        #speak-speed-chip,
-        #sleep-chip { display: none; }
+        #speak-speed-chip { display: none; }
         .console-transport { gap: var(--space-1); }
         .console-transport #prev-chunk-btn,
         .console-transport #next-chunk-btn { display: inline-grid; place-items: center; min-width: var(--tap); min-height: var(--tap); border-radius: 50%; }
@@ -1951,14 +1949,23 @@
         .console-pocket > span {
             position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
         }
+        /* Sleep timer: a bare moon like its neighbours; running, a tinted pill with the minutes left. */
+        #sleep-chip { min-width: var(--tap); gap: 3px; padding: 0 6px; border-radius: 50%; }
+        #sleep-chip:not([data-on="true"]) .ic { width: 18px; height: 18px; }
+        #sleep-chip:not([data-on="true"])::before { border-color: transparent; }
+        #sleep-chip[data-on="true"] { border-radius: var(--radius-sm); font-size: var(--text-xs); }
+        #sleep-chip[data-on="true"] .ic { color: var(--color-accent); }
+        /* 320px: the row keeps its six 44px targets; title and chapter stay in the top bar and panel. */
+        @media (max-width: 359.98px) {
+            .console-shell:not(.player-discovery-dock) .console-info { display: none; }
+            .console-shell:not(.player-discovery-dock) .console-utils { margin-left: auto; }
+            #sleep-chip[data-on="true"] .ic { display: none; }
+        }
     }
     #sleep-chip .ic { width: 14px; height: 14px; }
-    #sleep-chip-label[data-i18n="sleep-chip-off"] { font-family: var(--font-ui); font-weight: 500; }
-    /* 320px phones: the moon alone says "sleep timer" when it is off; the name stays for AT. */
-    @media (max-width: 359.98px) {
-        #sleep-chip-label[data-i18n="sleep-chip-off"] {
-            position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
-        }
+    /* Off, the moon alone says "sleep timer"; the name stays for assistive tech. */
+    #sleep-chip:not([data-on="true"]) #sleep-chip-label {
+        position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
     }
 
     /* Caption above a chip; when hidden it is still the polite live region for chip changes. */
@@ -2007,10 +2014,8 @@
     @media (prefers-reduced-motion: reduce) {
         .console-elsewhere.is-flash { animation: none; background: color-mix(in oklch, var(--color-warn) 12%, transparent); }
     }
-    .console-voice { position: relative; }
     .select--sm,
     .input--sm { min-height: 36px; font-size: var(--text-sm); }
-    .console-voice .select { width: 140px; }
     .console-pocket { position: relative; gap: 6px; }
     .console-pocket input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
     .console-pocket:has(input:focus-visible) { outline: 2px solid var(--color-focus); outline-offset: 2px; }
@@ -2144,7 +2149,7 @@
         .console-transport #next-btn .ic { width: 17px; height: 17px; }
         .console-play { width: 44px; height: 44px; margin: 0 var(--space-1); }
         .console-info { flex: 1 1 260px; max-width: 420px; }
-        .console-scrub { flex: 1.3 1 200px; max-width: 640px; }
+        .console-scrub { flex: 2 1 320px; max-width: 640px; }
         .console-utils {
             gap: 6px;
             margin-left: auto;
@@ -2154,7 +2159,6 @@
         .console-utils .chip { min-height: 36px; }
         .console-utils .chip::before { inset: 0; }
         .console-utils .icon-btn { min-width: 36px; min-height: 36px; }
-        .console-voice .select,
         .console-pocket {
             min-height: 36px;
             height: 36px;
@@ -2163,12 +2167,13 @@
             background: transparent;
             font: 500 var(--text-sm)/1 var(--font-ui);
         }
-        .console-pocket { padding: 0 var(--space-3); }
+        /* Tools are icons; their names stay in aria-label/title and for assistive tech. */
+        .console-pocket { width: 36px; padding: 0; justify-content: center; }
+        .console-pocket > span {
+            position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+        }
     }
     @media (min-width: 1024px) and (max-width: 1239.98px) {
-        .console-pocket > span { display: none; }
-        .console-pocket { padding: 0 var(--space-2); }
-        .console-voice .select { width: 124px; }
         .console-info { flex-basis: 200px; }
     }
 
@@ -2358,7 +2363,7 @@
     .cpanel .select--sm,
     .cpanel .input--sm { min-height: var(--tap); }
 
-    .cpanel__sleep { display: flex; flex-direction: column; gap: var(--space-2); padding-top: var(--space-3); border-top: 1px solid var(--color-line); }
+    .cpanel__sleep { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-4); border-bottom: 1px solid var(--color-line); }
     .cpanel__sleep-head { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-md); }
     .cpanel__sleep-head > .ic { color: var(--color-muted); }
     .cpanel__sleep-head .menu-item__state { margin-left: auto; }
@@ -3769,18 +3774,6 @@
     body[data-view="discovery"] .hdr-keys { display: none; }
     .hdr-keys { color: var(--color-muted-raised); }
     .hdr-keys kbd { font-size: var(--text-xs); color: var(--color-text); }
-
-    /* Narrow phones: the idle timer chip is just the moon (its aria-label names it). */
-    @media (max-width: 399.98px) {
-        #sleep-chip[data-on="false"] #sleep-chip-label {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            overflow: hidden;
-            clip-path: inset(50%);
-            white-space: nowrap;
-        }
-    }
 
     /* Title pen: a full 44px target, pulled into the line so the header keeps its height. */
     .reader-top__pen { min-width: var(--tap); min-height: var(--tap); margin-block: -8px; }

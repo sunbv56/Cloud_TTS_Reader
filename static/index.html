@@ -278,7 +278,7 @@
 
         </aside>
 
-        <!-- Reader: top bar (title, chapter, Mục lục, ⋮), 66ch text column, position ruler (≥1024px) -->
+        <!-- Reader: top bar (title, chapter, Aa, Mục lục, ⋮), 66ch text column, position ruler (≥1024px) -->
         <section id="reader-container" class="reader hidden" aria-labelledby="current-title">
             <header id="reader-header" class="reader-top">
                 <button id="reader-back-btn" type="button" class="icon-btn reader-top__back"
@@ -296,6 +296,11 @@
                     </div>
                     <p id="current-chapter" class="reader-chapter" data-i18n="standby-mode">Standby Mode</p>
                 </div>
+                <button id="reader-type-btn" type="button" class="icon-btn"
+                    title="Chữ đọc" aria-label="Chữ đọc" data-i18n-aria="reader-type" data-i18n-title="reader-type"
+                    aria-haspopup="dialog" aria-expanded="false" aria-controls="reader-type-panel">
+                    <svg class="ic" aria-hidden="true"><use href="#i-aa"/></svg>
+                </button>
                 <button id="reader-toc-toggle-btn" type="button" class="icon-btn"
                     title="Mục lục chương" aria-label="Mở mục lục chương" data-i18n-aria="toc-open">
                     <svg class="ic" aria-hidden="true"><use href="#i-list"/></svg>
@@ -305,10 +310,10 @@
                         title="Tiện ích trang đọc" aria-label="Tiện ích trang đọc" data-i18n-aria="reader-tools"
                         aria-expanded="false" aria-haspopup="menu" aria-controls="reader-more-menu-dropdown">
                         <svg class="ic" aria-hidden="true"><use href="#i-dots"/></svg>
-                        <span id="reader-more-active-dot" class="badge-dot hidden" aria-hidden="true"></span>
                     </button>
 
-                    <!-- Reader tools: every reader action lives here -->
+                    <!-- ⋮: this book only (chapters, name, images, cloud save); a bottom sheet on phones -->
+                    <div id="reader-more-menu-scrim" class="sheet-scrim" hidden></div>
                     <div id="reader-more-menu-dropdown" class="menu reader-menu" role="menu" aria-label="Tiện ích trang đọc" data-i18n-aria="reader-tools" hidden>
                         <p class="menu__label" data-i18n="reader-tools">Tiện ích trang đọc</p>
                         <div class="reader-menu__shell" role="none">
@@ -322,11 +327,6 @@
                             </button>
                             <hr class="menu__rule">
                         </div>
-                        <button id="reader-type-btn" type="button" class="menu-item" role="menuitem" aria-haspopup="dialog">
-                            <svg class="ic" aria-hidden="true"><use href="#i-aa"/></svg>
-                            <span data-i18n="reader-type">Chữ đọc</span>
-                            <span id="reader-type-summary" class="menu-item__value">19px</span>
-                        </button>
                         <button id="reader-edit-chapter-btn" type="button" class="menu-item" role="menuitem">
                             <svg class="ic" aria-hidden="true"><use href="#i-pen"/></svg>
                             <span data-i18n="edit-this-chapter">Sửa chương này</span>
@@ -343,34 +343,6 @@
                             <svg class="ic" aria-hidden="true"><use href="#i-merge"/></svg>
                             <span data-i18n="merge-chapters">Nối chương</span>
                         </button>
-                        <button id="reader-delete-btn" type="button" class="menu-item menu-item--danger" role="menuitem">
-                            <svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg>
-                            <span data-i18n="delete-book">Xoá truyện</span>
-                        </button>
-                        <hr class="menu__rule">
-                        <button id="zen-mode-toggle-btn" type="button" class="menu-item" role="menuitemcheckbox" aria-checked="false" data-keep-open>
-                            <svg class="ic" aria-hidden="true"><use href="#i-focus"/></svg>
-                            <span class="menu-item__text">
-                                <span data-i18n="zen-title">Chế độ tập trung</span>
-                                <small data-i18n="zen-desc">Làm mờ các đoạn khác</small>
-                            </span>
-                            <span id="zen-mode-status-pill" class="menu-item__state" data-i18n="state-off">Tắt</span>
-                        </button>
-                        <button id="wake-lock-btn" type="button" class="menu-item" role="menuitemcheckbox" aria-checked="false" data-keep-open>
-                            <svg id="wake-lock-icon" class="ic" aria-hidden="true"><use href="#i-sun"/></svg>
-                            <span class="menu-item__text">
-                                <span data-i18n="wake-title">Giữ màn hình sáng</span>
-                                <small data-i18n="wake-desc">Không tự khoá khi đang đọc</small>
-                            </span>
-                            <span id="wake-lock-status-pill" class="menu-item__state" data-i18n="state-off">Tắt</span>
-                        </button>
-                        <button id="reader-pocket-btn" type="button" class="menu-item" role="menuitem">
-                            <svg class="ic" aria-hidden="true"><use href="#i-screen-off"/></svg>
-                            <span class="menu-item__text">
-                                <span data-i18n="pocket-title">Nghe tắt màn hình</span>
-                                <small data-i18n="pocket-desc">Màn đen, khoá chống chạm nhầm</small>
-                            </span>
-                        </button>
                         <button id="manual-save-btn" type="button" class="menu-item" role="menuitem" data-keep-open>
                             <svg id="manual-save-icon" class="ic" aria-hidden="true"><use href="#i-cloud-up"/></svg>
                             <span class="menu-item__text">
@@ -379,24 +351,10 @@
                             </span>
                         </button>
                         <hr class="menu__rule">
-                        <div class="sleep-block" role="group" aria-labelledby="sleep-timer-label">
-                            <div class="sleep-block__head">
-                                <svg id="sleep-timer-icon" class="ic" aria-hidden="true"><use href="#i-moon"/></svg>
-                                <span id="sleep-timer-label" data-i18n="sleep-title">Hẹn giờ tắt</span>
-                                <span id="sleep-timer-badge" class="menu-item__state" data-i18n="state-off">Tắt</span>
-                            </div>
-                            <div class="seg sleep-block__presets">
-                                <button type="button" role="menuitem" data-keep-open onclick="setSleepTimerPreset(15)">15′</button>
-                                <button type="button" role="menuitem" data-keep-open onclick="setSleepTimerPreset(30)">30′</button>
-                                <button type="button" role="menuitem" data-keep-open onclick="setSleepTimerPreset(45)">45′</button>
-                                <button type="button" role="menuitem" data-keep-open onclick="setSleepTimerPreset(60)">60′</button>
-                            </div>
-                            <div id="sleep-timer-active-controls" class="sleep-block__active hidden">
-                                <span class="muted" data-i18n="sleep-left">Còn lại</span>
-                                <span id="sleep-timer-remaining" class="mono">00:00:00</span>
-                                <button type="button" class="btn btn--sm btn--danger" role="menuitem" data-keep-open onclick="cancelSleepTimer()" data-i18n="sleep-cancel">Huỷ hẹn giờ</button>
-                            </div>
-                        </div>
+                        <button id="reader-delete-btn" type="button" class="menu-item menu-item--danger" role="menuitem">
+                            <svg class="ic" aria-hidden="true"><use href="#i-trash"/></svg>
+                            <span data-i18n="delete-book">Xoá truyện</span>
+                        </button>
                     </div>
                 </div>
             </header>
@@ -632,8 +590,9 @@
                     <button id="sleep-chip" type="button" class="chip" aria-label="Hẹn giờ tắt: tắt. Chạm để đổi" title="Hẹn giờ tắt: chạm để đổi">
                         <svg class="ic ic--sm" aria-hidden="true"><use href="#i-moon"/></svg><span id="sleep-chip-label" data-i18n="sleep-chip-off">Hẹn giờ</span>
                     </button>
-                    <label class="console-wide console-voice" title="Giọng đọc" data-i18n-title="voice-label">
-                        <span class="sr-only-text" data-i18n="voice-label">Giọng đọc</span>
+                    <!-- Canonical voice input; the panel and Settings mirror it, the row does not show it. -->
+                    <label class="console-voice" hidden>
+                        <span data-i18n="voice-label">Giọng đọc</span>
                         <select id="voice-select" class="select select--sm">
                             <option value="vi-VN-HoaiMyNeural">Hoài My · Nữ</option>
                             <option value="vi-VN-NamMinhNeural">Nam Minh · Nam</option>
@@ -734,6 +693,30 @@
                 </button>
             </div>
 
+            <div class="cpanel__sleep" role="group" aria-labelledby="cpanel-sleep-label">
+                <div class="cpanel__sleep-head">
+                    <svg class="ic ic--sm" aria-hidden="true"><use href="#i-moon"/></svg>
+                    <span id="cpanel-sleep-label" data-i18n="sleep-title">Hẹn giờ tắt</span>
+                    <span id="cpanel-sleep-state" class="menu-item__state" data-i18n="state-off">Tắt</span>
+                </div>
+                <div class="seg cpanel__sleep-presets">
+                    <button type="button" data-sleep="15" aria-pressed="false">15′</button>
+                    <button type="button" data-sleep="30" aria-pressed="false">30′</button>
+                    <button type="button" data-sleep="60" aria-pressed="false">60′</button>
+                    <button type="button" data-sleep="chapter" aria-pressed="false" aria-label="Hết chương" data-i18n-aria="sleep-end-chapter"><span data-i18n="sleep-chapter-short">hết ch.</span></button>
+                </div>
+                <form id="cpanel-sleep-custom" class="cpanel__sleep-custom">
+                    <label for="cpanel-sleep-min" data-i18n="sleep-custom">Tuỳ chỉnh (phút)</label>
+                    <input id="cpanel-sleep-min" type="number" class="input input--sm mono" min="1" max="600" step="1" inputmode="numeric" placeholder="45">
+                    <button type="submit" class="btn btn--sm" data-i18n="sleep-set">Đặt</button>
+                </form>
+                <div id="cpanel-sleep-active" class="cpanel__sleep-active" hidden>
+                    <span class="muted" data-i18n="sleep-left">Còn lại</span>
+                    <span id="cpanel-sleep-remaining" class="mono">—</span>
+                    <button type="button" class="btn btn--sm btn--danger" data-sleep="off" data-i18n="sleep-cancel">Huỷ hẹn giờ</button>
+                </div>
+            </div>
+
             <div class="cpanel__fields">
                 <div class="field-row">
                     <label for="cpanel-voice" class="field-row__label" data-i18n="voice-label">Giọng đọc</label>
@@ -763,30 +746,6 @@
                     </span>
                 </div>
                 <p class="field-note" data-i18n="voice-applies-next">Giọng, tốc độ và cao độ áp dụng cho các câu được đọc tiếp theo.</p>
-            </div>
-
-            <div class="cpanel__sleep" role="group" aria-labelledby="cpanel-sleep-label">
-                <div class="cpanel__sleep-head">
-                    <svg class="ic ic--sm" aria-hidden="true"><use href="#i-moon"/></svg>
-                    <span id="cpanel-sleep-label" data-i18n="sleep-title">Hẹn giờ tắt</span>
-                    <span id="cpanel-sleep-state" class="menu-item__state" data-i18n="state-off">Tắt</span>
-                </div>
-                <div class="seg cpanel__sleep-presets">
-                    <button type="button" data-sleep="15" aria-pressed="false">15′</button>
-                    <button type="button" data-sleep="30" aria-pressed="false">30′</button>
-                    <button type="button" data-sleep="60" aria-pressed="false">60′</button>
-                    <button type="button" data-sleep="chapter" aria-pressed="false" aria-label="Hết chương" data-i18n-aria="sleep-end-chapter"><span data-i18n="sleep-chapter-short">hết ch.</span></button>
-                </div>
-                <form id="cpanel-sleep-custom" class="cpanel__sleep-custom">
-                    <label for="cpanel-sleep-min" data-i18n="sleep-custom">Tuỳ chỉnh (phút)</label>
-                    <input id="cpanel-sleep-min" type="number" class="input input--sm mono" min="1" max="600" step="1" inputmode="numeric" placeholder="45">
-                    <button type="submit" class="btn btn--sm" data-i18n="sleep-set">Đặt</button>
-                </form>
-                <div id="cpanel-sleep-active" class="cpanel__sleep-active" hidden>
-                    <span class="muted" data-i18n="sleep-left">Còn lại</span>
-                    <span id="cpanel-sleep-remaining" class="mono">—</span>
-                    <button type="button" class="btn btn--sm btn--danger" data-sleep="off" data-i18n="sleep-cancel">Huỷ hẹn giờ</button>
-                </div>
             </div>
 
             <div id="cpanel-download" class="cpanel__download" hidden>
@@ -1350,6 +1309,10 @@ Nội dung chương hai...</pre>
             <p class="pocket__badge">
                 <svg class="ic ic--sm" aria-hidden="true"><use href="#i-lock"/></svg>
                 <span data-i18n="pocket-mode-active">Chỉ nghe · đã khoá chạm</span>
+            </p>
+            <p id="pocket-sleep" class="pocket__sleep" hidden>
+                <svg class="ic ic--sm" aria-hidden="true"><use href="#i-moon"/></svg>
+                <span id="pocket-sleep-text"></span>
             </p>
             <p id="pocket-wake-prompt" class="pocket__prompt" aria-live="polite">
                 <span id="pocket-wake-prompt-text" data-i18n="pocket-awake-hint">Đã đánh thức · tự khoá lại sau vài giây</span>

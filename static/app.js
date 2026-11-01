@@ -8342,36 +8342,9 @@ function releaseWakeLock() {
     }
 }
 
-function toggleWakeLock() {
-    STATE.wakeLockEnabled = !STATE.wakeLockEnabled;
-    localStorage.setItem('wakeLockEnabled', STATE.wakeLockEnabled);
-    if (STATE.wakeLockEnabled) {
-        requestWakeLock();
-    } else {
-        releaseWakeLock();
-    }
-}
-
-// Toggle rows in the reader menu: aria-checked drives the look, the state chip says Bật/Tắt.
-function setMenuToggleState(button, pill, isOn) {
-    if (button) button.setAttribute('aria-checked', isOn ? 'true' : 'false');
-    if (pill) {
-        const key = isOn ? 'state-on' : 'state-off';
-        pill.dataset.i18n = key;
-        pill.textContent = tr(key, isOn ? 'Bật' : 'Tắt');
-    }
-}
-
 function updateWakeLockUI(isActive) {
-    const btn = document.getElementById('wake-lock-btn');
-    if (!btn) return;
-    btn.title = isActive ? tr('wake-on-title', 'Giữ màn hình sáng: đang bật') : tr('wake-off-title', 'Giữ màn hình sáng: đang tắt');
-    setMenuToggleState(btn, document.getElementById('wake-lock-status-pill'), !!isActive);
-
     const settingsWake = document.getElementById('settings-wake-toggle');
     if (settingsWake) settingsWake.checked = !!isActive;
-
-    updateReaderMoreActiveDot();
 }
 window.updateWakeLockUI = updateWakeLockUI;
 window.requestWakeLock = requestWakeLock;
@@ -8477,36 +8450,7 @@ function cancelSleepTimer() {
     updateSleepTimerUI(false);
 }
 
-function formatTime(seconds) {
-    const h = Math.floor(seconds / 3600);
-    const m = Math.floor((seconds % 3600) / 60);
-    const s = seconds % 60;
-    return [h, m, s].map(v => v < 10 ? "0" + v : v).join(":");
-}
-
 function updateSleepTimerUI(isActive, seconds = 0) {
-    const block = document.querySelector('.sleep-block');
-    const badge = document.getElementById('sleep-timer-badge');
-    const controls = document.getElementById('sleep-timer-active-controls');
-    const remainingText = document.getElementById('sleep-timer-remaining');
-    const byChapter = isActive && STATE.sleepTimerMode === 'chapter';
-
-    if (block) block.dataset.on = isActive ? 'true' : 'false';
-    if (badge) {
-        badge.dataset.on = isActive ? 'true' : 'false';
-        if (isActive) {
-            delete badge.dataset.i18n;
-            badge.textContent = byChapter ? tr('sleep-chapter-short', 'hết ch.') : (seconds > 60 ? `${Math.ceil(seconds / 60)}′` : `${seconds}s`);
-        } else {
-            badge.dataset.i18n = 'state-off';
-            badge.textContent = tr('state-off', 'Tắt');
-        }
-    }
-    const focusWasInControls = !!controls?.contains(document.activeElement);
-    if (controls) controls.classList.toggle('hidden', !isActive);
-    if (focusWasInControls && !isActive) block?.querySelector('.sleep-block__presets button')?.focus();
-    if (isActive && remainingText) remainingText.textContent = byChapter ? tr('sleep-end-chapter', 'Hết chương') : formatTime(seconds);
-    updateReaderMoreActiveDot();
     document.dispatchEvent(new CustomEvent('sleeptimerchange', {
         detail: { active: !!isActive, seconds, mode: isActive ? STATE.sleepTimerMode : null }
     }));
@@ -8736,7 +8680,6 @@ window.cancelSleepTimer = cancelSleepTimer;
 window.setSleepTimerEndOfChapter = setSleepTimerEndOfChapter;
 
 document.getElementById('manual-save-btn')?.addEventListener('click', () => triggerManualSave());
-document.getElementById('wake-lock-btn')?.addEventListener('click', () => toggleWakeLock());
 
 document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && STATE.wakeLockEnabled) {
@@ -9158,21 +9101,11 @@ window.MPW_BRIDGE = {
 };
 
 // --- Zen Mode Control & Persistence ---
-function updateReaderMoreActiveDot() {
-    const dot = document.getElementById('reader-more-active-dot');
-    if (!dot) return;
-    const hasActive = !!(STATE.zenModeEnabled || STATE.wakeLockEnabled || STATE.sleepTimer);
-    dot.classList.toggle('hidden', !hasActive);
-}
-window.updateReaderMoreActiveDot = updateReaderMoreActiveDot;
-
 function setZenMode(enabled, persist = true) {
     STATE.zenModeEnabled = !!enabled;
     document.body.classList.toggle('zen-focus-mode', STATE.zenModeEnabled);
-    setMenuToggleState(document.getElementById('zen-mode-toggle-btn'), document.getElementById('zen-mode-status-pill'), STATE.zenModeEnabled);
     const settingsZen = document.getElementById('settings-zen-toggle');
     if (settingsZen) settingsZen.checked = STATE.zenModeEnabled;
-    updateReaderMoreActiveDot();
     if (persist) {
         try {
             localStorage.setItem('zen-mode-enabled', STATE.zenModeEnabled ? 'true' : 'false');
@@ -9180,16 +9113,6 @@ function setZenMode(enabled, persist = true) {
     }
 }
 window.setZenMode = setZenMode;
-
-const zenToggleBtn = document.getElementById('zen-mode-toggle-btn');
-if (zenToggleBtn) {
-    zenToggleBtn.addEventListener('click', () => {
-        AudioHapticFX.trigger(12);
-        const nextState = !STATE.zenModeEnabled;
-        setZenMode(nextState, true);
-        APP_STATUS.toast(nextState ? tr('zen-on', 'Đã bật chế độ tập trung.') : tr('zen-off', 'Đã tắt chế độ tập trung.'), 'info');
-    });
-}
 
 // --- Reader tools menu (⋮) ---
 function requireOpenBook() {
@@ -9204,7 +9127,6 @@ document.addEventListener('reader-menu-open', () => {
         const item = document.getElementById(id);
         if (item) item.disabled = !hasBook;
     });
-    syncReaderTypePanel();
 });
 document.getElementById('reader-edit-chapter-btn')?.addEventListener('click', () => {
     if (requireOpenBook()) void openEditChapterModal(STATE.currentChapterIndex, null);
@@ -9223,7 +9145,6 @@ document.getElementById('reader-delete-btn')?.addEventListener('click', () => {
     const entry = requireOpenBook() && findLibraryEntry(STATE.currentBookId);
     if (entry) runBookAction('delete', entry);
 });
-document.getElementById('reader-pocket-btn')?.addEventListener('click', () => applyLiteMode(true));
 
 // --- Aa: reading type panel (font, size, line height, column width, theme) ---
 const READER_TYPE_DEFAULTS = { leading: '1.72', measure: '66ch' };
@@ -9259,8 +9180,6 @@ function syncReaderTypePanel() {
             btn.setAttribute('aria-pressed', String(btn.dataset.value === current));
         });
     });
-    const summary = document.getElementById('reader-type-summary');
-    if (summary) summary.textContent = `${size}px`;
 }
 
 function setReaderFontSize(size) {
@@ -9293,9 +9212,10 @@ function onReaderTypeKey(event) {
 
 function openReaderTypePanel() {
     if (!readerTypePanel || !readerTypePanel.hidden) return;
-    readerTypeReturnFocus = document.getElementById('reader-more-menu-btn');
+    readerTypeReturnFocus = document.getElementById('reader-type-btn');
     syncReaderTypePanel();
     readerTypePanel.hidden = false;
+    readerTypeReturnFocus?.setAttribute('aria-expanded', 'true');
     const isSheet = window.matchMedia('(max-width: 639.98px)').matches;
     if (readerTypeScrim) readerTypeScrim.hidden = !isSheet;
     document.addEventListener('pointerdown', onReaderTypeOutside, true);
@@ -9308,6 +9228,7 @@ function closeReaderTypePanel({ restoreFocus = false } = {}) {
     if (!readerTypePanel || readerTypePanel.hidden) return;
     closeLayer('reader-type');
     readerTypePanel.hidden = true;
+    document.getElementById('reader-type-btn')?.setAttribute('aria-expanded', 'false');
     if (readerTypeScrim) readerTypeScrim.hidden = true;
     document.removeEventListener('pointerdown', onReaderTypeOutside, true);
     document.removeEventListener('keydown', onReaderTypeKey, true);
@@ -9316,8 +9237,8 @@ function closeReaderTypePanel({ restoreFocus = false } = {}) {
 }
 
 document.getElementById('reader-type-btn')?.addEventListener('click', () => {
-    // Let the menu close first, then open the panel in its place.
-    requestAnimationFrame(openReaderTypePanel);
+    if (readerTypePanel?.hidden) openReaderTypePanel();
+    else closeReaderTypePanel();
 });
 document.getElementById('reader-type-close')?.addEventListener('click', () => closeReaderTypePanel({ restoreFocus: true }));
 readerTypeScrim?.addEventListener('click', () => closeReaderTypePanel());

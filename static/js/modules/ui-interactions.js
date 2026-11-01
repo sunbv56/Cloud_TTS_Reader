@@ -697,10 +697,11 @@ export function initUIInteractions() {
 export function initReaderMoreMenu() {
     const moreBtn = document.getElementById('reader-more-menu-btn');
     const menu = document.getElementById('reader-more-menu-dropdown');
+    const scrim = document.getElementById('reader-more-menu-scrim');
+    const asSheet = window.matchMedia('(max-width: 639.98px)');
     if (!moreBtn || !menu) return;
     let isOpen = false;
 
-    // Skip items inside hidden groups (e.g. the sleep-timer cancel row).
     const items = () => [...menu.querySelectorAll('[role^="menuitem"]:not(:disabled)')]
         .filter(item => item.getClientRects().length > 0);
 
@@ -731,6 +732,7 @@ export function initReaderMoreMenu() {
         isOpen = next;
         if (next) document.dispatchEvent(new CustomEvent('reader-menu-open'));
         menu.hidden = !next;
+        if (scrim) scrim.hidden = !(next && asSheet.matches);
         moreBtn.setAttribute('aria-expanded', String(next));
         if (next) {
             document.addEventListener('pointerdown', onOutside, true);
@@ -747,7 +749,7 @@ export function initReaderMoreMenu() {
         event.stopPropagation();
         setOpen(!isOpen);
     });
-    // Toggles and timer presets keep the menu open so the new state is visible.
+    // Cloud save keeps the menu open so its result is visible.
     menu.addEventListener('click', (event) => {
         const item = event.target.closest('[role^="menuitem"]');
         // Focus moves back to ⋮ before the item's handler runs, so dialogs it
