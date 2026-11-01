@@ -1,16 +1,33 @@
 import os
+import re
 import time
-from fastapi import APIRouter
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, Request
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from app.core.config import STATIC_DIR
 from app.core.database import storage
 
 router = APIRouter(tags=["System"])
 
+_HOST_RE = re.compile(r"^[A-Za-z0-9.-]+(:\d{1,5})?$")
+_index_html: str | None = None
+
+
+def _request_origin(request: Request) -> str:
+    """Absolute origin for link-preview tags (og:image must be absolute); empty if the Host looks forged."""
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme).split(",")[0].strip()
+    if proto not in ("http", "https"):
+        proto = request.url.scheme
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(",")[0].strip()
+    return f"{proto}://{host}" if _HOST_RE.match(host) else ""
+
 
 @router.get("/")
-async def get_index():
-    return FileResponse(os.path.join(STATIC_DIR, "index.html"))
+async def get_index(request: Request):
+    global _index_html
+    if _index_html is None:
+        with open(os.path.join(STATIC_DIR, "index.html"), encoding="utf-8") as f:
+            _index_html = f.read()
+    return HTMLResponse(_index_html.replace("__ORIGIN__", _request_origin(request)), headers={"Cache-Control": "no-cache"})
 
 
 @router.get("/api/ping")

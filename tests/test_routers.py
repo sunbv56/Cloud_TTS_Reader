@@ -37,10 +37,22 @@ def test_parse_book_invalid_extension():
     assert response.status_code == 415
 
 
+def test_index_link_preview_uses_request_origin():
+    response = client.get("/", headers={"host": "nova.example.vn", "x-forwarded-proto": "https"})
+    assert '<meta property="og:image" content="https://nova.example.vn/static/og-image.png">' in response.text
+    assert "__ORIGIN__" not in response.text
+
+
+def test_index_link_preview_ignores_forged_host():
+    response = client.get("/", headers={"host": 'evil.vn"><script>alert(1)</script>'})
+    assert "<script>alert(1)" not in response.text
+    assert '<meta property="og:image" content="/static/og-image.png">' in response.text
+
+
 def test_index_page_serves_html():
     response = client.get("/")
     assert response.status_code == 200
-    assert "Cloud TTS" in response.text
+    assert "<title>NOVA</title>" in response.text
     assert "/static/css/console.css" in response.text
     assert "/static/js/main.js" in response.text
 

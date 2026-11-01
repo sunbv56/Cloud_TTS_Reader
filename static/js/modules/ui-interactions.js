@@ -2,6 +2,8 @@
  * UI Interactions & Theme Controller
  */
 
+import { openLayer, closeLayer } from './layer-history.js';
+
 export const DEFAULT_THEME = 'slate';
 export const DEFAULT_READER_FONT = 'Source Serif 4';
 
@@ -162,74 +164,26 @@ export function toggleSidebar(show) {
         sidebar.classList.add('open');
         overlay.classList.remove('hidden');
         setTimeout(() => overlay.classList.add('opacity-100'), 10);
+        if (window.innerWidth < 1024) openLayer('drawer', () => toggleSidebar(false));
     } else {
+        closeLayer('drawer');
         sidebar.classList.remove('open');
         overlay.classList.remove('opacity-100');
         setTimeout(() => overlay.classList.add('hidden'), 300);
     }
 }
 
-// Header "settings & tools" popover: same keyboard model as the account menu.
-export function initAppMenu() {
-    const trigger = document.getElementById('app-menu-btn');
-    const menu = document.getElementById('app-menu');
-    if (!trigger || !menu) return;
-    let isOpen = false;
-
-    const items = () => [...menu.querySelectorAll('[role="menuitem"]:not(:disabled)')];
-
-    function onOutside(event) {
-        if (!menu.contains(event.target) && !trigger.contains(event.target)) setOpen(false);
-    }
-
-    function setOpen(next, { restoreFocus = false } = {}) {
-        if (isOpen === next) return;
-        isOpen = next;
-        menu.hidden = !next;
-        trigger.setAttribute('aria-expanded', String(next));
-        if (next) {
-            document.addEventListener('pointerdown', onOutside, true);
-            items()[0]?.focus();
-        } else {
-            document.removeEventListener('pointerdown', onOutside, true);
-            if (restoreFocus) trigger.focus();
-        }
-    }
-
-    trigger.addEventListener('click', () => setOpen(!isOpen));
-    // Capture phase: close before an item's own handler, some of which stop propagation.
-    menu.addEventListener('click', (event) => {
-        if (event.target.closest('[role="menuitem"]')) setOpen(false);
-    }, true);
-    menu.addEventListener('keydown', (event) => {
-        const list = items();
-        const index = list.indexOf(document.activeElement);
-        if (event.key === 'Escape') {
-            event.preventDefault();
-            setOpen(false, { restoreFocus: true });
-        } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-            event.preventDefault();
-            const step = event.key === 'ArrowDown' ? 1 : -1;
-            list[(index + step + list.length) % list.length]?.focus();
-        } else if (event.key === 'Home' || event.key === 'End') {
-            event.preventDefault();
-            list[event.key === 'Home' ? 0 : list.length - 1]?.focus();
-        } else if (event.key === 'Tab') {
-            setOpen(false);
-        }
-    });
-
-    window.closeAppMenu = () => setOpen(false);
-}
-
 // Header search: Discovery search when Home is showing, otherwise the library search.
 export function initHeaderSearch() {
     const button = document.getElementById('header-search-btn');
+    // Below 900px the shelf search stays folded until this button opens it; an empty field folds back.
+    const shelfTools = document.querySelector('.shelf-tools');
     button?.addEventListener('click', () => {
         const discovery = document.getElementById('discovery-mode');
         if (discovery && !discovery.classList.contains('hidden')) {
             const input = document.getElementById('discovery-search');
-            input?.scrollIntoView({ block: 'center' });
+            shelfTools?.toggleAttribute('data-search-open', true);
+            input?.scrollIntoView({ block: 'nearest' });
             input?.focus();
             return;
         }
@@ -237,6 +191,34 @@ export function initHeaderSearch() {
         if (window.innerWidth < 1024) toggleSidebar(true);
         setTimeout(() => document.getElementById('library-search')?.focus(), 60);
     });
+    shelfTools?.addEventListener('focusout', () => shelfTools.removeAttribute('data-search-open'));
+    document.getElementById('discovery-search')?.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || event.target.value) return;
+        event.target.blur();
+        button?.focus();
+    });
+}
+
+// Range fill for WebKit, which has no ::-moz-range-progress. Values set in code fire no event,
+// so a range is repainted whenever it scrolls or opens into view.
+export function paintRange(range) {
+    const min = Number(range.min || 0);
+    const max = Number(range.max || 100);
+    const pct = max > min ? ((Number(range.value) - min) / (max - min)) * 100 : 0;
+    range.style.setProperty('--range-fill', `${Math.min(100, Math.max(0, pct))}%`);
+}
+
+function initRanges() {
+    document.addEventListener('input', (event) => {
+        if (event.target.classList?.contains('range')) paintRange(event.target);
+    }, true);
+    const ranges = document.querySelectorAll('.range');
+    ranges.forEach(paintRange);
+    if (!('IntersectionObserver' in window)) return;
+    const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => { if (entry.isIntersecting) paintRange(entry.target); });
+    });
+    ranges.forEach(range => observer.observe(range));
 }
 
 export function switchSidebarTab(tabName) {
@@ -274,15 +256,19 @@ export function switchSidebarTab(tabName) {
 // Keeps Tab inside an open sheet or dialog.
 export function trapTab(container, event) {
     if (event.key !== 'Tab' || !container) return;
-    const focusable = [...container.querySelectorAll('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')]
-        .filter(el => el.offsetParent !== null || el === document.activeElement);
+    const focusable = [...container.querySelectorAll('a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex="-1"])')]
+        .filter(el => (el.checkVisibility ? el.checkVisibility() : el.offsetParent !== null) || el === document.activeElement);
     if (!focusable.length) return;
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
+    const active = document.activeElement;
+    if (active === container || !container.contains(active)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+    } else if (event.shiftKey && active === first) {
         event.preventDefault();
         last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
+    } else if (!event.shiftKey && active === last) {
         event.preventDefault();
         first.focus();
     }
@@ -298,6 +284,7 @@ function onTOCSheetKey(event) {
     // A dialog opened from the sheet (e.g. edit chapter) owns the keyboard.
     const active = document.activeElement;
     if (active && !sheet.contains(active) && active.closest?.('[aria-modal="true"]')) return;
+    if (document.querySelector('.modal[aria-modal="true"]:not(.hidden)')) return;
     if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
@@ -333,6 +320,7 @@ export function openTOCSheet() {
     document.getElementById('toc-close-btn')?.focus({ preventScroll: true });
     document.addEventListener('keydown', onTOCSheetKey, true);
     window.addEventListener('resize', onTOCSheetResize);
+    openLayer('toc-sheet', dismissTOCSheet);
 }
 
 export function closeTOCSheet({ restoreFocus = true } = {}) {
@@ -341,6 +329,7 @@ export function closeTOCSheet({ restoreFocus = true } = {}) {
     const panel = document.getElementById('panel-toc');
     const sidebar = document.getElementById('sidebar-container');
     if (!sheet || sheet.hidden) return false;
+    closeLayer('toc-sheet');
     sheet.hidden = true;
     if (scrim) scrim.hidden = true;
     if (panel && sidebar) {
@@ -403,8 +392,19 @@ export const SettingsSheet = {
         if (!this.sheet) return;
         this.onKey = this.onKey.bind(this);
 
+        document.getElementById('settings-btn')?.addEventListener('click', () => this.open('listen'));
         document.getElementById('settings-close')?.addEventListener('click', () => this.close());
         this.scrim?.addEventListener('click', () => this.close());
+
+        const jump = this.sheet.querySelector('.settings__jump');
+        this.fadeJump = () => {
+            if (!jump || this.sheet.hidden) return;
+            const max = jump.scrollWidth - jump.clientWidth;
+            jump.toggleAttribute('data-more-start', jump.scrollLeft > 1);
+            jump.toggleAttribute('data-more-end', jump.scrollLeft < max - 1);
+        };
+        jump?.addEventListener('scroll', this.fadeJump, { passive: true });
+        window.addEventListener('resize', this.fadeJump);
 
         this.sheet.querySelectorAll('.settings__jump a').forEach(link => {
             link.addEventListener('click', (event) => {
@@ -457,12 +457,10 @@ export const SettingsSheet = {
 
     open(section = 'listen') {
         if (!this.sheet) return;
-        window.closeAppMenu?.();
         if (!this.isOpen()) {
             const active = document.activeElement;
-            // Menu items are hidden once the sheet opens; hand focus back to the menu button.
-            this.returnFocus = (!active || active === document.body || active.closest('#app-menu'))
-                ? document.getElementById('app-menu-btn')
+            this.returnFocus = (!active || active === document.body)
+                ? document.getElementById('settings-btn')
                 : active;
             this.sync();
             this.sheet.hidden = false;
@@ -470,17 +468,12 @@ export const SettingsSheet = {
             document.documentElement.toggleAttribute('data-settings-open', true);
             document.addEventListener('keydown', this.onKey, true);
             window.refreshInsights?.();
-        }
-        // Opened from "Thống kê đọc", the sheet is titled for what it shows.
-        const title = document.getElementById('settings-title');
-        if (title) {
-            title.dataset.i18n = section === 'stats' ? 'settings-stats' : 'settings-title';
-            const lang = currentUiLang();
-            title.textContent = window.translations?.[lang]?.[title.dataset.i18n] || (section === 'stats' ? 'Thống kê' : 'Cài đặt');
+            openLayer('settings', () => this.close());
         }
         requestAnimationFrame(() => {
             this.scrollTo(`settings-${section}`, { instant: true });
             this.markSection(`settings-${section}`);
+            this.fadeJump?.();
             document.getElementById('settings-close')?.focus({ preventScroll: true });
         });
     },
@@ -509,6 +502,7 @@ export const SettingsSheet = {
 
     close() {
         if (!this.isOpen()) return;
+        closeLayer('settings');
         this.sheet.hidden = true;
         if (this.scrim) this.scrim.hidden = true;
         document.documentElement.removeAttribute('data-settings-open');
@@ -518,6 +512,8 @@ export const SettingsSheet = {
     },
 
     onKey(event) {
+        // A dialog opened from Settings (e.g. confirm) owns the keyboard.
+        if (document.querySelector('.modal[aria-modal="true"]:not(.hidden)')) return;
         if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
@@ -546,12 +542,13 @@ export const SettingsSheet = {
                 return;
             }
             link.setAttribute('aria-current', 'true');
-            // At 320px the bar scrolls sideways; keep the marked link in view.
+            // At 320px the bar scrolls sideways; keep the marked link clear of the faded edges.
             const nav = link.parentElement;
             const box = link.getBoundingClientRect();
             const bar = nav.getBoundingClientRect();
-            if (box.left < bar.left) nav.scrollLeft -= bar.left - box.left;
-            else if (box.right > bar.right) nav.scrollLeft += box.right - bar.right;
+            const fade = 28;
+            if (box.left < bar.left + fade) nav.scrollLeft -= bar.left + fade - box.left;
+            else if (box.right > bar.right - fade) nav.scrollLeft += box.right - (bar.right - fade);
         });
     },
 
@@ -564,7 +561,8 @@ export const SettingsSheet = {
         // The first group sits under the local-settings note; start at the top so the note stays readable.
         const first = body.querySelector('.set-group') === target;
         const top = first ? 0 : target.offsetTop - body.offsetTop - 4;
-        body.scrollTo({ top: Math.max(0, top), behavior: instant ? 'auto' : 'smooth' });
+        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        body.scrollTo({ top: Math.max(0, top), behavior: instant || reduce ? 'auto' : 'smooth' });
     },
 
     sync() {
@@ -642,8 +640,8 @@ export function initUIInteractions() {
     } catch (_) {}
     applyTheme(normalizeThemeId(savedTheme));
 
-    initAppMenu();
     initHeaderSearch();
+    initRanges();
 
     SettingsSheet.init();
 
@@ -707,10 +705,11 @@ export function initUIInteractions() {
 export function initReaderMoreMenu() {
     const moreBtn = document.getElementById('reader-more-menu-btn');
     const menu = document.getElementById('reader-more-menu-dropdown');
+    const scrim = document.getElementById('reader-more-menu-scrim');
+    const asSheet = window.matchMedia('(max-width: 639.98px)');
     if (!moreBtn || !menu) return;
     let isOpen = false;
 
-    // Skip items inside hidden groups (e.g. the sleep-timer cancel row).
     const items = () => [...menu.querySelectorAll('[role^="menuitem"]:not(:disabled)')]
         .filter(item => item.getClientRects().length > 0);
 
@@ -741,11 +740,14 @@ export function initReaderMoreMenu() {
         isOpen = next;
         if (next) document.dispatchEvent(new CustomEvent('reader-menu-open'));
         menu.hidden = !next;
+        if (scrim) scrim.hidden = !(next && asSheet.matches);
         moreBtn.setAttribute('aria-expanded', String(next));
         if (next) {
             document.addEventListener('pointerdown', onOutside, true);
             items()[0]?.focus();
+            openLayer('reader-menu', () => setOpen(false, { restoreFocus: true }));
         } else {
+            closeLayer('reader-menu');
             document.removeEventListener('pointerdown', onOutside, true);
             if (restoreFocus) moreBtn.focus();
         }
@@ -755,7 +757,7 @@ export function initReaderMoreMenu() {
         event.stopPropagation();
         setOpen(!isOpen);
     });
-    // Toggles and timer presets keep the menu open so the new state is visible.
+    // Cloud save keeps the menu open so its result is visible.
     menu.addEventListener('click', (event) => {
         const item = event.target.closest('[role^="menuitem"]');
         // Focus moves back to ⋮ before the item's handler runs, so dialogs it

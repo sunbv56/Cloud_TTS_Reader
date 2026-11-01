@@ -42,42 +42,36 @@
     });
     const PIP_DPR = 1;
     const PIP_FRAME_RATE = 1;
+    let pipFont = 'system-ui, sans-serif';
 
     // ---------------------------------------------------------
     // DOM creation
     // ---------------------------------------------------------
+    function icon(name) {
+        return `<svg aria-hidden="true"><use href="#i-${name}"/></svg>`;
+    }
+
     function buildWidget() {
         root = document.createElement('div');
         root.id = 'mini-player-widget';
         root.innerHTML = `
             <div class="mpw-card" data-drag-handle>
-                <div class="mpw-art"><i class="fas fa-book-open"></i></div>
+                <div class="mpw-art">${icon('book')}</div>
                 <div class="mpw-meta">
                     <span class="mpw-title" id="mpw-title">—</span>
                     <span class="mpw-subtitle" id="mpw-subtitle">—</span>
                 </div>
                 <div class="mpw-transport" aria-label="Điều khiển đọc">
-                    <button class="mpw-btn" id="mpw-prev-btn" title="Chương trước" aria-label="Chương trước"><i class="fas fa-fast-backward"></i></button>
-                    <button class="mpw-btn" id="mpw-prev-chunk-btn" title="Câu trước" aria-label="Câu trước"><i class="fas fa-step-backward"></i></button>
-                    <button class="mpw-btn mpw-play" id="mpw-play-btn" title="Phát hoặc tạm dừng" aria-label="Phát hoặc tạm dừng"><i class="fas fa-play"></i></button>
-                    <button class="mpw-btn" id="mpw-next-chunk-btn" title="Câu kế" aria-label="Câu kế"><i class="fas fa-step-forward"></i></button>
-                    <button class="mpw-btn" id="mpw-next-btn" title="Chương kế" aria-label="Chương kế"><i class="fas fa-fast-forward"></i></button>
+                    <button class="mpw-btn" id="mpw-prev-btn" title="Chương trước" aria-label="Chương trước">${icon('chleft')}</button>
+                    <button class="mpw-btn" id="mpw-prev-chunk-btn" title="Câu trước" aria-label="Câu trước">${icon('rw')}</button>
+                    <button class="mpw-btn mpw-play" id="mpw-play-btn" title="Phát hoặc tạm dừng" aria-label="Phát hoặc tạm dừng">${icon('play')}</button>
+                    <button class="mpw-btn" id="mpw-next-chunk-btn" title="Câu kế" aria-label="Câu kế">${icon('ff')}</button>
+                    <button class="mpw-btn" id="mpw-next-btn" title="Chương kế" aria-label="Chương kế">${icon('chright')}</button>
                 </div>
                 <div class="mpw-actions" aria-label="Tùy chọn trình phát">
-                    <button class="mpw-btn" id="mpw-collapse-btn" title="Thu gọn thành nút tròn" aria-label="Thu gọn trình phát">
-                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <rect x="3.5" y="6.5" width="17" height="11" rx="5.5" stroke="currentColor" stroke-width="2.2" />
-                            <circle cx="8" cy="12" r="2.2" fill="currentColor" />
-                            <line x1="12" y1="12" x2="16.5" y2="12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
-                        </svg>
-                    </button>
-                    <button class="mpw-btn" id="mpw-pip-btn" title="Mở cửa sổ PiP" aria-label="Mở cửa sổ PiP" hidden>
-                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <rect x="2.5" y="4.5" width="19" height="15" rx="3" stroke="currentColor" stroke-width="2" stroke-opacity="0.8" />
-                            <rect x="11.5" y="10.5" width="8" height="7" rx="1.8" fill="currentColor" fill-opacity="0.3" stroke="currentColor" stroke-width="1.8" />
-                        </svg>
-                    </button>
-                    <button class="mpw-btn" id="mpw-close-btn" title="Dừng và đóng" aria-label="Dừng và đóng"><i class="fas fa-times"></i></button>
+                    <button class="mpw-btn" id="mpw-collapse-btn" title="Thu gọn thành nút tròn" aria-label="Thu gọn trình phát">${icon('minus')}</button>
+                    <button class="mpw-btn" id="mpw-pip-btn" title="Mở cửa sổ PiP" aria-label="Mở cửa sổ PiP" hidden>${icon('pip')}</button>
+                    <button class="mpw-btn" id="mpw-close-btn" title="Dừng và đóng" aria-label="Dừng và đóng">${icon('x')}</button>
                 </div>
                 <div class="mpw-progress-track"><div class="mpw-progress" id="mpw-progress"></div></div>
             </div>`;
@@ -155,11 +149,7 @@
             pipBtn.type = 'button';
             pipBtn.title = 'Picture-in-Picture (floating window)';
             pipBtn.setAttribute('aria-label', 'Cửa sổ nổi (PiP)');
-            pipBtn.innerHTML = `
-                <svg class="w-4 h-4" aria-hidden="true" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect x="2.5" y="4.5" width="19" height="15" rx="3" stroke="currentColor" stroke-width="2" stroke-opacity="0.8" />
-                    <rect x="11.5" y="10.5" width="8" height="7" rx="1.8" fill="currentColor" fill-opacity="0.3" stroke="currentColor" stroke-width="1.8" />
-                </svg>`;
+            pipBtn.innerHTML = '<svg class="ic" aria-hidden="true"><use href="#i-pip"/></svg>';
             pipBtn.addEventListener('click', () => {
                 openBestPiP().catch(err => console.error('[MPW] PiP failed:', err));
             });
@@ -266,7 +256,10 @@
                 : titleSrc.textContent;
         }
         if (subtitleEl && subtitleSrc) subtitleEl.textContent = pipWindow ? '' : subtitleSrc.textContent;
-        if (progressEl && progressSrc) progressEl.style.width = progressSrc.style.width || '0%';
+        if (progressEl && progressSrc) {
+            const pct = Math.min(100, Math.max(0, parseFloat(progressSrc.style.width) || 0));
+            progressEl.style.transform = `scaleX(${pct / 100})`;
+        }
         updatePlayIcon();
     }
 
@@ -274,9 +267,10 @@
         const doc = pipWindow ? pipWindow.document : document;
         const btn = doc.getElementById('mpw-play-btn');
         if (!btn) return;
-        btn.innerHTML = bridge.audio.paused
-            ? '<i class="fas fa-play"></i>'
-            : '<i class="fas fa-pause"></i>';
+        const state = bridge.audio.paused ? 'play' : 'pause';
+        if (btn.dataset.icon === state) return;
+        btn.dataset.icon = state;
+        btn.innerHTML = icon(state);
     }
 
     // ---------------------------------------------------------
@@ -494,14 +488,14 @@
     function fitText(ctx, text, maxWidth, maxLines, weight, maxSize, minSize, maxHeight = Infinity) {
         const value = String(text || '').trim();
         for (let size = maxSize; size >= minSize; size -= 1) {
-            ctx.font = `${weight} ${size}px Arial, sans-serif`;
+            ctx.font = `${weight} ${size}px ${pipFont}`;
             const lines = wrapText(ctx, value, maxWidth, maxLines);
             const overflow = wrapText(ctx, value, maxWidth, maxLines + 1).length > maxLines;
             const lineHeight = Math.max(11, Math.round(size * 1.15));
             if (!overflow && lines.length * lineHeight <= maxHeight) return lines;
         }
 
-        ctx.font = `${weight} ${minSize}px Arial, sans-serif`;
+        ctx.font = `${weight} ${minSize}px ${pipFont}`;
         const lines = wrapText(ctx, value, maxWidth, maxLines);
         if (lines.length === maxLines) {
             let last = lines[maxLines - 1];
@@ -527,57 +521,51 @@
         return { current: sentences[index] || '', next: sentences[index + 1] || '' };
     }
 
-    function drawFullPipFrame(ctx, primary, progress) {
+    // Canvas needs concrete colours, so tokens are resolved through a probe element.
+    function pipPalette() {
+        const probe = document.createElement('span');
+        probe.style.display = 'none';
+        document.body.appendChild(probe);
+        const read = (token) => {
+            probe.style.color = `var(${token})`;
+            return getComputedStyle(probe).color;
+        };
+        const palette = {
+            paper: read('--color-paper'),
+            text: read('--color-text'),
+            reading: read('--color-text-reading'),
+            muted: read('--color-muted'),
+            line: read('--color-line'),
+            accent: read('--color-accent'),
+        };
+        probe.remove();
+        return palette;
+    }
+
+    function drawFullPipFrame(ctx, colors, progress) {
         const dimensions = PIP_LAYOUTS.full;
         const chapterTitle = document.getElementById('player-title')?.textContent || '';
-        const bookTitle = document.getElementById('player-author')?.textContent || 'Cloud TTS Reader';
+        const bookTitle = document.getElementById('player-author')?.textContent || 'NOVA';
         const pair = getSentencePair();
         const left = 24;
         const contentWidth = dimensions.width - left * 2;
         const headerText = [chapterTitle, bookTitle].filter(Boolean).join(' • ');
 
-        const style = getComputedStyle(document.documentElement);
-        const bg = (style.getPropertyValue('--theme-bg') || '#080d1a').trim();
-        const surface = (style.getPropertyValue('--theme-surface') || '#0e172a').trim();
-        const surfaceHigh = (style.getPropertyValue('--theme-surface-high') || '#18243e').trim();
-        const textReading = (style.getPropertyValue('--theme-text-reading') || '#f8fafc').trim();
-        const textMain = (style.getPropertyValue('--theme-text') || '#ffffff').trim();
-        const isLight = style.getPropertyValue('--theme-is-light').trim() === '1';
-
-        const background = ctx.createLinearGradient(0, 0, dimensions.width, dimensions.height);
-        background.addColorStop(0, bg);
-        background.addColorStop(0.55, surface);
-        background.addColorStop(1, surfaceHigh);
-        ctx.fillStyle = background;
+        ctx.fillStyle = colors.paper;
         ctx.fillRect(0, 0, dimensions.width, dimensions.height);
 
-        // Theme tokens are OKLCH, so alpha goes through globalAlpha instead of
-        // a hex suffix (addColorStop throws on 'oklch(...)33').
-        const glow = ctx.createRadialGradient(dimensions.width - 40, 16, 4, dimensions.width - 40, 16, 180);
-        glow.addColorStop(0, primary);
-        glow.addColorStop(1, 'transparent');
-        ctx.fillStyle = glow;
-        ctx.globalAlpha = 0.2;
-        ctx.fillRect(dimensions.width - 220, 0, 220, 200);
-
-        ctx.fillStyle = primary;
-        ctx.globalAlpha = 0.13;
-        ctx.fillRect(0, 0, 5, dimensions.height);
-        ctx.globalAlpha = 1;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
-        ctx.fillStyle = isLight ? textMain : '#f8fafc';
-        const headerLines = fitText(ctx, headerText || 'Cloud TTS Reader', contentWidth, 1, '700', 15, 8);
-        ctx.fillText(headerLines[0] || 'Cloud TTS Reader', left, 34);
-        ctx.fillStyle = primary;
-        ctx.globalAlpha = 0.53;
-        ctx.fillRect(left, 47, contentWidth, 2);
-        ctx.globalAlpha = 1;
+        ctx.fillStyle = colors.text;
+        const headerLines = fitText(ctx, headerText || 'NOVA', contentWidth, 1, '600', 15, 8);
+        ctx.fillText(headerLines[0] || 'NOVA', left, 34);
+        ctx.fillStyle = colors.line;
+        ctx.fillRect(left, 47, contentWidth, 1);
 
-        ctx.fillStyle = isLight ? textReading : '#f8fafc';
+        ctx.fillStyle = colors.reading;
         const progressTop = dimensions.height - 27;
         const currentAvailableHeight = Math.max(30, progressTop - 78 - 14);
-        const lines = fitText(ctx, pair?.current || 'Sẵn sàng phát nội dung', contentWidth, 10, '600', 20, 8, currentAvailableHeight);
+        const lines = fitText(ctx, pair?.current || 'Sẵn sàng phát nội dung', contentWidth, 10, '500', 20, 8, currentAvailableHeight);
         const currentSize = getFontSize(ctx, 20);
         const currentLineHeight = Math.max(11, Math.round(currentSize * 1.15));
         let textY = 78;
@@ -589,42 +577,42 @@
             const nextTop = textY + Math.max(8, Math.round(currentLineHeight * 0.55));
             const availableNextHeight = Math.max(0, progressTop - nextTop);
             const nextFontMaxLines = Math.max(1, Math.min(5, Math.floor(availableNextHeight / 12)));
-            ctx.fillStyle = isLight ? '#78716c' : '#64748b';
-            ctx.font = '600 10px Arial, sans-serif';
+            ctx.fillStyle = colors.muted;
+            ctx.font = `600 11px ${pipFont}`;
             const nextLabel = 'Tiếp theo';
             const labelWidth = ctx.measureText(nextLabel).width;
             const nextWidth = Math.max(120, contentWidth - labelWidth - 10);
-            const nextLines = fitText(ctx, pair.next, nextWidth, nextFontMaxLines, '500', 12, 8, availableNextHeight);
+            const nextLines = fitText(ctx, pair.next, nextWidth, nextFontMaxLines, '400', 12, 8, availableNextHeight);
             const nextSize = getFontSize(ctx, 10);
             const nextLineHeight = Math.max(10, Math.round(nextSize * 1.15));
             ctx.fillText(nextLabel, left, nextTop);
-            ctx.font = `500 ${nextSize}px Arial, sans-serif`;
+            ctx.font = `400 ${nextSize}px ${pipFont}`;
             if (nextLines[0]) ctx.fillText(nextLines[0], left + labelWidth + 10, nextTop);
             for (let index = 1; index < nextLines.length; index += 1) {
                 ctx.fillText(nextLines[index], left, nextTop + index * nextLineHeight);
             }
         }
 
-        ctx.fillStyle = isLight ? 'rgba(0,0,0,0.10)' : 'rgba(255,255,255,0.10)';
+        ctx.fillStyle = colors.line;
         ctx.fillRect(left, dimensions.height - 17, dimensions.width - left * 2, 3);
-        ctx.fillStyle = primary;
+        ctx.fillStyle = colors.accent;
         ctx.fillRect(left, dimensions.height - 17, (dimensions.width - left * 2) * progress / 100, 3);
-        ctx.fillStyle = isLight ? '#78716c' : '#94a3b8';
-        ctx.font = '600 10px Arial, sans-serif';
-        ctx.fillText(`${Math.round(progress)}%`, dimensions.width - 52, dimensions.height - 21);
+        ctx.fillStyle = colors.muted;
+        ctx.font = `500 11px ${pipFont}`;
+        ctx.textAlign = 'right';
+        ctx.fillText(`${Math.round(progress)}%`, dimensions.width - left, dimensions.height - 23);
     }
 
     function drawPipFrame() {
         const ctx = pipCanvas.getContext('2d');
-        const primary = (getComputedStyle(document.documentElement)
-            .getPropertyValue('--theme-primary') || '#D4AF37').trim() || '#D4AF37';
+        pipFont = getComputedStyle(document.documentElement).getPropertyValue('--font-ui').trim() || 'system-ui, sans-serif';
         const rawProgress = parseFloat(
             ((document.getElementById('progress-bar') || {}).style || {}).width) || 0;
         const progress = Math.min(100, Math.max(0, rawProgress));
 
         ctx.save();
         ctx.scale(PIP_DPR, PIP_DPR);
-        drawFullPipFrame(ctx, primary, progress);
+        drawFullPipFrame(ctx, pipPalette(), progress);
         ctx.restore();
     }
 
@@ -684,17 +672,6 @@
             pipWindow.document.documentElement.removeAttribute('data-theme');
             pipWindow.document.body.removeAttribute('data-theme');
         }
-        const computed = getComputedStyle(document.documentElement);
-        [
-            '--theme-primary', '--theme-primary-dim', '--theme-bg',
-            '--theme-surface', '--theme-surface-high', '--theme-text',
-            '--theme-text-reading', '--theme-is-light'
-        ].forEach(prop => {
-            const val = computed.getPropertyValue(prop);
-            if (val) {
-                pipWindow.document.documentElement.style.setProperty(prop, val);
-            }
-        });
     }
 
     async function openPiP() {
@@ -713,21 +690,19 @@
             height: 260,
         });
 
-        // Copy only the two sheets the PiP content needs: Font Awesome + our own.
-        for (const href of [
-            'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css',
-            '/static/css/mini-player.css',
-        ]) {
+        // Fonts + console tokens + widget styles, at the same versions as this page.
+        document.querySelectorAll('link[rel="stylesheet"][href*="fonts.googleapis"], link[rel="stylesheet"][href*="/static/css/"]').forEach(src => {
             const link = pipWindow.document.createElement('link');
             link.rel = 'stylesheet';
-            link.href = href;
+            link.href = src.href;
             pipWindow.document.head.appendChild(link);
-        }
+        });
+        const sprite = document.querySelector('body > svg symbol')?.ownerSVGElement;
+        if (sprite) pipWindow.document.body.appendChild(sprite.cloneNode(true));
 
-        // Mirror active color theme and variables
         syncPipTheme();
 
-        pipWindow.document.title = 'Cloud TTS Reader';
+        pipWindow.document.title = 'NOVA';
         pipWindow.document.body.classList.add('mpw-pip-body');
 
         // MOVE (not clone) the card so button listeners keep working —

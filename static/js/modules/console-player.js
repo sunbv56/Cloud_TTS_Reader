@@ -6,6 +6,7 @@
  * STATE through window.MPW_BRIDGE.
  */
 import { trapTab } from './ui-interactions.js';
+import { openLayer, closeLayer } from './layer-history.js';
 import { shortChapterTitle } from './utils.js';
 
 const $ = (id) => document.getElementById(id);
@@ -371,6 +372,10 @@ function paintSleep(detail = sleepDetail) {
             remaining.textContent = `${m}:${s}`;
         }
     }
+    const pocketLine = $('pocket-sleep');
+    const pocketText = $('pocket-sleep-text');
+    if (pocketLine) pocketLine.hidden = !detail.active;
+    if (pocketText && detail.active) pocketText.textContent = sleepEndText(detail.mode);
 }
 
 function applySleep(value) {
@@ -383,11 +388,15 @@ function clockTime(ms) {
     return new Date(ms).toLocaleTimeString(uiLang() === 'vi' ? 'vi-VN' : 'en-GB', { hour: '2-digit', minute: '2-digit' });
 }
 
+function sleepEndText(mode) {
+    if (mode === 'chapter') return t('sleep-tip-chapter', 'Tắt khi hết chương');
+    return t('sleep-tip-at', 'Tắt lúc {v}', { v: clockTime(appState()?.sleepTimerEnd || Date.now()) });
+}
+
 function sleepTipText() {
     const state = appState();
     if (!state?.sleepTimer) return t('sleep-tip-off', 'Đã huỷ hẹn giờ');
-    if (state.sleepTimerMode === 'chapter') return t('sleep-tip-chapter', 'Tắt khi hết chương');
-    return t('sleep-tip-at', 'Tắt lúc {v}', { v: clockTime(state.sleepTimerEnd || Date.now()) });
+    return sleepEndText(state.sleepTimerMode);
 }
 
 function cycleSleep() {
@@ -513,7 +522,7 @@ function paintChapterLabels() {
     const label = $('console-chapter');
     if (label) label.textContent = info ? `C.${info.index + 1} ·` : '';
     const book = $('cpanel-book');
-    if (book) book.textContent = $('player-author')?.textContent || 'Cloud TTS';
+    if (book) book.textContent = $('player-author')?.textContent || 'NOVA';
     const chapter = $('cpanel-chapter');
     if (chapter) chapter.textContent = info ? `C.${info.index + 1} · ${shortChapterTitle(info.title)}` : t('no-book-playing', 'Chưa phát truyện nào');
     const pos = $('cpanel-chpos');
@@ -771,6 +780,7 @@ function openPanel({ focus = null } = {}) {
     $('console-panel-btn')?.setAttribute('aria-expanded', 'true');
     document.addEventListener('keydown', onPanelKey, true);
     document.addEventListener('pointerdown', onPanelOutside, true);
+    openLayer('console-panel', () => closePanel());
     const group = focus === 'sleep' ? panel.querySelector('.cpanel__sleep') : null;
     if (group) {
         group.scrollIntoView({ block: 'nearest' });
@@ -784,6 +794,7 @@ function openPanel({ focus = null } = {}) {
 function closePanel({ restoreFocus = true } = {}) {
     const panel = $('console-panel');
     if (!panel || !panelOpen) return false;
+    closeLayer('console-panel');
     panelOpen = false;
     panel.hidden = true;
     syncPanelLayout();
@@ -852,6 +863,12 @@ function initPanel() {
     bindSwipe($('media-player'), 'up', () => openPanel());
     bindSwipe(document.querySelector('#console-panel .sheet__grab'), 'down', () => closePanel());
     bindSwipe(document.querySelector('#console-panel .cpanel__head'), 'down', () => closePanel());
+    const closeTypeSheet = () => { if (!$('reader-type-panel')?.hidden) $('reader-type-close')?.click(); };
+    bindSwipe(document.querySelector('#reader-type-panel > .sheet__grab'), 'down', closeTypeSheet);
+    bindSwipe(document.querySelector('#reader-type-panel .type-panel__head'), 'down', closeTypeSheet);
+    const closeTocSheet = () => { if (!$('toc-sheet')?.hidden) $('toc-close-btn')?.click(); };
+    bindSwipe(document.querySelector('#toc-sheet > .sheet__grab'), 'down', closeTocSheet);
+    bindSwipe(document.querySelector('#panel-toc .toc-head'), 'down', closeTocSheet);
 
     WIDE.addEventListener('change', () => {
         syncPanelLayout();

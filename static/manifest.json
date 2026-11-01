@@ -1,23 +1,15 @@
 {
-  "name": "Cloud TTS | Pro Reader Edition",
-  "short_name": "Cloud TTS",
-  "description": "Premium Text-to-Speech Reader with Cloud Sync",
+  "name": "NOVA",
+  "short_name": "NOVA",
+  "description": "Novels, Voiced Aloud: đọc và nghe truyện, đồng bộ đám mây",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#2A3139",
   "theme_color": "#2A3139",
   "icons": [
-    {
-      "src": "/static/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "any"
-    },
-    {
-      "src": "/static/icon.svg",
-      "sizes": "192x192 512x512",
-      "type": "image/svg+xml",
-      "purpose": "maskable"
-    }
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ]
 }
