@@ -852,6 +852,12 @@ function initPanel() {
     bindSwipe($('media-player'), 'up', () => openPanel());
     bindSwipe(document.querySelector('#console-panel .sheet__grab'), 'down', () => closePanel());
     bindSwipe(document.querySelector('#console-panel .cpanel__head'), 'down', () => closePanel());
+    const closeTypeSheet = () => { if (!$('reader-type-panel')?.hidden) $('reader-type-close')?.click(); };
+    bindSwipe(document.querySelector('#reader-type-panel > .sheet__grab'), 'down', closeTypeSheet);
+    bindSwipe(document.querySelector('#reader-type-panel .type-panel__head'), 'down', closeTypeSheet);
+    const closeTocSheet = () => { if (!$('toc-sheet')?.hidden) $('toc-close-btn')?.click(); };
+    bindSwipe(document.querySelector('#toc-sheet > .sheet__grab'), 'down', closeTocSheet);
+    bindSwipe(document.querySelector('#panel-toc .toc-head'), 'down', closeTocSheet);
 
     WIDE.addEventListener('change', () => {
         syncPanelLayout();

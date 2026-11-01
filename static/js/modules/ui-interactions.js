@@ -279,10 +279,14 @@ export function trapTab(container, event) {
     if (!focusable.length) return;
     const first = focusable[0];
     const last = focusable[focusable.length - 1];
-    if (event.shiftKey && document.activeElement === first) {
+    const active = document.activeElement;
+    if (active === container || !container.contains(active)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+    } else if (event.shiftKey && active === first) {
         event.preventDefault();
         last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
+    } else if (!event.shiftKey && active === last) {
         event.preventDefault();
         first.focus();
     }
@@ -298,6 +302,7 @@ function onTOCSheetKey(event) {
     // A dialog opened from the sheet (e.g. edit chapter) owns the keyboard.
     const active = document.activeElement;
     if (active && !sheet.contains(active) && active.closest?.('[aria-modal="true"]')) return;
+    if (document.querySelector('.modal[aria-modal="true"]:not(.hidden)')) return;
     if (event.key === 'Escape') {
         event.preventDefault();
         event.stopPropagation();
@@ -518,6 +523,8 @@ export const SettingsSheet = {
     },
 
     onKey(event) {
+        // A dialog opened from Settings (e.g. confirm) owns the keyboard.
+        if (document.querySelector('.modal[aria-modal="true"]:not(.hidden)')) return;
         if (event.key === 'Escape') {
             event.preventDefault();
             event.stopPropagation();
@@ -564,7 +571,8 @@ export const SettingsSheet = {
         // The first group sits under the local-settings note; start at the top so the note stays readable.
         const first = body.querySelector('.set-group') === target;
         const top = first ? 0 : target.offsetTop - body.offsetTop - 4;
-        body.scrollTo({ top: Math.max(0, top), behavior: instant ? 'auto' : 'smooth' });
+        const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        body.scrollTo({ top: Math.max(0, top), behavior: instant || reduce ? 'auto' : 'smooth' });
     },
 
     sync() {
