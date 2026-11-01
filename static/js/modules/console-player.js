@@ -6,6 +6,7 @@
  * STATE through window.MPW_BRIDGE.
  */
 import { trapTab } from './ui-interactions.js';
+import { openLayer, closeLayer } from './layer-history.js';
 import { shortChapterTitle } from './utils.js';
 
 const $ = (id) => document.getElementById(id);
@@ -771,6 +772,7 @@ function openPanel({ focus = null } = {}) {
     $('console-panel-btn')?.setAttribute('aria-expanded', 'true');
     document.addEventListener('keydown', onPanelKey, true);
     document.addEventListener('pointerdown', onPanelOutside, true);
+    openLayer('console-panel', () => closePanel());
     const group = focus === 'sleep' ? panel.querySelector('.cpanel__sleep') : null;
     if (group) {
         group.scrollIntoView({ block: 'nearest' });
@@ -784,6 +786,7 @@ function openPanel({ focus = null } = {}) {
 function closePanel({ restoreFocus = true } = {}) {
     const panel = $('console-panel');
     if (!panel || !panelOpen) return false;
+    closeLayer('console-panel');
     panelOpen = false;
     panel.hidden = true;
     syncPanelLayout();

@@ -357,6 +357,17 @@
                     <!-- Reader tools: every reader action lives here -->
                     <div id="reader-more-menu-dropdown" class="menu reader-menu" role="menu" aria-label="Tiện ích trang đọc" data-i18n-aria="reader-tools" hidden>
                         <p class="menu__label" data-i18n="reader-tools">Tiện ích trang đọc</p>
+                        <div class="reader-menu__shell" role="none">
+                            <button id="reader-search-btn" type="button" class="menu-item" role="menuitem">
+                                <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
+                                <span data-i18n="search-books">Tìm truyện</span>
+                            </button>
+                            <button id="reader-settings-btn" type="button" class="menu-item" role="menuitem">
+                                <svg class="ic" aria-hidden="true"><use href="#i-sliders"/></svg>
+                                <span data-i18n="menu-settings">Cài đặt</span>
+                            </button>
+                            <hr class="menu__rule">
+                        </div>
                         <button id="reader-type-btn" type="button" class="menu-item" role="menuitem" aria-haspopup="dialog">
                             <svg class="ic" aria-hidden="true"><use href="#i-aa"/></svg>
                             <span data-i18n="reader-type">Chữ đọc</span>
