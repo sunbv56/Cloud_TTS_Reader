@@ -1702,6 +1702,28 @@
 
     .console-utils { display: flex; align-items: center; gap: var(--space-2); flex: none; }
     #sleep-chip { gap: 4px; padding: 0 var(--space-2); }
+    /* Phones: speed and sleep timer live in the listening panel (⌃); the row keeps the
+       chapter skips beside play instead. */
+    @media (max-width: 1023.98px) {
+        #speak-speed-chip,
+        #sleep-chip { display: none; }
+        .console-transport #prev-btn,
+        .console-transport #next-btn { display: inline-grid; place-items: center; }
+        /* Screen-off listening is used a lot on phones: keep it, icon only. */
+        .console-utils .console-pocket {
+            display: inline-grid;
+            place-items: center;
+            width: var(--tap);
+            min-height: var(--tap);
+            padding: 0;
+            border: 0;
+            border-radius: 50%;
+            background: transparent;
+        }
+        .console-pocket > span {
+            position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+        }
+    }
     #sleep-chip .ic { width: 14px; height: 14px; }
     #sleep-chip-label[data-i18n="sleep-chip-off"] { font-family: var(--font-ui); font-weight: 500; }
     /* 320px phones: the moon alone says "sleep timer" when it is off; the name stays for AT. */
@@ -1822,6 +1844,8 @@
             touch-action: auto;
         }
         .console-wide { display: inline-flex; }
+        /* Icon buttons stay grids so their glyph sits in the middle of the hit area. */
+        .icon-btn.console-wide { display: inline-grid; place-items: center; }
         .console-info { flex: 0 1 240px; }
         .console-scrub {
             display: flex;
