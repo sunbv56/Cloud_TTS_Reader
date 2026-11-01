@@ -7537,6 +7537,7 @@ document.getElementById('font-color-picker').oninput = (e) => {
 
     // Instant preview via CSS variable
     document.documentElement.style.setProperty('--reader-text-color', val);
+    delete document.documentElement.dataset.readerColor;
     syncColorPresets();
 
     debouncedApplyTypography();
@@ -7597,7 +7598,11 @@ function applyTypographySettings() {
     applyFontFamily(currentFont, true);
 
     // Apply Text Color
-    if (s.textColor === "default") {
+    if (s.textColor === "gold") {
+        root.dataset.readerColor = "gold";
+        root.style.setProperty('--reader-text-color', 'var(--color-gold)');
+    } else if (s.textColor === "default") {
+        delete root.dataset.readerColor;
         root.style.setProperty('--reader-text-color', 'var(--theme-text-reading)');
         const defaultColor = getComputedStyle(root).getPropertyValue('--theme-text-reading').trim() || "#CBD5E1";
         const colorPicker = document.getElementById('font-color-picker');
@@ -7605,6 +7610,7 @@ function applyTypographySettings() {
             colorPicker.value = defaultColor;
         }
     } else {
+        delete root.dataset.readerColor;
         root.style.setProperty('--reader-text-color', s.textColor);
         const colorPicker = document.getElementById('font-color-picker');
         if (colorPicker) colorPicker.value = s.textColor;
@@ -8053,7 +8059,7 @@ function applySettingsToUI() {
     }
 
     if (document.getElementById('font-color-picker')) {
-        if (s.textColor !== "default") {
+        if (String(s.textColor).startsWith('#')) {
             document.getElementById('font-color-picker').value = s.textColor;
         }
     }

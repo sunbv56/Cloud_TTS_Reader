@@ -5,10 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Cloud TTS Reader</title>
-    <!-- Early theme loader (no flash). Old theme ids map onto the four console themes. -->
+    <!-- Early theme loader (no flash). Old theme ids map onto the console themes. -->
     <script>
         (function () {
-            var THEMES = { 'slate': '#2A3139', 'slate-deep': '#151B21', 'mist': '#EBEFF2', 'sepia': '#F2E6D3' };
+            var THEMES = { 'slate': '#2A3139', 'slate-deep': '#151B21', 'mist': '#EBEFF2', 'sepia': '#F2E6D3', 'sepia-dark': '#2C2219', 'ember': '#17100C' };
             var LEGACY = { 'default': 'slate', 'forest': 'slate', 'rose': 'slate', 'mocha': 'slate', 'warm-night': 'slate-deep', 'ocean': 'slate-deep', 'e-ink': 'slate-deep', 'paper': 'mist' };
             var savedTheme = 'slate';
             try {
@@ -54,7 +54,7 @@
     <!-- Mini player widget (Document PiP); colours come from the console tokens -->
     <link rel="stylesheet" href="/static/css/mini-player.css?v=15">
     <!-- Console design system: tokens, components, app shell -->
-    <link rel="stylesheet" href="/static/css/console.css?v=14">
+    <link rel="stylesheet" href="/static/css/console.css?v=15">
     <style type="text/tailwindcss">
         @theme {
             --font-reading: var(--font-read);
@@ -494,6 +494,8 @@
                         <button type="button" class="theme-swatch" data-theme="slate-deep" aria-pressed="false"><span class="theme-dot" data-swatch="slate-deep" aria-hidden="true"><span></span></span><span data-i18n="theme-slate-deep-name">Slate đậm</span></button>
                         <button type="button" class="theme-swatch" data-theme="mist" aria-pressed="false"><span class="theme-dot" data-swatch="mist" aria-hidden="true"><span></span></span><span data-i18n="theme-mist-name">Sương</span></button>
                         <button type="button" class="theme-swatch" data-theme="sepia" aria-pressed="false"><span class="theme-dot" data-swatch="sepia" aria-hidden="true"><span></span></span><span data-i18n="theme-sepia-name">Sepia</span></button>
+                        <button type="button" class="theme-swatch" data-theme="sepia-dark" aria-pressed="false"><span class="theme-dot" data-swatch="sepia-dark" aria-hidden="true"><span></span></span><span data-i18n="theme-sepia-dark-name">Sepia tối</span></button>
+                        <button type="button" class="theme-swatch" data-theme="ember" aria-pressed="false"><span class="theme-dot" data-swatch="ember" aria-hidden="true"><span></span></span><span data-i18n="theme-ember-name">Than hồng</span></button>
                     </div>
                 </div>
                 <button id="reader-type-more" type="button" class="btn btn--block type-panel__more">
@@ -922,6 +924,20 @@
                                 <span class="theme-card__mood" data-i18n="theme-sepia-mood">Sáng · giấy ấm</span>
                             </span>
                         </button>
+                        <button type="button" class="theme-card" data-theme="sepia-dark" aria-pressed="false">
+                            <span class="theme-card__swatch" data-swatch="sepia-dark" aria-hidden="true"><span></span></span>
+                            <span class="min-w-0">
+                                <span class="theme-card__name" data-i18n="theme-sepia-dark-name">Sepia tối</span>
+                                <span class="theme-card__mood" data-i18n="theme-sepia-dark-mood">Tối · gỗ nâu, chữ kem</span>
+                            </span>
+                        </button>
+                        <button type="button" class="theme-card" data-theme="ember" aria-pressed="false">
+                            <span class="theme-card__swatch" data-swatch="ember" aria-hidden="true"><span></span></span>
+                            <span class="min-w-0">
+                                <span class="theme-card__name" data-i18n="theme-ember-name">Than hồng</span>
+                                <span class="theme-card__mood" data-i18n="theme-ember-mood">Đêm khuya · không gì loé sáng</span>
+                            </span>
+                        </button>
                     </div>
                 </div>
                 <div class="set-row">
@@ -984,6 +1000,7 @@
                             <button type="button" class="preset-color" style="--swatch: #C8E0D0" data-color="#C8E0D0" title="Bạc hà" aria-label="Bạc hà" aria-pressed="false" data-i18n-aria="color-mint"></button>
                             <button type="button" class="preset-color" style="--swatch: #3A3A3A" data-color="#3A3A3A" title="Than" aria-label="Than" aria-pressed="false" data-i18n-aria="color-charcoal"></button>
                             <button type="button" class="preset-color" style="--swatch: #5B4636" data-color="#5B4636" title="Nâu mực" aria-label="Nâu mực" aria-pressed="false" data-i18n-aria="color-ink-brown"></button>
+                            <button type="button" class="preset-color preset-color--gold" data-color="gold" title="Vàng gold lấp lánh" aria-label="Vàng gold lấp lánh" aria-pressed="false" data-i18n-aria="color-gold"></button>
                         </div>
                     </div>
                 </div>

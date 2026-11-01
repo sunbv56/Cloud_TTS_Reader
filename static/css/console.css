@@ -108,10 +108,62 @@
     color-scheme: light;
 }
 
+/* Warm dark pair for Sepia. Sepia tối is the evening theme; Than hồng is the
+   lights-off theme and follows Slate sâu's rule: nothing near the bottom may glow. */
+:root[data-theme="sepia-dark"] {
+    --color-paper: oklch(26% 0.022 62);
+    --color-surface: oklch(29% 0.025 62);
+    --color-raised: oklch(33% 0.027 64);
+    --color-line: oklch(40% 0.028 64);
+    --color-text: oklch(92% 0.025 82);
+    --color-text-reading: oklch(88% 0.03 80);
+    --color-muted: oklch(73% 0.03 72);
+    --color-muted-raised: oklch(76% 0.03 72);
+    --color-accent: oklch(78% 0.11 68);
+    --color-on-accent: oklch(23% 0.03 55);
+    --color-highlight: oklch(37% 0.055 68);
+    --color-focus: oklch(84% 0.1 72);
+    --color-scrim: oklch(12% 0.02 55 / 0.55);
+    --color-shadow: oklch(8% 0.02 55 / 0.45);
+    --color-danger: oklch(74% 0.13 30);
+    --color-warn: oklch(84% 0.11 88);
+    --color-ok: oklch(78% 0.09 150);
+    --color-pocket-bg: oklch(11% 0.012 60);
+    --color-pocket-text: oklch(70% 0.02 70);
+    --theme-is-light: 0;
+    color-scheme: dark;
+}
+:root[data-theme="ember"] {
+    --color-paper: oklch(18% 0.014 55);
+    --color-surface: oklch(21% 0.016 55);
+    --color-raised: oklch(24.5% 0.018 57);
+    --color-line: oklch(31% 0.02 58);
+    --color-text: oklch(85% 0.03 75);
+    --color-text-reading: oklch(80% 0.035 70);
+    --color-muted: oklch(66% 0.03 65);
+    --color-muted-raised: oklch(69% 0.03 65);
+    --color-accent: oklch(68% 0.09 52);
+    --color-on-accent: oklch(18% 0.02 50);
+    --color-highlight: oklch(28% 0.045 55);
+    --color-focus: oklch(76% 0.09 58);
+    --chip-on-bg: var(--color-raised);
+    --chip-on-fg: var(--color-accent);
+    --color-scrim: oklch(6% 0.01 50 / 0.6);
+    --color-shadow: oklch(4% 0.01 50 / 0.55);
+    --color-danger: oklch(68% 0.12 28);
+    --color-warn: oklch(76% 0.1 85);
+    --color-ok: oklch(72% 0.08 150);
+    --color-pocket-bg: oklch(9% 0.008 55);
+    --color-pocket-text: oklch(64% 0.018 65);
+    --theme-is-light: 0;
+    color-scheme: dark;
+}
+
 /* Generated text covers: hue comes from the title (--cover-h, set per element), lightness per theme. */
 :root,
 :root[data-theme="slate"],
-:root[data-theme="slate-deep"] {
+:root[data-theme="slate-deep"],
+:root[data-theme="sepia-dark"] {
     --cover-l: 41%;
     --cover-c: 0.055;
     --cover-ink-l: 92%;
@@ -125,6 +177,36 @@
     --cover-ink-l: 30%;
     --cover-ink-c: 0.03;
     --cover-spine-l: 76%;
+}
+
+:root[data-theme="ember"] {
+    --cover-l: 34%;
+    --cover-c: 0.045;
+    --cover-ink-l: 84%;
+    --cover-ink-c: 0.03;
+    --cover-spine-l: 27%;
+}
+
+/* "Vàng gold" reading colour. deep/gold/glint stay ≥ 4.5:1 on paper and on the highlight
+   (glint ≥ 3:1 on light papers); spark is only the narrow band that sweeps past. */
+:root {
+    --color-gold-deep: oklch(78% 0.12 74);
+    --color-gold: oklch(87% 0.12 88);
+    --color-gold-glint: oklch(96% 0.045 95);
+    --color-gold-spark: oklch(99% 0.02 95);
+}
+:root[data-theme="ember"] {
+    --color-gold-deep: oklch(69% 0.11 70);
+    --color-gold: oklch(79% 0.115 84);
+    --color-gold-glint: oklch(91% 0.065 92);
+    --color-gold-spark: oklch(95% 0.04 95);
+}
+:root[data-theme="mist"],
+:root[data-theme="sepia"] {
+    --color-gold-deep: oklch(38% 0.08 62);
+    --color-gold: oklch(46% 0.09 72);
+    --color-gold-glint: oklch(55% 0.105 84);
+    --color-gold-spark: oklch(62% 0.13 88);
 }
 
 :root {
@@ -209,6 +291,11 @@
     --swatch-dark-ink: oklch(90% 0.01 250);
     --swatch-mist-ink: oklch(26% 0.015 250);
     --swatch-sepia-ink: oklch(30% 0.03 55);
+    --swatch-sepia-dark-paper: oklch(26% 0.022 62);
+    --swatch-sepia-dark-accent: oklch(78% 0.11 68);
+    --swatch-ember-paper: oklch(18% 0.014 55);
+    --swatch-ember-accent: oklch(68% 0.09 52);
+    --swatch-warm-ink: oklch(88% 0.03 80);
     /* A hairline that still shows on a surface the same colour as the paper. */
     --color-line-strong: color-mix(in oklch, var(--color-text) 42%, var(--color-paper));
 }
@@ -986,6 +1073,71 @@
     .zen-focus-mode #text-container .chunk-text:not(.chunk-active) { opacity: .32; }
     @media (hover: hover) { .zen-focus-mode #text-container .chunk-text:not(.chunk-active):hover { opacity: .75; } }
 
+    /* Gold text: every line is a small metal bar (bright at the cap height, deep at the
+       baseline, repeated per line with 1lh). The sentence being read also carries a sweeping
+       glint and two twinkling stars; only that block animates, so a long chapter never
+       repaints on every frame. */
+    :root[data-reader-color="gold"] {
+        --gold-metal: linear-gradient(180deg, var(--color-gold) 18%, var(--color-gold-glint) 34%, var(--color-gold) 52%, var(--color-gold-deep) 80%);
+        --gold-star: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M12 0c1 8 4 11 12 12-8 1-11 4-12 12-1-8-4-11-12-12 8-1 11-4 12-12z'/%3E%3C/svg%3E");
+        --gold-glint: linear-gradient(105deg, transparent 40%, var(--color-gold-spark) 49%, var(--color-gold-spark) 51%, transparent 60%);
+    }
+    :root[data-reader-color="gold"] #text-container .chunk-text,
+    :root[data-reader-color="gold"] .font-sample {
+        color: transparent;
+        background-image: var(--gold-metal), linear-gradient(var(--chunk-bg, transparent), var(--chunk-bg, transparent));
+        background-size: 100% 1lh, auto;
+        background-position: 0 var(--gold-line-top, 2px), 0 0;
+        background-repeat: repeat-y, no-repeat;
+        -webkit-background-clip: text, padding-box;
+        background-clip: text, padding-box;
+    }
+    :root[data-reader-color="gold"] .font-sample { --gold-line-top: var(--space-3); }
+    @media (hover: hover) {
+        :root[data-reader-color="gold"] #text-container .chunk-text:hover { --chunk-bg: color-mix(in oklch, var(--color-highlight) 45%, transparent); }
+    }
+    :root[data-reader-color="gold"] #text-container .chunk-active,
+    :root[data-reader-color="gold"] .font-sample {
+        --chunk-bg: var(--color-highlight);
+        position: relative;
+        background-image: var(--gold-glint), var(--gold-metal), linear-gradient(var(--chunk-bg), var(--chunk-bg));
+        background-size: 300% 100%, 100% 1lh, auto;
+        background-position: 100% 0, 0 var(--gold-line-top, 2px), 0 0;
+        background-repeat: no-repeat, repeat-y, no-repeat;
+        -webkit-background-clip: text, text, padding-box;
+        background-clip: text, text, padding-box;
+    }
+    :root[data-reader-color="gold"] .font-sample { --chunk-bg: transparent; }
+    :root[data-reader-color="gold"] #text-container .chunk-active::before,
+    :root[data-reader-color="gold"] #text-container .chunk-active::after {
+        content: "";
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        background: var(--color-gold-spark);
+        -webkit-mask: var(--gold-star) center / contain no-repeat;
+        mask: var(--gold-star) center / contain no-repeat;
+        opacity: 0;
+        pointer-events: none;
+    }
+    :root[data-reader-color="gold"] #text-container .chunk-active::before { top: -9px; right: 6%; }
+    :root[data-reader-color="gold"] #text-container .chunk-active::after { bottom: -6px; left: 18%; width: 12px; height: 12px; }
+    @media (prefers-reduced-motion: no-preference) {
+        :root[data-reader-color="gold"] #text-container .chunk-active,
+        :root[data-reader-color="gold"] .font-sample { animation: gold-glint 2.6s linear infinite; }
+        :root[data-reader-color="gold"] #text-container .chunk-active::before { animation: gold-twinkle 2.6s var(--ease-in-out) infinite; }
+        :root[data-reader-color="gold"] #text-container .chunk-active::after { animation: gold-twinkle 2.6s var(--ease-in-out) 1.3s infinite; }
+    }
+    @keyframes gold-glint {
+        0% { background-position: 100% 0, 0 var(--gold-line-top, 2px), 0 0; }
+        75%, 100% { background-position: 0% 0, 0 var(--gold-line-top, 2px), 0 0; }
+    }
+    @keyframes gold-twinkle {
+        0%, 45%, 100% { opacity: 0; transform: scale(.3) rotate(0deg); }
+        65% { opacity: 1; transform: scale(1) rotate(45deg); }
+        80% { opacity: .8; transform: scale(.8) rotate(70deg); }
+    }
+
     /* Inline illustrations */
     .reader-figure {
         display: flex;
@@ -1184,7 +1336,7 @@
     .type-panel__more { font-weight: 500; color: var(--color-muted); }
     @media (hover: hover) { .type-panel__more:hover { color: var(--color-text); } }
     @media (min-width: 360px) {
-        .type-themes { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+        .type-themes { grid-template-columns: repeat(3, minmax(0, 1fr)); }
         .theme-swatch { flex-direction: column; justify-content: center; gap: 4px; padding: var(--space-2) 4px; text-align: center; }
         .theme-swatch > span:last-child { max-width: 100%; }
     }
@@ -2354,7 +2506,7 @@
     }
     .color-pick input { position: absolute; inset: -6px; width: calc(100% + 12px); height: calc(100% + 12px); border: 0; padding: 0; cursor: pointer; background: transparent; }
     .color-mode--pick:has(input:focus-visible) { outline: 2px solid var(--color-focus); outline-offset: 2px; }
-    .color-presets { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: var(--space-1); justify-items: center; }
+    .color-presets { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--space-1); justify-items: center; }
     .preset-color {
         position: relative;
         width: 100%;
@@ -2368,6 +2520,9 @@
     }
     @media (hover: hover) { .preset-color:hover { box-shadow: 0 0 0 2px var(--color-muted); } }
     .preset-color[aria-pressed="true"] { box-shadow: 0 0 0 3px var(--color-accent); }
+    .preset-color--gold {
+        background: linear-gradient(135deg, var(--color-gold-deep), var(--color-gold) 40%, var(--color-gold-glint) 55%, var(--color-gold) 70%, var(--color-gold-deep));
+    }
     .dict-help {
         display: grid;
         gap: 2px;
@@ -2687,6 +2842,12 @@
     [data-swatch="mist"] span { background: var(--swatch-mist-accent); }
     [data-swatch="sepia"] { background: var(--swatch-sepia-paper); }
     [data-swatch="sepia"] span { background: var(--swatch-sepia-accent); }
+    [data-swatch="sepia-dark"],
+    [data-swatch="ember"] { --swatch-ink: var(--swatch-warm-ink); }
+    [data-swatch="sepia-dark"] { background: var(--swatch-sepia-dark-paper); }
+    [data-swatch="sepia-dark"] span { background: var(--swatch-sepia-dark-accent); }
+    [data-swatch="ember"] { background: var(--swatch-ember-paper); }
+    [data-swatch="ember"] span { background: var(--swatch-ember-accent); }
 
     /* Lite / pocket */
     body.lite-mode *,
