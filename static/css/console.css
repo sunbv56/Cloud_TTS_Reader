@@ -703,8 +703,9 @@
         display: inline-flex;
         align-items: center;
         border-radius: var(--radius-sm);
-        font: 500 var(--text-lg)/1 var(--font-mono);
-        letter-spacing: -.01em;
+        gap: var(--space-2);
+        font: 600 var(--text-lg)/1 var(--font-mono);
+        letter-spacing: .08em;
         color: var(--color-text);
         white-space: nowrap;
         cursor: pointer;
@@ -713,6 +714,7 @@
         -webkit-touch-callout: none;
     }
     @media (hover: hover) { .wordmark:hover { background: var(--color-surface); } }
+    .wordmark__mark { width: 24px; height: 24px; flex: none; fill: var(--color-accent); stroke: none; }
     .wordmark { transition: transform var(--dur-slow) var(--ease-out); }
     .wordmark.is-egg { transform: scale(1.15) rotate(6deg); }
     .hdr-keys {

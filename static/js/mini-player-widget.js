@@ -530,7 +530,7 @@
     function drawFullPipFrame(ctx, primary, progress) {
         const dimensions = PIP_LAYOUTS.full;
         const chapterTitle = document.getElementById('player-title')?.textContent || '';
-        const bookTitle = document.getElementById('player-author')?.textContent || 'Cloud TTS Reader';
+        const bookTitle = document.getElementById('player-author')?.textContent || 'NOVA';
         const pair = getSentencePair();
         const left = 24;
         const contentWidth = dimensions.width - left * 2;
@@ -567,8 +567,8 @@
         ctx.textAlign = 'left';
         ctx.textBaseline = 'alphabetic';
         ctx.fillStyle = isLight ? textMain : '#f8fafc';
-        const headerLines = fitText(ctx, headerText || 'Cloud TTS Reader', contentWidth, 1, '700', 15, 8);
-        ctx.fillText(headerLines[0] || 'Cloud TTS Reader', left, 34);
+        const headerLines = fitText(ctx, headerText || 'NOVA', contentWidth, 1, '700', 15, 8);
+        ctx.fillText(headerLines[0] || 'NOVA', left, 34);
         ctx.fillStyle = primary;
         ctx.globalAlpha = 0.53;
         ctx.fillRect(left, 47, contentWidth, 2);
@@ -727,7 +727,7 @@
         // Mirror active color theme and variables
         syncPipTheme();
 
-        pipWindow.document.title = 'Cloud TTS Reader';
+        pipWindow.document.title = 'NOVA';
         pipWindow.document.body.classList.add('mpw-pip-body');
 
         // MOVE (not clone) the card so button listeners keep working —
