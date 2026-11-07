@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from app.core import database, security
 from app.server import create_app
 from app.services import image_cache as image_cache_mod
-from tests.test_frontend_backend_integration import TEST_UID, _MockBlob, _MockStorageBackend
+from tests.test_frontend_backend_integration import TEST_UID, _MockBlob, _MockFirestore, _MockStorageBackend
 
 AUTH = {"Authorization": "Bearer mock_valid_token"}
 WEBP = b"RIFF\x1a\x00\x00\x00WEBPVP8 " + b"\x00" * 16
@@ -53,6 +53,7 @@ def storage(monkeypatch):
     import app.routers.books as books_mod
     monkeypatch.setattr(database, "storage", backend)
     monkeypatch.setattr(books_mod, "storage", backend)
+    monkeypatch.setattr(books_mod, "db_admin", _MockFirestore())
     image_cache_mod.clear_all()
     yield backend
     image_cache_mod.clear_all()
