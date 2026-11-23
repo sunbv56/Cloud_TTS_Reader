@@ -996,6 +996,12 @@ async def delete_story_storage(request: Request, userId: str, storyId: str, file
         storage.delete_prefix(f"users/{userId}/stories/{storyId}/")
         storage.delete_prefix(f"users/{userId}/images/{storyId}/")
         forget_story(userId, storyId)
+    if db_admin is not None:
+        await _run_blocking(
+            "firestore.delete_story_metadata",
+            db_admin.collection("users").document(userId).collection("stories").document(storyId).delete,
+            request_id=_request_id(request),
+        )
     return JSONResponse({"status": "ok"})
 
 
