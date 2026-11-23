@@ -5494,6 +5494,36 @@ async function loadBookFromStorage(bookId, bookData) {
 // --- Auth state is now handled inside startFirebase() ---
 
 // --- File Handling ---
+const IMPORT_JOB_POLL_MS = 2_000;
+const IMPORT_JOB_MAX_WAIT_MS = 15 * 60_000;
+
+async function waitForImportJob(uid, jobId) {
+    const deadline = Date.now() + IMPORT_JOB_MAX_WAIT_MS;
+    let lastError = null;
+    while (Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, IMPORT_JOB_POLL_MS));
+        let response;
+        try {
+            response = await authFetch(`/api/import-jobs/${encodeURIComponent(jobId)}?userId=${encodeURIComponent(uid)}`, { timeoutMs: 15_000 });
+        } catch (error) {
+            // A dropped poll does not mean the import failed; keep asking.
+            lastError = error;
+            continue;
+        }
+        if (response.status === 404) {
+            throw userFacingError(tr('import-job-lost', 'Máy chủ đã khởi động lại giữa chừng. Hãy kiểm tra thư viện, nếu chưa có truyện thì tải lên lại.'));
+        }
+        if (!response.ok) {
+            lastError = new Error(`HTTP ${response.status}`);
+            continue;
+        }
+        const job = await response.json();
+        if (job.status === 'done') return job.result;
+        if (job.status === 'failed') throw userFacingError(job.error || tr('import-failed', 'Không thể import sách.'));
+    }
+    throw lastError || userFacingError(tr('import-job-slow', 'Máy chủ vẫn đang xử lý. Truyện sẽ tự xuất hiện trong thư viện khi xong.'));
+}
+
 const handleFileUpload = async (e) => {
     const selectedFiles = Array.from(e.target.files || []);
     const file = selectedFiles.find(candidate => /\.(txt|epub|pdf)$/i.test(candidate.name));
@@ -5573,9 +5603,14 @@ const handleFileUpload = async (e) => {
                 : tr('upload-analyzing', 'Đang phân tích cấu trúc...'),
             tr('upload-sending', 'Gửi dữ liệu')
         );
+        // The request only covers the byte transfer; the server imports in the
+        // background (background=1) and we poll the job below.
+        const uploadTimeoutMs = Math.min(60_000 + Math.ceil(file.size / (1024 * 1024)) * 12_000, 6 * 60_000);
+        formData.append('background', '1');
         const response = await authFetch('/api/upload-story', {
             method: 'POST',
-            body: formData
+            body: formData,
+            timeoutMs: uploadTimeoutMs
         });
 
         if (!response.ok) {
@@ -5605,7 +5640,16 @@ const handleFileUpload = async (e) => {
             }
             throw new Error(detail);
         }
-        const data = await response.json();
+        let data = await response.json();
+        if (response.status === 202 && data.jobId) {
+            updateLoadingProgress(
+                50,
+                tr('upload-processing', 'Đang xử lý truyện...'),
+                tr('upload-server-processing', 'Máy chủ đang tách chương và lưu trữ...'),
+                tr('upload-sending', 'Gửi dữ liệu')
+            );
+            data = await waitForImportJob(uploaderUid, data.jobId);
+        }
 
         updateLoadingProgress(illustrations.length ? 50 : 85, tr('upload-building-toc', 'Đang khởi tạo mục lục...'), tr('upload-fetching-meta', 'Tải thông tin metadata từ server...'), tr('upload-init', 'Khởi tạo'));
         // Fetch fresh metadata
