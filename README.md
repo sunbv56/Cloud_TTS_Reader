@@ -200,6 +200,16 @@ Contributions, issues, and feature requests are welcome!
 
 ---
 
+## ⚠️ Disclaimer & Credits
+
+- This is a personal, educational project. It is **not affiliated with, endorsed by or sponsored by Microsoft or Google**.
+- Speech is synthesized through Microsoft Edge's online read-aloud service, reached with the unofficial [`edge-tts`](https://github.com/rany2/edge-tts) library. Microsoft has not published a public API or terms for this use, and the service can change or block access at any time. You are responsible for complying with Microsoft's terms. Do not use this project to run a commercial service or to redistribute the generated audio.
+- The optional proxy (`EDGE_TTS_PROXY`) and the gTTS fallback exist only to keep reading going when a direct request stalls. They are not meant to evade limits; use the service responsibly.
+- Books you import must be content you have the right to use.
+- Third-party libraries keep their own licenses: `edge-tts` is LGPL-3.0 (installed unmodified as a dependency and not bundled in this repository), `gTTS` is MIT, and the rest are listed in `requirements.txt`.
+
+---
+
 ## 📄 License
 
 This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) file for details.
