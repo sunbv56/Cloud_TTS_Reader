@@ -200,6 +200,16 @@ Mọi đóng góp, báo lỗi hoặc yêu cầu tính năng mới đều đượ
 
 ---
 
+## ⚠️ Miễn Trừ & Ghi Công
+
+- Đây là dự án cá nhân, phục vụ học tập. Dự án **không liên kết với, không được bảo trợ hay xác nhận bởi Microsoft hoặc Google**.
+- Giọng đọc được tạo qua dịch vụ đọc văn bản trực tuyến của trình duyệt Microsoft Edge, gọi bằng thư viện không chính thức [`edge-tts`](https://github.com/rany2/edge-tts). Microsoft chưa công bố API hay điều khoản cho cách dùng này, và dịch vụ có thể thay đổi hoặc chặn truy cập bất cứ lúc nào. Bạn tự chịu trách nhiệm tuân thủ điều khoản của Microsoft. Không dùng dự án này để chạy dịch vụ thương mại hoặc phát tán lại audio đã tạo.
+- Proxy tuỳ chọn (`EDGE_TTS_PROXY`) và chế độ dự phòng gTTS chỉ để việc đọc không bị gián đoạn khi một yêu cầu trực tiếp bị treo, không nhằm né giới hạn. Hãy dùng dịch vụ một cách có trách nhiệm.
+- Sách bạn nhập vào phải là nội dung bạn có quyền sử dụng.
+- Các thư viện bên thứ ba giữ giấy phép riêng: `edge-tts` theo LGPL-3.0 (cài nguyên bản như một phụ thuộc, không đóng gói trong repo này), `gTTS` theo MIT, phần còn lại xem `requirements.txt`.
+
+---
+
 ## 📄 Bản Quyền & Giấy Phép
 
 Dự án được phát hành theo giấy phép mã nguồn mở **MIT License** - xem tệp [LICENSE](LICENSE) để biết thêm chi tiết.
