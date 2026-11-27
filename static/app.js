@@ -26,6 +26,12 @@ const PREFETCH_AHEAD_SECONDS = 130;
 const EST_CHARS_PER_SECOND = 15;
 const PREFETCH_MAX_COUNT_FACTOR = 4;
 const BUFFER_HISTORY_SECONDS = 10;
+// Edge TTS silently caps rate at +100%; anything faster is made up by the
+// browser's pitch-preserving playbackRate on top of the 2x audio.
+const TTS_MIN_SPEED = 0.5;
+const TTS_MAX_SPEED = 2;
+const MIN_PLAYBACK_RATE = 0.25;
+const MAX_PLAYBACK_RATE = 4;
 
 // App State
 let STATE = {
@@ -255,6 +261,7 @@ const OFFLINE_MANAGER = {
     storeName: 'audio_cache',
     _db: null,
     _dbPromise: null,
+    speeds: new Map(),
 
     async init() {
         if (this._db) return;
@@ -307,6 +314,7 @@ const OFFLINE_MANAGER = {
     },
 
     async clearCache() {
+        this.speeds.clear();
         await this.init();
         return new Promise((resolve, reject) => {
             const tx = this._db.transaction(this.storeName, 'readwrite');
@@ -3198,6 +3206,7 @@ function idleStatus() {
 
 // play() rejects with AbortError when a pause() lands first; that is expected.
 function resumeAudio() {
+    applyPlaybackRate();
     return audio.play().catch(err => {
         if (err?.name !== 'AbortError') console.warn('[Audio] play() rejected:', err);
     });
@@ -3399,8 +3408,8 @@ async function initWebSocket() {
                                 }
 
                                 const text = applySkipDictionary(chapter.sentences[data.index]);
-                                const { voice, speed, pitch, volume } = STATE.settings;
-                                const rate = `${Math.round((speed - 1) * 100) >= 0 ? '+' : ''}${Math.round((speed - 1) * 100)}%`;
+                                const { voice, pitch, volume } = STATE.settings;
+                                const rate = ttsRate();
 
                                 STATE.fetchingSet.add(failKey);
                                 STATE.ws.send(JSON.stringify({
@@ -3539,12 +3548,18 @@ async function initWebSocket() {
                 OFFLINE_MANAGER.saveBlob(STATE.currentBookId, currentMetadata.chapterIndex, currentMetadata.index, blob);
             }
 
+            const synthesizedSpeed = rateToSpeed(currentMetadata.rate) ?? ttsSpeed();
+            OFFLINE_MANAGER.speeds.set(
+                `${STATE.currentBookId}_${currentMetadata.chapterIndex}_${currentMetadata.index}`, synthesizedSpeed
+            );
+
             STATE.appendQueue.push({
                 index: currentMetadata.index,
                 chapterIndex: currentMetadata.chapterIndex,
                 sessionId: currentMetadata.sessionId,
                 part: hasParts ? currentMetadata.part : undefined,
                 data: arrayBuffer,
+                ttsSpeed: synthesizedSpeed,
                 metadata: currentMetadata.metadata
             });
 
@@ -3709,6 +3724,43 @@ function initMSE() {
     STATE.mediaSource.addEventListener('sourceclose', () => console.log("MediaSource closed"));
 }
 
+function ttsSpeed(speed = STATE.settings.speed) {
+    return Math.min(TTS_MAX_SPEED, Math.max(TTS_MIN_SPEED, Number(speed) || 1));
+}
+
+function ttsRate() {
+    const percent = Math.round((ttsSpeed() - 1) * 100);
+    return `${percent >= 0 ? '+' : ''}${percent}%`;
+}
+
+function rateToSpeed(rate) {
+    const percent = parseFloat(rate);
+    return Number.isFinite(percent) ? 1 + percent / 100 : null;
+}
+
+function playbackFactor() {
+    const speed = Number(STATE.settings.speed) || 1;
+    return Math.max(1, speed / ttsSpeed(speed));
+}
+
+function chunkAt(time) {
+    for (let i = STATE.chunkTimings.length - 1; i >= 0; i--) {
+        if (time >= STATE.chunkTimings[i].startTime) return STATE.chunkTimings[i];
+    }
+    return STATE.chunkTimings[0] || null;
+}
+
+function applyPlaybackRate() {
+    const speed = Number(STATE.settings.speed) || 1;
+    const synthesized = chunkAt(audio.currentTime || 0)?.ttsSpeed || ttsSpeed(speed);
+    const target = Math.min(MAX_PLAYBACK_RATE, Math.max(MIN_PLAYBACK_RATE, speed / synthesized));
+    const next = Math.abs(target - 1) < 0.01 ? 1 : target;
+    if (Math.abs(audio.playbackRate - next) > 0.005) {
+        audio.preservesPitch = true;
+        audio.playbackRate = next;
+    }
+}
+
 function getBufferedAheadSeconds() {
     if (!STATE.sourceBuffer || !STATE.sourceBuffer.buffered.length) return 0;
     const currentTime = audio.currentTime || 0;
@@ -3788,7 +3840,7 @@ function processAppendQueue() {
     // Stop extending the forward buffer before the browser reaches its
     // opaque SourceBuffer quota. The chunk stays queued and will be retried as
     // playback advances and frees room.
-    if (getBufferedAheadSeconds() >= MAX_BUFFER_AHEAD_SECONDS) {
+    if (getBufferedAheadSeconds() >= MAX_BUFFER_AHEAD_SECONDS * playbackFactor()) {
         STATE.appendQueue.unshift(chunk);
         STATE.isAppending = false;
         scheduleAppendRetry();
@@ -3864,6 +3916,7 @@ function processAppendQueue() {
                 index: chunk.index,
                 chapterIndex: chunk.chapterIndex,
                 startTime: startTime,
+                ttsSpeed: chunk.ttsSpeed,
                 metadata: chunk.metadata
             });
         }
@@ -5494,6 +5547,36 @@ async function loadBookFromStorage(bookId, bookData) {
 // --- Auth state is now handled inside startFirebase() ---
 
 // --- File Handling ---
+const IMPORT_JOB_POLL_MS = 2_000;
+const IMPORT_JOB_MAX_WAIT_MS = 15 * 60_000;
+
+async function waitForImportJob(uid, jobId) {
+    const deadline = Date.now() + IMPORT_JOB_MAX_WAIT_MS;
+    let lastError = null;
+    while (Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, IMPORT_JOB_POLL_MS));
+        let response;
+        try {
+            response = await authFetch(`/api/import-jobs/${encodeURIComponent(jobId)}?userId=${encodeURIComponent(uid)}`, { timeoutMs: 15_000 });
+        } catch (error) {
+            // A dropped poll does not mean the import failed; keep asking.
+            lastError = error;
+            continue;
+        }
+        if (response.status === 404) {
+            throw userFacingError(tr('import-job-lost', 'Máy chủ đã khởi động lại giữa chừng. Hãy kiểm tra thư viện, nếu chưa có truyện thì tải lên lại.'));
+        }
+        if (!response.ok) {
+            lastError = new Error(`HTTP ${response.status}`);
+            continue;
+        }
+        const job = await response.json();
+        if (job.status === 'done') return job.result;
+        if (job.status === 'failed') throw userFacingError(job.error || tr('import-failed', 'Không thể import sách.'));
+    }
+    throw lastError || userFacingError(tr('import-job-slow', 'Máy chủ vẫn đang xử lý. Truyện sẽ tự xuất hiện trong thư viện khi xong.'));
+}
+
 const handleFileUpload = async (e) => {
     const selectedFiles = Array.from(e.target.files || []);
     const file = selectedFiles.find(candidate => /\.(txt|epub|pdf)$/i.test(candidate.name));
@@ -5573,9 +5656,14 @@ const handleFileUpload = async (e) => {
                 : tr('upload-analyzing', 'Đang phân tích cấu trúc...'),
             tr('upload-sending', 'Gửi dữ liệu')
         );
+        // The request only covers the byte transfer; the server imports in the
+        // background (background=1) and we poll the job below.
+        const uploadTimeoutMs = Math.min(60_000 + Math.ceil(file.size / (1024 * 1024)) * 12_000, 6 * 60_000);
+        formData.append('background', '1');
         const response = await authFetch('/api/upload-story', {
             method: 'POST',
-            body: formData
+            body: formData,
+            timeoutMs: uploadTimeoutMs
         });
 
         if (!response.ok) {
@@ -5605,7 +5693,16 @@ const handleFileUpload = async (e) => {
             }
             throw new Error(detail);
         }
-        const data = await response.json();
+        let data = await response.json();
+        if (response.status === 202 && data.jobId) {
+            updateLoadingProgress(
+                50,
+                tr('upload-processing', 'Đang xử lý truyện...'),
+                tr('upload-server-processing', 'Máy chủ đang tách chương và lưu trữ...'),
+                tr('upload-sending', 'Gửi dữ liệu')
+            );
+            data = await waitForImportJob(uploaderUid, data.jobId);
+        }
 
         updateLoadingProgress(illustrations.length ? 50 : 85, tr('upload-building-toc', 'Đang khởi tạo mục lục...'), tr('upload-fetching-meta', 'Tải thông tin metadata từ server...'), tr('upload-init', 'Khởi tạo'));
         // Fetch fresh metadata
@@ -6598,8 +6695,8 @@ async function downloadSelectedChapters() {
             sentences: STATE.currentBook.chapters[idx].sentences
         }));
 
-        const { voice, speed, pitch, volume } = STATE.settings;
-        const rate = `${Math.round((speed - 1) * 100) >= 0 ? '+' : ''}${Math.round((speed - 1) * 100)}%`;
+        const { voice, pitch, volume } = STATE.settings;
+        const rate = ttsRate();
 
         // Switch to Active Download UI
         setTOCDownloadButton(downloadBtn, 'stop');
@@ -6959,7 +7056,7 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
         // than a fixed sentence count: in dialogue a dozen sentences can be
         // ~20s, shorter than one slow Edge request, which drained the buffer.
         const charBudget = PREFETCH_AHEAD_SECONDS * EST_CHARS_PER_SECOND * (STATE.settings.speed || 1);
-        const maxSentences = count * PREFETCH_MAX_COUNT_FACTOR;
+        const maxSentences = Math.ceil(count * PREFETCH_MAX_COUNT_FACTOR * playbackFactor());
         let aheadChars = 0;
 
         for (let i = 0; i < maxSentences && (i < count || aheadChars < charBudget); i++) {
@@ -7005,6 +7102,7 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
                     chapterIndex: currentChapIdx,
                     sessionId: STATE.sessionId,
                     data: arrayBuffer,
+                    ttsSpeed: OFFLINE_MANAGER.speeds.get(`${STATE.currentBookId}_${key}`) ?? ttsSpeed(),
                     metadata: [] // Cached blobs might not have word timings saved yet
                 });
                 processAppendQueue();
@@ -7024,8 +7122,8 @@ async function prefetchNext(startChapter, startSentence, count = null, immediate
 
             STATE.fetchingSet.add(key);
             const text = applySkipDictionary(sentences[currentSentIdx]);
-            const { voice, speed, pitch, volume } = STATE.settings;
-            const rate = `${Math.round((speed - 1) * 100) >= 0 ? '+' : ''}${Math.round((speed - 1) * 100)}%`;
+            const { voice, pitch, volume } = STATE.settings;
+            const rate = ttsRate();
 
             STATE.ws.send(JSON.stringify({
                 type: "PREFETCH",
@@ -7131,8 +7229,8 @@ async function startPlaybackAt(index, expectedLoadGeneration, isSuperseded) {
 
     updatePrefetchUI();
     document.getElementById('status-indicator').innerText = tr('status-buffering', 'Buffering…');
-    const { voice, speed, pitch, volume } = STATE.settings;
-    const rate = `${Math.round((speed - 1) * 100) >= 0 ? '+' : ''}${Math.round((speed - 1) * 100)}%`;
+    const { voice, pitch, volume } = STATE.settings;
+    const rate = ttsRate();
 
     // --- OFFLINE CACHE CHECK ---
     const cachedBlob = await OFFLINE_MANAGER.getBlob(STATE.currentBookId, STATE.currentChapterIndex, index);
@@ -7145,6 +7243,7 @@ async function startPlaybackAt(index, expectedLoadGeneration, isSuperseded) {
             chapterIndex: STATE.currentChapterIndex,
             sessionId: currentSessionId,
             data: arrayBuffer,
+            ttsSpeed: OFFLINE_MANAGER.speeds.get(`${STATE.currentBookId}_${STATE.currentChapterIndex}_${index}`) ?? ttsSpeed(),
             metadata: []
         });
         processAppendQueue();
@@ -7184,6 +7283,7 @@ async function startPlaybackAt(index, expectedLoadGeneration, isSuperseded) {
 
     if (STATE.chunkTimings.length > 0 && STATE.sessionId === currentSessionId && isCurrentPlayback()) {
         try {
+            applyPlaybackRate();
             await audio.play();
         } catch (err) {
             // Do not claim playback is active when the browser rejected
@@ -7562,6 +7662,7 @@ audio.ontimeupdate = async () => {
     const throttleInterval = STATE.isLiteMode ? 0.9 : 0.15;
     if (Math.abs(curTime - STATE.lastOntimeUpdateTick) < throttleInterval) return;
     STATE.lastOntimeUpdateTick = curTime;
+    applyPlaybackRate();
 
     // --- UI Synchronization via chunkTimings ---
     if (STATE.chunkTimings.length > 0) {
@@ -7623,8 +7724,8 @@ audio.ontimeupdate = async () => {
         : 0;
 
     const timeRemaining = bufferEnd - curTime;
-    // If buffer < 5 seconds and not currently fetching, top up from the last known buffered chunk
-    if (timeRemaining > 0 && timeRemaining < 5.0 && STATE.fetchingSet.size === 0) {
+    // If buffer < 5 seconds of listening and not currently fetching, top up from the last known buffered chunk
+    if (timeRemaining > 0 && timeRemaining < 5.0 * audio.playbackRate && STATE.fetchingSet.size === 0) {
         let lastChap = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].chapterIndex : STATE.currentChapterIndex;
         let lastIdx = STATE.chunkTimings.length > 0 ? STATE.chunkTimings[STATE.chunkTimings.length - 1].index : STATE.currentSentenceIndex;
         prefetchNext(lastChap, lastIdx);
@@ -7719,6 +7820,7 @@ function formatSpeed(value) {
 document.getElementById('speed-range').oninput = (e) => {
     STATE.settings.speed = Math.round(parseFloat(e.target.value) * 100) / 100;
     document.getElementById('speed-val').innerText = formatSpeed(STATE.settings.speed);
+    applyPlaybackRate();
     scheduleBookSettingsSave();
 };
 document.getElementById('pitch-range').oninput = (e) => {

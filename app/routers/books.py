@@ -5,12 +5,14 @@ import uuid
 import asyncio
 import logging
 import tempfile
+import time
 from typing import List, Optional
 from urllib.parse import quote
 
 from fastapi import APIRouter, Request, Response, Form, UploadFile, File, BackgroundTasks, Query
 from fastapi.responses import StreamingResponse, JSONResponse
 
+from app.core import security
 from app.core.config import (
     MAX_UPLOAD_BYTES,
     MAX_APPEND_BYTES,
@@ -122,12 +124,29 @@ async def parse_book(file: UploadFile = File(...)):
             os.remove(tmp_path)
 
 
+IMPORT_JOB_TTL_SECONDS = 3600
+_import_jobs: dict = {}
+
+
+class _ImportRejected(Exception):
+    def __init__(self, message: str, status_code: int):
+        super().__init__(message)
+        self.status_code = status_code
+
+
+def _prune_import_jobs():
+    cutoff = time.time() - IMPORT_JOB_TTL_SECONDS
+    for job_id in [jid for jid, job in _import_jobs.items() if job["status"] != "processing" and job["updatedAt"] < cutoff]:
+        del _import_jobs[job_id]
+
+
 @router.post("/api/upload-story")
 @_serialized_import_route
 async def upload_story(
     request: Request,
     userId: str = Form(...),
-    file: UploadFile = File(...)
+    file: UploadFile = File(...),
+    background: bool = Form(False)
 ):
     auth_error = _authorization_error(request, userId)
     if auth_error:
@@ -144,10 +163,11 @@ async def upload_story(
     if not story_id:
         story_id = "story"
     story_id += "_" + str(int(asyncio.get_event_loop().time()))
-    
+
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".txt")
     tmp_path = tmp.name
     tmp.close()
+    owns_tmp = True
 
     try:
         try:
@@ -158,122 +178,178 @@ async def upload_story(
             encoding_error = _validate_supported_text_encoding(tmp_path)
             if encoding_error:
                 return encoding_error
-        try:
-            chapters = await _run_blocking(
-                "parse_book_file", parse_book_file, tmp_path, file.filename, request_id=request_id
-            )
-        except ValueError as exc:
-            return JSONResponse({"error": str(exc)}, status_code=422)
-        total_chapters = len(chapters)
-        canonical_filename = f"{story_id}.txt"
-        await _run_blocking("write_canonical_text", write_canonical_text, tmp_path, chapters, request_id=request_id)
-        
-        story_metadata = {
-            "id": story_id,
-            "title": story_title,
-            "totalChapters": total_chapters,
-            "isSegmented": _should_segment_book(total_chapters),
-            "createdAt": firestore.SERVER_TIMESTAMP,
-            "filename": canonical_filename,
-            "sourceFilename": file.filename,
-            "sourceFormat": os.path.splitext(file.filename or "")[1].lower().lstrip(".") or "txt"
-        }
 
-        bucket = storage.bucket()
-        master_blob_path = f"users/{userId}/files/{canonical_filename}"
-        master_blob = bucket.blob(master_blob_path)
-        await _run_blocking(
-            "storage.upload_master", master_blob.upload_from_filename, tmp_path, request_id=request_id
+        if background:
+            # Parsing and Storage writes can outlast any sane client timeout for
+            # large books, so the client polls /api/import-jobs instead of
+            # holding this request open.
+            _prune_import_jobs()
+            job_id = uuid.uuid4().hex
+            job = {"userId": userId, "storyId": story_id, "status": "processing", "updatedAt": time.time()}
+            _import_jobs[job_id] = job
+            job["task"] = asyncio.create_task(
+                _run_import_job(job, userId, file.filename, tmp_path, story_id, story_title, request_id)
+            )
+            owns_tmp = False
+            return JSONResponse({"status": "processing", "jobId": job_id, "storyId": story_id}, status_code=202)
+
+        try:
+            return JSONResponse(await _import_story(userId, file.filename, tmp_path, story_id, story_title, request_id))
+        except _ImportRejected as exc:
+            return JSONResponse({"error": str(exc)}, status_code=exc.status_code)
+    finally:
+        if owns_tmp and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+async def _run_import_job(job: dict, userId: str, filename, tmp_path: str, story_id: str, story_title: str, request_id: str):
+    try:
+        async with security._import_semaphore:
+            job["result"] = await _import_story(userId, filename, tmp_path, story_id, story_title, request_id)
+        job["status"] = "done"
+    except _ImportRejected as exc:
+        job["status"] = "failed"
+        job["error"] = str(exc)
+    except Exception:
+        logger.exception("import_job_failed request_id=%s story_id=%s", request_id, story_id)
+        job["status"] = "failed"
+        job["error"] = "Import failed on the server. Please try again."
+    finally:
+        job["updatedAt"] = time.time()
+        job.pop("task", None)
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+@router.get("/api/import-jobs/{jobId}")
+async def get_import_job(request: Request, jobId: str, userId: str = Query(...)):
+    auth_error = _authorization_error(request, userId)
+    if auth_error:
+        return auth_error
+    job = _import_jobs.get(jobId)
+    if not job or job["userId"] != userId:
+        return JSONResponse({"error": "Import job not found"}, status_code=404)
+    payload = {"status": job["status"], "storyId": job["storyId"]}
+    if job["status"] == "done":
+        payload["result"] = job["result"]
+    elif job["status"] == "failed":
+        payload["error"] = job["error"]
+    return JSONResponse(payload)
+
+
+async def _import_story(userId: str, filename, tmp_path: str, story_id: str, story_title: str, request_id: str) -> dict:
+    try:
+        chapters = await _run_blocking(
+            "parse_book_file", parse_book_file, tmp_path, filename, request_id=request_id
         )
-        _invalidate_legacy_source_cache(userId, canonical_filename)
-        story_metadata["masterPath"] = master_blob_path
-        
-        if story_metadata["isSegmented"]:
-            segments = partition_chapters(chapters)
-            story_metadata["segmentsCount"] = len(segments)
-            story_metadata["segmentSize"] = SEGMENT_CHAPTER_SIZE
-            story_metadata["segmentFormatVersion"] = SEGMENT_FORMAT_VERSION
-            chapter_counts = []
-            
-            for i, seg_chapters in enumerate(segments):
-                seg_data, counts = await _run_blocking(
-                    "build_segment", _build_segment_data, seg_chapters, request_id=request_id
-                )
-                chapter_counts.extend(counts)
-                
-                seg_blob_path = segment_blob_path(userId, story_id, i, SEGMENT_FORMAT_VERSION)
-                blob = bucket.blob(seg_blob_path)
-                await _run_blocking(
-                    "storage.upload_segment",
-                    _upload_json_blob,
-                    blob,
-                    seg_data,
-                    content_type="application/json",
-                    request_id=request_id,
-                )
-                del seg_data
-                gc.collect()
-            story_metadata["chapterCounts"] = chapter_counts
-        else:
-            chapters_summary = await _run_blocking(
-                "build_chapters_summary", build_chapters_summary, chapters, request_id=request_id
-            )
-            story_metadata["chaptersSummary"] = chapters_summary
+    except ValueError as exc:
+        raise _ImportRejected(str(exc), 422)
+    total_chapters = len(chapters)
+    canonical_filename = f"{story_id}.txt"
+    await _run_blocking("write_canonical_text", write_canonical_text, tmp_path, chapters, request_id=request_id)
+    
+    story_metadata = {
+        "id": story_id,
+        "title": story_title,
+        "totalChapters": total_chapters,
+        "isSegmented": _should_segment_book(total_chapters),
+        "createdAt": firestore.SERVER_TIMESTAMP,
+        "filename": canonical_filename,
+        "sourceFilename": filename,
+        "sourceFormat": os.path.splitext(filename or "")[1].lower().lstrip(".") or "txt"
+    }
 
-        # Cache lightweight TOC manifest for instant Table of Contents load
-        try:
-            toc_titles = [c.get("title", f"Chương {idx+1}") for idx, c in enumerate(chapters)]
-            toc_counts = chapter_counts if story_metadata["isSegmented"] else [item.get("count", 0) for item in story_metadata.get("chaptersSummary", [])]
-            toc_blob = bucket.blob(toc_blob_path(userId, story_id))
+    bucket = storage.bucket()
+    master_blob_path = f"users/{userId}/files/{canonical_filename}"
+    master_blob = bucket.blob(master_blob_path)
+    await _run_blocking(
+        "storage.upload_master", master_blob.upload_from_filename, tmp_path, request_id=request_id
+    )
+    _invalidate_legacy_source_cache(userId, canonical_filename)
+    story_metadata["masterPath"] = master_blob_path
+    
+    if story_metadata["isSegmented"]:
+        segments = partition_chapters(chapters)
+        story_metadata["segmentsCount"] = len(segments)
+        story_metadata["segmentSize"] = SEGMENT_CHAPTER_SIZE
+        story_metadata["segmentFormatVersion"] = SEGMENT_FORMAT_VERSION
+        chapter_counts = []
+        
+        for i, seg_chapters in enumerate(segments):
+            seg_data, counts = await _run_blocking(
+                "build_segment", _build_segment_data, seg_chapters, request_id=request_id
+            )
+            chapter_counts.extend(counts)
+            
+            seg_blob_path = segment_blob_path(userId, story_id, i, SEGMENT_FORMAT_VERSION)
+            blob = bucket.blob(seg_blob_path)
             await _run_blocking(
-                "storage.upload_toc",
+                "storage.upload_segment",
                 _upload_json_blob,
-                toc_blob,
-                {"titles": toc_titles, "counts": toc_counts},
+                blob,
+                seg_data,
                 content_type="application/json",
                 request_id=request_id,
             )
-        except Exception as toc_err:
-            logger.warning("upload_toc_cache_failed story_id=%s error=%s", story_id, toc_err)
+            del seg_data
+            gc.collect()
+        story_metadata["chapterCounts"] = chapter_counts
+    else:
+        chapters_summary = await _run_blocking(
+            "build_chapters_summary", build_chapters_summary, chapters, request_id=request_id
+        )
+        story_metadata["chaptersSummary"] = chapters_summary
 
+    # Cache lightweight TOC manifest for instant Table of Contents load
+    try:
+        toc_titles = [c.get("title", f"Chương {idx+1}") for idx, c in enumerate(chapters)]
+        toc_counts = chapter_counts if story_metadata["isSegmented"] else [item.get("count", 0) for item in story_metadata.get("chaptersSummary", [])]
+        toc_blob = bucket.blob(toc_blob_path(userId, story_id))
         await _run_blocking(
-            "firestore.write_story_metadata",
-            db_admin.collection("users").document(userId).collection("stories").document(story_id).set,
-            story_metadata,
+            "storage.upload_toc",
+            _upload_json_blob,
+            toc_blob,
+            {"titles": toc_titles, "counts": toc_counts},
+            content_type="application/json",
             request_id=request_id,
         )
+    except Exception as toc_err:
+        logger.warning("upload_toc_cache_failed story_id=%s error=%s", story_id, toc_err)
 
-        if request.headers.get("x-api-key"):
-            # The web client creates the library entry when it opens the book;
-            # automation uploads never open it, so register it here instead.
-            await _run_blocking(
-                "firestore.write_library_entry",
-                db_admin.collection("users").document(userId).collection("progress").document(story_id).set,
-                {
-                    "title": story_title,
-                    "filename": canonical_filename,
-                    "last_listened_at": firestore.SERVER_TIMESTAMP,
-                    "updated_at": firestore.SERVER_TIMESTAMP,
-                },
-                merge=True,
-                request_id=request_id,
-            )
+    await _run_blocking(
+        "firestore.write_story_metadata",
+        db_admin.collection("users").document(userId).collection("stories").document(story_id).set,
+        story_metadata,
+        request_id=request_id,
+    )
 
-        logger.info("import_completed request_id=%s story_id=%s chapters=%s", request_id, story_id, total_chapters)
-
-        return JSONResponse({
-            "status": "ok",
-            "storyId": story_id,
+    # Register the library entry here: a client that gave up waiting (or an
+    # automation upload) never opens the book, which would orphan the story.
+    await _run_blocking(
+        "firestore.write_library_entry",
+        db_admin.collection("users").document(userId).collection("progress").document(story_id).set,
+        {
             "title": story_title,
             "filename": canonical_filename,
-            "isSegmented": story_metadata["isSegmented"],
-            "totalChapters": total_chapters,
-            "chapters": chapters_summary if not story_metadata["isSegmented"] else [],
-            "chaptersSummary": chapters_summary if not story_metadata["isSegmented"] else []
-        })
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+            "last_listened_at": firestore.SERVER_TIMESTAMP,
+            "updated_at": firestore.SERVER_TIMESTAMP,
+        },
+        merge=True,
+        request_id=request_id,
+    )
+
+    logger.info("import_completed request_id=%s story_id=%s chapters=%s", request_id, story_id, total_chapters)
+
+    return {
+        "status": "ok",
+        "storyId": story_id,
+        "title": story_title,
+        "filename": canonical_filename,
+        "isSegmented": story_metadata["isSegmented"],
+        "totalChapters": total_chapters,
+        "chapters": chapters_summary if not story_metadata["isSegmented"] else [],
+        "chaptersSummary": chapters_summary if not story_metadata["isSegmented"] else []
+    }
 
 
 @router.post("/api/parse-import")
@@ -996,6 +1072,12 @@ async def delete_story_storage(request: Request, userId: str, storyId: str, file
         storage.delete_prefix(f"users/{userId}/stories/{storyId}/")
         storage.delete_prefix(f"users/{userId}/images/{storyId}/")
         forget_story(userId, storyId)
+    if db_admin is not None:
+        await _run_blocking(
+            "firestore.delete_story_metadata",
+            db_admin.collection("users").document(userId).collection("stories").document(storyId).delete,
+            request_id=_request_id(request),
+        )
     return JSONResponse({"status": "ok"})
 
 
