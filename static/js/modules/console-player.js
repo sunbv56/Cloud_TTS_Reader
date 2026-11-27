@@ -14,7 +14,7 @@ const bridge = () => window.MPW_BRIDGE || null;
 const appState = () => window.STATE || null;
 const WIDE = window.matchMedia('(min-width: 1024px)');
 
-const SPEED_PRESETS = [0.75, 1, 1.25, 1.5, 1.75, 2];
+const SPEED_PRESETS = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
 const SLEEP_CYCLE = [null, 15, 30, 60, 'chapter'];
 const VOLUME_KEY = 'player-volume';
 const SPEED_HINT_KEY = 'speed-hint-seen';
@@ -94,7 +94,7 @@ function setSpeed(value) {
     const range = $('speed-range');
     if (!range) return;
     const min = Number(range.min) || 0.5;
-    const max = Number(range.max) || 3;
+    const max = Number(range.max) || 5;
     const next = Math.min(max, Math.max(min, Math.round(value * 20) / 20));
     range.value = String(next);
     range.dispatchEvent(new Event('input'));

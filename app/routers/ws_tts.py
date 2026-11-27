@@ -10,7 +10,7 @@ from app.core.config import (
     MAX_WS_PER_USER,
 )
 from app.core.security import _verify_bearer_token, _validate_text_size
-from app.services.tts_service import synthesize_chunks, synthesize_pieces, set_tts_options
+from app.services.tts_service import applied_rate, synthesize_chunks, synthesize_pieces, set_tts_options
 
 logger = logging.getLogger("cloud_tts_reader")
 
@@ -176,6 +176,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         "chapterIndex": msg.get("chapterIndex", 0),
                         "sessionId": sid,
                         "part": part,
+                        "rate": applied_rate(piece_chunks, rate),
                         "metadata": metadata,
                     })
                     await websocket.send_bytes(audio)
@@ -227,6 +228,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
                     metadata = []
                     audio_data = bytearray()
+                    used_gtts = False
 
                     async for chunk in synthesize_chunks(text, voice, rate, pitch, volume):
                         if state["active_session"] > sid:
@@ -234,6 +236,8 @@ async def websocket_endpoint(websocket: WebSocket):
                             break
                         
                         if chunk["type"] == "audio":
+                            if chunk.get("engine") == "gtts":
+                                used_gtts = True
                             audio_data.extend(chunk["data"])
                         elif chunk["type"] == "WordBoundary":
                             metadata.append({
@@ -250,6 +254,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                     "index": msg["index"],
                                     "chapterIndex": msg.get("chapterIndex", 0),
                                     "sessionId": sid,
+                                    "rate": "+0%" if used_gtts else rate,
                                     "metadata": metadata
                                 })
                                 await websocket.send_bytes(audio_data)
