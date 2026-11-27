@@ -81,6 +81,11 @@ async def _iter_tts_chunks(communicate) -> AsyncGenerator[dict, None]:
         await stream.aclose()
 
 
+def applied_rate(chunks, rate: str) -> str:
+    """Rate the audio in chunks was really synthesized at: gTTS ignores rate."""
+    return "+0%" if any(c.get("engine") == "gtts" for c in chunks) else rate
+
+
 def _gtts_lang(voice: str) -> str:
     """Map an Edge voice name (vi-VN-HoaiMyNeural) to a gTTS language code (vi)."""
     return (voice or "vi").split("-", 1)[0].lower() or "vi"
@@ -378,4 +383,4 @@ async def _synthesize_piece(
         return
     logger.warning("[TTS] Edge TTS unavailable, falling back to gTTS")
     data = await asyncio.to_thread(_gtts_bytes, text, _gtts_lang(voice))
-    yield {"type": "audio", "data": data}
+    yield {"type": "audio", "data": data, "engine": "gtts"}

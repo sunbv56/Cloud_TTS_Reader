@@ -282,7 +282,7 @@
                             <span data-i18n="toc-download-mp3">Tải MP3</span>
                         </button>
                     </div>
-                    <p class="toc-bar__hint" data-i18n="toc-mp3-limit">MP3 tối đa 5 chương mỗi lần, dùng giọng và tốc độ hiện tại.</p>
+                    <p class="toc-bar__hint" data-i18n="toc-mp3-limit">MP3 tối đa 5 chương mỗi lần, dùng giọng và tốc độ hiện tại (tối đa 2×).</p>
                     <div id="toc-download-progress" class="toc-progress hidden">
                         <div class="toc-progress__meta">
                             <span id="toc-download-chapter-info">—</span>
@@ -763,7 +763,7 @@
                         <output id="cpanel-volume-val" class="mono">100%</output>
                     </span>
                 </div>
-                <p class="field-note" data-i18n="voice-applies-next">Giọng, tốc độ và cao độ áp dụng cho các câu được đọc tiếp theo.</p>
+                <p class="field-note" data-i18n="voice-applies-next">Giọng và cao độ áp dụng cho các câu được đọc tiếp theo; tốc độ đổi ngay.</p>
             </div>
 
             <div id="cpanel-download" class="cpanel__download" hidden>
@@ -832,7 +832,7 @@
                 <div class="set-row set-row--range">
                     <label for="speed-range" class="set-row__label" data-i18n="speed-label">Tốc độ</label>
                     <output id="speed-val" class="set-row__value mono" for="speed-range">1.0×</output>
-                    <input type="range" id="speed-range" class="range" min="0.5" max="3" step="0.05" value="1">
+                    <input type="range" id="speed-range" class="range" min="0.5" max="5" step="0.05" value="1">
                 </div>
                 <div class="set-row set-row--range">
                     <label for="pitch-range" class="set-row__label" data-i18n="pitch-label">Cao độ</label>
